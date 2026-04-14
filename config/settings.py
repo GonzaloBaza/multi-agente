@@ -1,0 +1,105 @@
+from functools import lru_cache
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    # LLM
+    openai_api_key: str = ""
+    openai_model: str = "gpt-4o"
+    openai_embedding_model: str = "text-embedding-3-small"
+
+    # Pinecone
+    pinecone_api_key: str = ""
+    pinecone_index_name: str = "cursos-medicos"
+    pinecone_environment: str = "us-east-1"
+
+    # Redis
+    redis_url: str = "redis://localhost:6379/0"
+
+    # Zoho
+    zoho_client_id: str = ""
+    zoho_client_secret: str = ""
+    zoho_refresh_token: str = ""
+    zoho_redirect_uri: str = ""
+    zoho_base_url: str = "https://www.zohoapis.com/crm/v6"
+    zoho_accounts_url: str = "https://accounts.zoho.com"
+
+    # Botmaker
+    botmaker_client_id: str = ""
+    botmaker_secret_id: str = ""
+    botmaker_refresh_token: str = ""
+    botmaker_api_key: str = ""          # access-token estático (fallback / dev)
+    botmaker_base_url: str = "https://go.botmaker.com/api/v1.0"
+    botmaker_webhook_secret: str = ""
+
+    # WhatsApp Meta Cloud API (directo, sin Botmaker)
+    whatsapp_token: str = ""                  # Token de acceso permanente
+    whatsapp_phone_number_id: str = ""        # ID del número en Meta
+    whatsapp_waba_id: str = ""                # WhatsApp Business Account ID (para listar templates)
+    whatsapp_verify_token: str = "msk_verify_2024"  # Token de verificación del webhook
+    whatsapp_app_secret: str = ""             # App Secret para verificar firmas
+    whatsapp_app_id: str = ""                 # App ID de Meta (para Resumable Upload API)
+
+    # Twilio WhatsApp Sandbox / API
+    twilio_account_sid: str = ""              # ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+    twilio_auth_token: str = ""               # Token de autenticación
+    twilio_whatsapp_from: str = "whatsapp:+14155238886"  # Sandbox number
+
+    # MercadoPago
+    mp_access_token: str = ""
+    mp_public_key: str = ""
+    mp_webhook_secret: str = ""
+
+    # Rebill
+    rebill_api_key: str = ""
+    rebill_base_url: str = "https://api.rebill.to/v2"
+    rebill_organization_id: str = ""
+
+    # LMS - Moodle
+    moodle_base_url: str = ""
+    moodle_token: str = ""
+
+    # LMS - Blackboard
+    blackboard_base_url: str = ""
+    blackboard_app_key: str = ""
+    blackboard_app_secret: str = ""
+
+    # LMS - Tropos
+    tropos_base_url: str = ""
+    tropos_api_key: str = ""
+
+    # Business hours
+    business_hours_start: int = 9       # 9:00 AM
+    business_hours_end: int = 18        # 6:00 PM
+    business_timezone: str = "America/Argentina/Buenos_Aires"
+    business_days: str = "0,1,2,3,4"    # Mon-Fri (0=Monday)
+    off_hours_message: str = "Gracias por escribirnos. Nuestro horario de atención es de Lunes a Viernes de 9:00 a 18:00 hs (Argentina). Te responderemos a la brevedad."
+
+    # App
+    app_env: str = "development"
+    app_secret_key: str = "change-this-secret"
+    app_base_url: str = "http://localhost:8000"
+    allowed_origins: str = "http://localhost:3000"
+
+    # Supabase
+    supabase_url: str = "https://ubycfticfuatoafzsrfv.supabase.co"
+    supabase_service_role_key: str = ""
+
+    # Notifications
+    slack_webhook_url: str = ""
+    notification_email: str = ""
+
+    @property
+    def cors_origins(self) -> list[str]:
+        return [o.strip() for o in self.allowed_origins.split(",") if o.strip()]
+
+    @property
+    def is_production(self) -> bool:
+        return self.app_env == "production"
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()

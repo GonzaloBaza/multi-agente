@@ -1,0 +1,325 @@
+/* ─── Chat Widget — Cursos Médicos ──────────────────────────────────────── */
+:root {
+  --cm-primary: #1a73e8;
+  --cm-primary-dark: #1557b0;
+  --cm-bg: #ffffff;
+  --cm-bg-user: #1a73e8;
+  --cm-bg-bot: #f1f3f4;
+  --cm-text: #202124;
+  --cm-text-light: #5f6368;
+  --cm-text-user: #ffffff;
+  --cm-border: #e8eaed;
+  --cm-shadow: 0 8px 32px rgba(0,0,0,0.18);
+  --cm-radius: 16px;
+  --cm-radius-msg: 18px;
+  --cm-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+#cm-widget-container {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 9999;
+  font-family: var(--cm-font);
+}
+
+/* ─── FAB button ─────────────────────────────────────────────────────────── */
+#cm-fab {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: var(--cm-primary);
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(26,115,232,0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s, box-shadow 0.2s;
+  outline: none;
+}
+#cm-fab:hover {
+  transform: scale(1.08);
+  box-shadow: 0 6px 20px rgba(26,115,232,0.55);
+}
+#cm-fab svg { pointer-events: none; }
+
+#cm-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  background: #ea4335;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 10px;
+  min-width: 20px;
+  height: 20px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 0 5px;
+}
+
+/* ─── Chat panel ─────────────────────────────────────────────────────────── */
+#cm-panel {
+  position: absolute;
+  bottom: 72px;
+  right: 0;
+  width: 360px;
+  max-height: 560px;
+  background: var(--cm-bg);
+  border-radius: var(--cm-radius);
+  box-shadow: var(--cm-shadow);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transform-origin: bottom right;
+  transform: scale(0.85) translateY(12px);
+  opacity: 0;
+  pointer-events: none;
+  transition: transform 0.22s cubic-bezier(0.34,1.3,0.64,1), opacity 0.18s ease;
+}
+#cm-panel.open {
+  transform: scale(1) translateY(0);
+  opacity: 1;
+  pointer-events: all;
+}
+
+/* ─── Header ─────────────────────────────────────────────────────────────── */
+#cm-header {
+  background: var(--cm-primary);
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+#cm-avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  flex-shrink: 0;
+}
+#cm-header-text { flex: 1; }
+#cm-header-name { color: #fff; font-weight: 600; font-size: 15px; line-height: 1.2; }
+#cm-header-status { color: rgba(255,255,255,0.8); font-size: 12px; margin-top: 1px; }
+#cm-close-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: rgba(255,255,255,0.8);
+  padding: 4px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  transition: color 0.15s;
+}
+#cm-close-btn:hover { color: #fff; }
+
+/* ─── Messages ───────────────────────────────────────────────────────────── */
+#cm-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  scroll-behavior: smooth;
+}
+#cm-messages::-webkit-scrollbar { width: 4px; }
+#cm-messages::-webkit-scrollbar-track { background: transparent; }
+#cm-messages::-webkit-scrollbar-thumb { background: var(--cm-border); border-radius: 4px; }
+
+.cm-msg {
+  display: flex;
+  flex-direction: column;
+  max-width: 82%;
+  animation: cmFadeIn 0.2s ease;
+}
+@keyframes cmFadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.cm-msg.user { align-self: flex-end; align-items: flex-end; }
+.cm-msg.bot  { align-self: flex-start; align-items: flex-start; }
+
+.cm-bubble {
+  padding: 10px 14px;
+  border-radius: var(--cm-radius-msg);
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  min-height: 20px;
+}
+.cm-msg.user .cm-bubble {
+  background: var(--cm-bg-user);
+  color: var(--cm-text-user);
+  border-bottom-right-radius: 4px;
+}
+.cm-msg.bot .cm-bubble {
+  background: var(--cm-bg-bot);
+  color: var(--cm-text);
+  border-bottom-left-radius: 4px;
+}
+
+.cm-time {
+  font-size: 11px;
+  color: var(--cm-text-light);
+  margin-top: 3px;
+  padding: 0 4px;
+}
+
+/* ─── Typing indicator ───────────────────────────────────────────────────── */
+#cm-typing {
+  display: none;
+  align-self: flex-start;
+  background: var(--cm-bg-bot);
+  padding: 10px 16px;
+  border-radius: var(--cm-radius-msg);
+  border-bottom-left-radius: 4px;
+}
+#cm-typing.visible { display: flex; }
+.cm-dot {
+  width: 7px; height: 7px;
+  background: var(--cm-text-light);
+  border-radius: 50%;
+  margin: 0 2px;
+  animation: cmBounce 1.2s infinite;
+}
+.cm-dot:nth-child(2) { animation-delay: 0.2s; }
+.cm-dot:nth-child(3) { animation-delay: 0.4s; }
+@keyframes cmBounce {
+  0%, 60%, 100% { transform: translateY(0); }
+  30% { transform: translateY(-6px); }
+}
+
+/* ─── Input area ─────────────────────────────────────────────────────────── */
+#cm-input-area {
+  padding: 12px 16px;
+  border-top: 1px solid var(--cm-border);
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+  flex-shrink: 0;
+}
+#cm-input {
+  flex: 1;
+  border: 1.5px solid var(--cm-border);
+  border-radius: 22px;
+  padding: 10px 16px;
+  font-size: 14px;
+  font-family: var(--cm-font);
+  resize: none;
+  outline: none;
+  max-height: 100px;
+  overflow-y: auto;
+  line-height: 1.4;
+  color: var(--cm-text);
+  transition: border-color 0.15s;
+}
+#cm-input:focus { border-color: var(--cm-primary); }
+#cm-input::placeholder { color: var(--cm-text-light); }
+
+#cm-send-btn {
+  width: 40px; height: 40px;
+  border-radius: 50%;
+  background: var(--cm-primary);
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.15s, transform 0.1s;
+}
+#cm-send-btn:hover { background: var(--cm-primary-dark); }
+#cm-send-btn:active { transform: scale(0.94); }
+#cm-send-btn:disabled { background: var(--cm-border); cursor: not-allowed; }
+#cm-send-btn svg { pointer-events: none; }
+
+/* ─── Country selector ───────────────────────────────────────────────────── */
+#cm-country-bar {
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--cm-border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--cm-text-light);
+  flex-shrink: 0;
+}
+#cm-country-select {
+  border: 1px solid var(--cm-border);
+  border-radius: 8px;
+  padding: 2px 6px;
+  font-size: 12px;
+  color: var(--cm-text);
+  background: var(--cm-bg);
+  cursor: pointer;
+}
+
+/* ─── Markdown dentro de bubbles del bot ─────────────────────────────────── */
+.cm-bubble.cm-markdown p { margin: 0 0 8px; }
+.cm-bubble.cm-markdown p:last-child { margin-bottom: 0; }
+.cm-bubble.cm-markdown strong { font-weight: 600; }
+.cm-bubble.cm-markdown em { font-style: italic; }
+.cm-bubble.cm-markdown ul,
+.cm-bubble.cm-markdown ol { padding-left: 18px; margin: 6px 0; }
+.cm-bubble.cm-markdown li { margin-bottom: 4px; line-height: 1.4; }
+.cm-bubble.cm-markdown code {
+  background: rgba(0,0,0,0.08);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 12px;
+  font-family: monospace;
+}
+.cm-bubble.cm-markdown pre {
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 4px 0;
+}
+.cm-bubble.cm-markdown h1,
+.cm-bubble.cm-markdown h2,
+.cm-bubble.cm-markdown h3 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 8px 0 4px;
+}
+.cm-bubble.cm-markdown a {
+  color: var(--cm-primary);
+  text-decoration: underline;
+  word-break: break-all;
+}
+.cm-bubble.cm-markdown hr {
+  border: none;
+  border-top: 1px solid rgba(0,0,0,0.1);
+  margin: 8px 0;
+}
+
+/* ─── Quick reply buttons ────────────────────────────────────────────────── */
+.cm-quick-replies {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  padding: 4px 12px 8px 12px;
+}
+.cm-qr-btn {
+  background: #fff; border: 1.5px solid var(--cm-primary);
+  border-radius: 18px; color: var(--cm-primary);
+  font-size: 13px; font-weight: 500;
+  padding: 6px 14px; cursor: pointer;
+  transition: all 0.15s;
+}
+.cm-qr-btn:hover { background: var(--cm-primary); color: #fff; }
+
+/* ─── Responsive ─────────────────────────────────────────────────────────── */
+@media (max-width: 420px) {
+  #cm-panel { width: calc(100vw - 32px); right: -12px; }
+  #cm-widget-container { right: 16px; bottom: 16px; }
+}
