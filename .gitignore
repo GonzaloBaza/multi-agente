@@ -30,3 +30,10 @@ media/
 
 # Deploy scripts with credentials
 deploy_*.py
+
+# Claude Code: ignorar worktrees y settings locales, pero conservar
+# memory/ que sí vale la pena versionar para portarlo entre PCs.
+.claude/worktrees/
+.claude/settings.local.json
+.claude/file-history/
+.claude/sessions/
