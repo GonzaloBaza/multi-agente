@@ -133,6 +133,8 @@ async def get_history(session_id: str):
         if m.metadata.get("media_url"):
             msg["media_url"] = m.metadata["media_url"]
             msg["media_type"] = m.metadata.get("media_type", "")
+            msg["media_mime"] = m.metadata.get("media_mime", "")
+            msg["media_filename"] = m.metadata.get("media_filename", "")
         messages.append(msg)
     return {
         "messages": messages,

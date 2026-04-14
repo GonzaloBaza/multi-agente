@@ -2651,7 +2651,8 @@ function buildMsgEl(msg) {
     if (mt === 'image') {
       mediaHtml = `<div class="msg-media"><img src="${esc(url)}" alt="imagen" class="msg-media-img" onclick="window.open('${esc(url)}','_blank')"></div>`;
     } else if (mt === 'audio') {
-      mediaHtml = `<div class="msg-media"><audio controls preload="auto" style="width:260px;height:48px;display:block;border-radius:8px;"><source src="${esc(url)}" type="audio/webm">Tu navegador no soporta audio.</audio></div>`;
+      const audioMime = msg.media_mime || 'audio/webm';
+      mediaHtml = `<div class="msg-media"><audio controls preload="auto" style="width:260px;height:48px;display:block;border-radius:8px;"><source src="${esc(url)}" type="${esc(audioMime)}"><source src="${esc(url)}">Tu navegador no soporta audio.</audio></div>`;
       if (msg.content && (msg.content.startsWith('[Audio') || msg.content.startsWith('[Sticker'))) hideContent = true;
     } else if (mt === 'video') {
       mediaHtml = `<div class="msg-media"><video controls src="${esc(url)}" class="msg-media-video"></video></div>`;

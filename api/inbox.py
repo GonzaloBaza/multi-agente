@@ -574,16 +574,35 @@ async def send_media(session_id: str, request: Request, user: dict = Depends(get
                 from integrations.whatsapp_meta import WhatsAppMetaClient
                 wa = WhatsAppMetaClient()
                 base_url = settings.app_base_url.rstrip("/")
-                public_url = f"{base_url}/{media_url}"
+
+                send_url = f"{base_url}/{media_url}"
+                # WhatsApp voice notes require audio/ogg;codecs=opus.
+                # Transcode webm/mp4/wav → ogg/opus so recipients hear actual audio.
+                if media_type == "audio" and not filename.endswith(".ogg"):
+                    try:
+                        import subprocess
+                        ogg_filename = f"{filename.rsplit('.', 1)[0]}.ogg"
+                        ogg_filepath = media_dir / ogg_filename
+                        subprocess.run(
+                            ["ffmpeg", "-y", "-i", str(filepath),
+                             "-c:a", "libopus", "-b:a", "32k",
+                             "-ar", "48000", "-ac", "1",
+                             str(ogg_filepath)],
+                            check=True, capture_output=True, timeout=30,
+                        )
+                        send_url = f"{base_url}/media/{ogg_filename}"
+                        logger.info("audio_transcoded_for_whatsapp", original=filename, ogg=ogg_filename)
+                    except Exception as e:
+                        logger.warning("audio_transcode_failed", error=str(e))
 
                 if media_type == "image":
-                    await wa.send_image(session_id, public_url, caption)
+                    await wa.send_image(session_id, send_url, caption)
                 elif media_type == "audio":
-                    await wa.send_audio(session_id, public_url)
+                    await wa.send_audio(session_id, send_url)
                 elif media_type == "video":
-                    await wa.send_video(session_id, public_url, caption)
+                    await wa.send_video(session_id, send_url, caption)
                 else:
-                    await wa.send_document(session_id, public_url, original_name, caption)
+                    await wa.send_document(session_id, send_url, original_name, caption)
         except Exception as e:
             logger.warning("whatsapp_media_send_failed", error=str(e))
 
@@ -597,6 +616,8 @@ async def send_media(session_id: str, request: Request, user: dict = Depends(get
         "timestamp": msg.timestamp.isoformat(),
         "media_url": media_url,
         "media_type": media_type,
+        "media_mime": content_type,
+        "media_filename": original_name,
     })
 
     logger.info("inbox_media_sent", session_id=session_id, agent=agent_name, media_type=media_type)

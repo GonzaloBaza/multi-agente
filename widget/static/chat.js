@@ -204,7 +204,7 @@
   let panel, fab, messagesEl, typingEl, inputEl, sendBtn, badge, countrySelect;
 
   // ─── Render de mensajes ───────────────────────────────────────────────────
-  function appendMessage(role, text, timestamp, mediaUrl, mediaType) {
+  function appendMessage(role, text, timestamp, mediaUrl, mediaType, mediaMime) {
     if (!messagesEl) return;
     if (!mediaUrl && (text === null || text === undefined || text === '')) return;
     const now = timestamp || new Date().toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" });
@@ -224,7 +224,8 @@
       }
       const mt = (mediaType || '').toLowerCase();
       if (mt === 'audio') {
-        mediaHtml = `<div style="margin-bottom:4px;padding:6px;background:#f0f0f0;border-radius:12px;display:block !important;"><audio controls preload="auto" style="width:220px;height:40px;display:block !important;visibility:visible !important;opacity:1 !important;"><source src="${escapeHTML(url)}" type="audio/webm">Audio no soportado.</audio></div>`;
+        const audioMime = mediaMime || 'audio/webm';
+        mediaHtml = `<div style="margin-bottom:4px;padding:6px;background:#f0f0f0;border-radius:12px;display:block !important;"><audio controls preload="auto" style="width:220px;height:40px;display:block !important;visibility:visible !important;opacity:1 !important;"><source src="${escapeHTML(url)}" type="${escapeHTML(audioMime)}"><source src="${escapeHTML(url)}">Audio no soportado.</audio></div>`;
         if (displayText.startsWith('[Audio')) displayText = '';
       } else if (mt === 'image') {
         mediaHtml = `<div style="margin-bottom:4px"><img src="${escapeHTML(url)}" style="max-width:200px;border-radius:8px;cursor:pointer" onclick="window.open('${escapeHTML(url)}','_blank')"></div>`;
@@ -390,7 +391,7 @@
             hour: "2-digit",
             minute: "2-digit",
           });
-          appendMessage(role, m.content, time, m.media_url, m.media_type);
+          appendMessage(role, m.content, time, m.media_url, m.media_type, m.media_mime);
         });
         lastMsgCount = data.messages.length;
         return true;
@@ -548,7 +549,7 @@
           if (m.role === 'user') { lastMsgCount++; return; }
           const role = 'bot';
           const time = new Date(m.timestamp).toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" });
-          appendMessage(role, m.content, time, m.media_url, m.media_type);
+          appendMessage(role, m.content, time, m.media_url, m.media_type, m.media_mime);
           lastMsgCount++;
         });
         // Hide typing if bot/agent responded
