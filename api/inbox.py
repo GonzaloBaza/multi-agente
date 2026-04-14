@@ -13,6 +13,7 @@ Endpoints:
 import asyncio
 import json
 import time
+from pathlib import Path
 from typing import AsyncGenerator, Optional
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, Depends, WebSocket, WebSocketDisconnect
@@ -644,6 +645,81 @@ async def send_media(session_id: str, request: Request, user: dict = Depends(get
     return {"status": "ok", "media_url": media_url, "timestamp": msg.timestamp.isoformat()}
 
 
+# ─── Send attachment by URL (para snippets) ──────────────────────────────────
+
+class SendAttachmentRequest(BaseModel):
+    media_url: str          # URL pública ya existente (típicamente R2)
+    filename: str
+    mime: str
+    caption: str = ""
+
+
+@router.post("/conversations/{session_id}/send-attachment")
+async def send_attachment_by_url(
+    session_id: str,
+    req: SendAttachmentRequest,
+    user: dict = Depends(get_current_user),
+):
+    """Envía un archivo ya subido (típicamente adjunto de un snippet) al cliente.
+    Reutiliza la URL pública de R2 sin re-upload."""
+    agent_name = user.get("name") or user.get("email") or "Agente"
+    store, conv = await _get_conv(session_id)
+
+    mime = req.mime or "application/octet-stream"
+    media_type = mime.split("/")[0]  # image, audio, video, application
+
+    msg = Message(
+        role=MessageRole.ASSISTANT,
+        content=req.caption or f"[{media_type.title()}: {req.filename}]",
+        metadata={
+            "agent": "humano",
+            "sender_name": agent_name,
+            "media_url": req.media_url,
+            "media_type": media_type,
+            "media_mime": mime,
+            "media_filename": req.filename,
+            "from_snippet": True,
+        },
+    )
+    await store.append_message(conv, msg)
+
+    # Enviar a WhatsApp si corresponde
+    from config.constants import Channel as Ch
+    from config.settings import get_settings
+    if conv.channel == Ch.WHATSAPP:
+        try:
+            settings = get_settings()
+            if settings.whatsapp_token:
+                from integrations.whatsapp_meta import WhatsAppMetaClient
+                wa = WhatsAppMetaClient()
+                send_url = req.media_url if req.media_url.startswith("http") else f"{settings.app_base_url.rstrip('/')}/{req.media_url}"
+                if media_type == "image":
+                    await wa.send_image(session_id, send_url, req.caption)
+                elif media_type == "audio":
+                    await wa.send_audio(session_id, send_url)
+                elif media_type == "video":
+                    await wa.send_video(session_id, send_url, req.caption)
+                else:
+                    await wa.send_document(session_id, send_url, req.filename, req.caption)
+        except Exception as e:
+            logger.warning("whatsapp_media_send_failed", error=str(e))
+
+    # Broadcast SSE
+    broadcast_event({
+        "type": "new_message",
+        "session_id": session_id,
+        "role": "assistant",
+        "content": msg.content,
+        "sender_name": agent_name,
+        "timestamp": msg.timestamp.isoformat(),
+        "media_url": req.media_url,
+        "media_type": media_type,
+        "media_mime": mime,
+        "media_filename": req.filename,
+    })
+    return {"status": "ok", "timestamp": msg.timestamp.isoformat()}
+
+
 # ─── AI Assist (Respond.io-style prompts inline) ─────────────────────────────
 
 AI_ASSIST_PROMPTS = {
@@ -700,6 +776,156 @@ async def ai_assist(req: AIAssistRequest, user: dict = Depends(get_current_user)
     except Exception as e:
         logger.error("ai_assist_failed", action=req.action, error=str(e))
         raise HTTPException(status_code=500, detail="Error del LLM, probá de nuevo.")
+
+
+# ─── Snippets (respuestas rápidas con adjuntos + topics) ────────────────────
+
+class SnippetIn(BaseModel):
+    shortcut: str
+    title: str
+    content: str
+    topics: list[str] = []
+    attachments: list[dict] = []  # [{url, filename, mime, size}]
+
+
+@router.get("/snippets")
+async def list_snippets(user: dict = Depends(get_current_user)):
+    from memory import postgres_store
+    if not postgres_store.is_enabled():
+        return {"snippets": []}
+    pool = await postgres_store.get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "select id, shortcut, title, content, topics, attachments, created_by, created_at, updated_at "
+            "from public.snippets order by updated_at desc"
+        )
+    snippets = []
+    all_topics: set[str] = set()
+    for r in rows:
+        attachments = r["attachments"]
+        if isinstance(attachments, str):
+            attachments = json.loads(attachments)
+        topics = list(r["topics"]) if r["topics"] else []
+        all_topics.update(topics)
+        snippets.append({
+            "id": str(r["id"]),
+            "shortcut": r["shortcut"],
+            "title": r["title"],
+            "content": r["content"],
+            "topics": topics,
+            "attachments": attachments,
+            "created_by": r["created_by"],
+            "updated_at": r["updated_at"].isoformat(),
+        })
+    return {"snippets": snippets, "all_topics": sorted(all_topics)}
+
+
+@router.post("/snippets")
+async def create_snippet(req: SnippetIn, user: dict = Depends(require_role("admin", "supervisor"))):
+    import uuid as uuid_mod
+    from memory import postgres_store
+    if not postgres_store.is_enabled():
+        raise HTTPException(status_code=503, detail="Postgres no configurado")
+
+    if not req.shortcut.startswith("/"):
+        req.shortcut = "/" + req.shortcut
+    req.shortcut = req.shortcut.strip().lower()
+    if len(req.shortcut) < 2:
+        raise HTTPException(status_code=400, detail="Shortcut muy corto")
+
+    snippet_id = str(uuid_mod.uuid4())
+    pool = await postgres_store.get_pool()
+    async with pool.acquire() as conn:
+        try:
+            await conn.execute(
+                "insert into public.snippets (id, shortcut, title, content, topics, attachments, created_by) "
+                "values ($1, $2, $3, $4, $5, $6::jsonb, $7)",
+                uuid_mod.UUID(snippet_id), req.shortcut, req.title, req.content,
+                req.topics, json.dumps(req.attachments), user.get("email", "unknown"),
+            )
+        except Exception as e:
+            if "unique" in str(e).lower():
+                raise HTTPException(status_code=409, detail=f"Ya existe un snippet con shortcut {req.shortcut}")
+            raise
+    logger.info("snippet_created", id=snippet_id, shortcut=req.shortcut, user=user.get("email"))
+    return {"id": snippet_id, "shortcut": req.shortcut}
+
+
+@router.patch("/snippets/{snippet_id}")
+async def update_snippet(snippet_id: str, req: SnippetIn, user: dict = Depends(require_role("admin", "supervisor"))):
+    import uuid as uuid_mod
+    from memory import postgres_store
+    if not postgres_store.is_enabled():
+        raise HTTPException(status_code=503, detail="Postgres no configurado")
+
+    if not req.shortcut.startswith("/"):
+        req.shortcut = "/" + req.shortcut
+    req.shortcut = req.shortcut.strip().lower()
+
+    pool = await postgres_store.get_pool()
+    async with pool.acquire() as conn:
+        result = await conn.execute(
+            "update public.snippets set shortcut=$2, title=$3, content=$4, topics=$5, "
+            "attachments=$6::jsonb, updated_at=now() where id=$1",
+            uuid_mod.UUID(snippet_id), req.shortcut, req.title, req.content,
+            req.topics, json.dumps(req.attachments),
+        )
+    if result.endswith(" 0"):
+        raise HTTPException(status_code=404, detail="Snippet no encontrado")
+    logger.info("snippet_updated", id=snippet_id, user=user.get("email"))
+    return {"ok": True}
+
+
+@router.delete("/snippets/{snippet_id}")
+async def delete_snippet(snippet_id: str, user: dict = Depends(require_role("admin", "supervisor"))):
+    import uuid as uuid_mod
+    from memory import postgres_store
+    if not postgres_store.is_enabled():
+        raise HTTPException(status_code=503, detail="Postgres no configurado")
+    pool = await postgres_store.get_pool()
+    async with pool.acquire() as conn:
+        result = await conn.execute(
+            "delete from public.snippets where id=$1",
+            uuid_mod.UUID(snippet_id),
+        )
+    if result.endswith(" 0"):
+        raise HTTPException(status_code=404, detail="Snippet no encontrado")
+    logger.info("snippet_deleted", id=snippet_id, user=user.get("email"))
+    return {"ok": True}
+
+
+@router.post("/snippets/upload-attachment")
+async def upload_snippet_attachment(request: Request, user: dict = Depends(require_role("admin", "supervisor"))):
+    """Sube un archivo a R2 y retorna metadata para asociar a un snippet."""
+    import uuid as uuid_mod
+    from integrations import storage
+
+    form = await request.form()
+    file = form.get("file")
+    if not file:
+        raise HTTPException(status_code=400, detail="Archivo requerido")
+
+    original_name = getattr(file, "filename", "file")
+    content_type = getattr(file, "content_type", "application/octet-stream") or "application/octet-stream"
+    ext = Path(original_name).suffix.lower() or ".bin"
+    key = f"snippets/{uuid_mod.uuid4().hex[:12]}{ext}"
+    content = await file.read()
+
+    if storage.is_enabled():
+        url = await storage.upload_bytes(key, content, content_type)
+    else:
+        media_dir = Path(__file__).parent.parent / "media" / "snippets"
+        media_dir.mkdir(parents=True, exist_ok=True)
+        filepath = media_dir / Path(key).name
+        filepath.write_bytes(content)
+        url = f"media/snippets/{filepath.name}"
+
+    return {
+        "url": url,
+        "filename": original_name,
+        "mime": content_type,
+        "size": len(content),
+    }
 
 
 # ─── Labels ───────────────────────────────────────────────────────────────────

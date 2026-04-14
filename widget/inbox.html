@@ -765,6 +765,169 @@ body {
 .note-del:hover { color: var(--red); }
 .note-input-area { display: flex; gap: 5px; margin-top: 8px; }
 
+/* ── Snippets modal + picker (Respond.io style) ── */
+.modal-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.65);
+  display: none;
+  align-items: center; justify-content: center;
+  z-index: 1000;
+}
+.modal-backdrop.open { display: flex; }
+.modal-card {
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  width: min(780px, 92vw);
+  max-height: 82vh;
+  display: flex; flex-direction: column;
+  box-shadow: 0 24px 60px rgba(0,0,0,0.55);
+}
+.modal-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 18px 22px;
+  border-bottom: 1px solid var(--border);
+}
+.modal-title { font-size: 16px; font-weight: 700; color: var(--text); }
+.modal-subtitle { font-size: 12px; color: var(--text2); margin-top: 2px; }
+.modal-close {
+  background: transparent; border: none; color: var(--text2);
+  font-size: 22px; cursor: pointer; line-height: 1; padding: 4px 8px;
+  border-radius: 6px;
+}
+.modal-close:hover { background: var(--surface2); color: var(--text); }
+.modal-body { padding: 18px 22px; overflow-y: auto; flex: 1; }
+.modal-foot {
+  padding: 14px 22px;
+  border-top: 1px solid var(--border);
+  display: flex; gap: 10px; justify-content: flex-end;
+}
+
+.snip-search {
+  width: 100%;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--text);
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+.snip-search:focus { outline: none; border-color: var(--primary); }
+
+.snip-topic-filters {
+  display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px;
+}
+.snip-topic-pill {
+  padding: 4px 10px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text2);
+  font-size: 11px;
+  cursor: pointer;
+  user-select: none;
+}
+.snip-topic-pill.active { background: var(--primary-soft); border-color: var(--primary); color: var(--primary); }
+
+.snip-list { display: flex; flex-direction: column; gap: 8px; }
+.snip-card {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.snip-card:hover { border-color: var(--primary); background: var(--surface3); }
+.snip-card-head {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 6px;
+}
+.snip-shortcut {
+  font-family: 'SF Mono', monospace;
+  background: var(--primary-soft);
+  color: var(--primary);
+  padding: 2px 8px; border-radius: 4px;
+  font-size: 12px; font-weight: 600;
+}
+.snip-title { font-size: 13px; color: var(--text); font-weight: 600; flex: 1; }
+.snip-attachments-count {
+  font-size: 11px; color: var(--text3);
+  display: flex; align-items: center; gap: 3px;
+}
+.snip-content-preview {
+  font-size: 12px; color: var(--text2);
+  max-height: 40px; overflow: hidden;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  margin-bottom: 6px;
+}
+.snip-topics { display: flex; gap: 4px; flex-wrap: wrap; }
+.snip-topic-tag {
+  font-size: 10px; color: var(--text3);
+  padding: 2px 6px; background: var(--surface); border-radius: 3px;
+}
+.snip-empty {
+  text-align: center; padding: 40px 20px;
+  color: var(--text3); font-size: 13px;
+}
+
+/* Admin modal form */
+.snip-form-row { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+.snip-form-label { font-size: 11px; color: var(--text2); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
+.snip-form-input, .snip-form-textarea {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+  resize: vertical;
+}
+.snip-form-input:focus, .snip-form-textarea:focus { outline: none; border-color: var(--primary); }
+.snip-form-hint { font-size: 11px; color: var(--text3); }
+.snip-attach-list { display: flex; flex-direction: column; gap: 6px; }
+.snip-attach-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 10px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+}
+.snip-attach-item .remove-btn {
+  margin-left: auto; background: transparent; border: none;
+  color: var(--red); cursor: pointer; font-size: 14px;
+}
+.btn-primary, .btn-ghost {
+  padding: 8px 14px; border-radius: 8px;
+  font-size: 13px; font-weight: 600; cursor: pointer;
+  border: 1px solid transparent;
+}
+.btn-primary { background: var(--primary); color: #fff; }
+.btn-primary:hover { background: var(--primary-dark); }
+.btn-ghost { background: transparent; border-color: var(--border-strong); color: var(--text); }
+.btn-ghost:hover { background: var(--surface2); }
+
+.snip-attached-preview {
+  display: flex; gap: 6px; flex-wrap: wrap;
+  padding: 6px 12px;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+}
+.snip-attached-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 8px;
+  background: var(--primary-soft);
+  color: var(--primary);
+  border-radius: 999px;
+}
+.snip-attached-chip button {
+  background: transparent; border: none; color: inherit;
+  font-size: 14px; line-height: 1; cursor: pointer;
+}
+
 /* ── AI Prompts bar (Respond.io style) ── */
 .ai-prompts-bar {
   position: relative;
@@ -1446,6 +1609,7 @@ body {
           📎<input type="file" id="mediaFileInput" onchange="handleMediaUpload(this)" accept="image/*,audio/*,video/*,.pdf,.doc,.docx,.xls,.xlsx">
         </div>
         <button class="hsm-btn" id="hsmBtn" onclick="toggleHSMPanel()" title="Enviar plantilla HSM">📋</button>
+        <button class="hsm-btn" id="snippetsBtn" onclick="openSnippetsPicker()" title="Snippets (respuestas rápidas con adjuntos)">⚡</button>
         <button class="emoji-btn" id="emojiBtn" onclick="toggleEmojiPicker()" title="Emojis">😊</button>
         <button class="voice-btn" id="voiceBtn" onclick="toggleVoiceRecording()" title="Nota de voz">🎤</button>
         <div id="voiceRecordingBar" style="display:none" class="voice-recording-bar">
@@ -1463,6 +1627,50 @@ body {
       </div>
       <!-- Emoji Picker -->
       <div class="emoji-picker" id="emojiPicker" style="display:none"></div>
+
+      <!-- Snippet attached preview (aparece antes de enviar) -->
+      <div class="snip-attached-preview" id="snipAttachedPreview" style="display:none"></div>
+    </div>
+  </div>
+
+  <!-- Snippets Picker Modal -->
+  <div class="modal-backdrop" id="snippetsPickerModal" onclick="if(event.target===this) closeSnippetsPicker()">
+    <div class="modal-card">
+      <div class="modal-head">
+        <div>
+          <div class="modal-title">⚡ Snippets</div>
+          <div class="modal-subtitle">Respuestas rápidas con adjuntos. Buscá por texto o filtrá por topic.</div>
+        </div>
+        <button class="modal-close" onclick="closeSnippetsPicker()">×</button>
+      </div>
+      <div class="modal-body">
+        <input class="snip-search" id="snipSearch" placeholder="Buscar por shortcut, título o contenido..." oninput="renderSnippetsList()">
+        <div class="snip-topic-filters" id="snipTopicFilters"></div>
+        <div class="snip-list" id="snipList"></div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn-ghost admin-only" onclick="openSnippetsAdmin()" style="display:none">⚙️ Gestionar snippets</button>
+        <button class="btn-ghost" onclick="closeSnippetsPicker()">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Snippets Admin Modal (CRUD) -->
+  <div class="modal-backdrop" id="snippetsAdminModal" onclick="if(event.target===this) closeSnippetsAdmin()">
+    <div class="modal-card">
+      <div class="modal-head">
+        <div>
+          <div class="modal-title" id="snipAdminTitle">⚙️ Gestionar snippets</div>
+          <div class="modal-subtitle">Creá, editá y organizá las respuestas rápidas del equipo.</div>
+        </div>
+        <button class="modal-close" onclick="closeSnippetsAdmin()">×</button>
+      </div>
+      <div class="modal-body" id="snipAdminBody">
+        <!-- Populated by JS: lista + botón "crear nuevo" / formulario de edición -->
+      </div>
+      <div class="modal-foot" id="snipAdminFooter">
+        <button class="btn-ghost" onclick="closeSnippetsAdmin()">Cerrar</button>
+      </div>
     </div>
   </div>
 
@@ -2914,6 +3122,298 @@ async function assignConv(sessionId, agentId, agentName) {
   } catch(e) { showToast('Error de red', 'error'); }
 }
 
+// ── Snippets (respuestas rápidas con adjuntos + topics) ──
+let SNIPPETS_CACHE = [];
+let SNIPPETS_TOPICS = [];
+let SNIPPET_ACTIVE_TOPIC = null;
+let PENDING_ATTACHMENTS = []; // adjuntos inyectados por un snippet, se envían al dar "send"
+
+async function loadSnippets() {
+  try {
+    const r = await fetch(`${API}/inbox/snippets`, { headers: { 'X-Session-Token': SESSION_TOKEN } });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    SNIPPETS_CACHE = d.snippets || [];
+    SNIPPETS_TOPICS = d.all_topics || [];
+  } catch (e) {
+    console.error('[snippets] load failed', e);
+    SNIPPETS_CACHE = []; SNIPPETS_TOPICS = [];
+  }
+}
+
+async function openSnippetsPicker() {
+  await loadSnippets();
+  SNIPPET_ACTIVE_TOPIC = null;
+  document.getElementById('snipSearch').value = '';
+  // Show admin button only for admin/supervisor
+  const adminBtn = document.querySelector('#snippetsPickerModal .admin-only');
+  if (adminBtn) adminBtn.style.display = (currentUser.role === 'admin' || currentUser.role === 'supervisor') ? '' : 'none';
+  renderTopicFilters();
+  renderSnippetsList();
+  document.getElementById('snippetsPickerModal').classList.add('open');
+  setTimeout(() => document.getElementById('snipSearch').focus(), 50);
+}
+
+function closeSnippetsPicker() {
+  document.getElementById('snippetsPickerModal').classList.remove('open');
+}
+
+function renderTopicFilters() {
+  const wrap = document.getElementById('snipTopicFilters');
+  if (!SNIPPETS_TOPICS.length) { wrap.innerHTML = ''; return; }
+  const pills = ['<span class="snip-topic-pill ' + (SNIPPET_ACTIVE_TOPIC === null ? 'active' : '') + '" onclick="setSnipTopic(null)">Todos</span>'];
+  SNIPPETS_TOPICS.forEach(t => {
+    const active = SNIPPET_ACTIVE_TOPIC === t;
+    pills.push(`<span class="snip-topic-pill ${active ? 'active' : ''}" onclick="setSnipTopic('${esc(t)}')">${esc(t)}</span>`);
+  });
+  wrap.innerHTML = pills.join('');
+}
+
+function setSnipTopic(topic) {
+  SNIPPET_ACTIVE_TOPIC = topic;
+  renderTopicFilters();
+  renderSnippetsList();
+}
+
+function renderSnippetsList() {
+  const list = document.getElementById('snipList');
+  const q = (document.getElementById('snipSearch').value || '').toLowerCase().trim();
+  const filtered = SNIPPETS_CACHE.filter(s => {
+    if (SNIPPET_ACTIVE_TOPIC && !s.topics.includes(SNIPPET_ACTIVE_TOPIC)) return false;
+    if (!q) return true;
+    return s.shortcut.toLowerCase().includes(q)
+        || s.title.toLowerCase().includes(q)
+        || s.content.toLowerCase().includes(q);
+  });
+  if (!filtered.length) {
+    list.innerHTML = `<div class="snip-empty">${SNIPPETS_CACHE.length ? 'No hay snippets que coincidan' : 'Todavía no hay snippets. Click en "Gestionar snippets" para crear el primero.'}</div>`;
+    return;
+  }
+  list.innerHTML = filtered.map(s => `
+    <div class="snip-card" onclick="applySnippet('${s.id}')">
+      <div class="snip-card-head">
+        <span class="snip-shortcut">${esc(s.shortcut)}</span>
+        <span class="snip-title">${esc(s.title)}</span>
+        ${s.attachments.length ? `<span class="snip-attachments-count">📎 ${s.attachments.length}</span>` : ''}
+      </div>
+      <div class="snip-content-preview">${esc(s.content)}</div>
+      <div class="snip-topics">
+        ${s.topics.map(t => `<span class="snip-topic-tag">#${esc(t)}</span>`).join('')}
+      </div>
+    </div>`).join('');
+}
+
+function applySnippet(id) {
+  const snip = SNIPPETS_CACHE.find(s => s.id === id);
+  if (!snip) return;
+  const input = document.getElementById('replyInput');
+  // Insertar contenido en el textarea (reemplaza lo existente si está vacío, sino append)
+  if (input.value.trim()) {
+    input.value = input.value.trim() + '\n\n' + snip.content;
+  } else {
+    input.value = snip.content;
+  }
+  input.dispatchEvent(new Event('input'));
+  input.focus();
+  // Adjuntos pendientes
+  PENDING_ATTACHMENTS = [...PENDING_ATTACHMENTS, ...snip.attachments];
+  renderAttachedPreview();
+  closeSnippetsPicker();
+  showToast(`Snippet ${snip.shortcut} aplicado`, 'success');
+}
+
+function renderAttachedPreview() {
+  const bar = document.getElementById('snipAttachedPreview');
+  if (!PENDING_ATTACHMENTS.length) { bar.style.display = 'none'; bar.innerHTML = ''; return; }
+  bar.style.display = 'flex';
+  bar.innerHTML = '<span style="color:var(--text2);margin-right:4px">Se enviarán:</span>' +
+    PENDING_ATTACHMENTS.map((a, i) => `
+      <span class="snip-attached-chip" title="${esc(a.filename)}">
+        📎 ${esc(a.filename.length > 30 ? a.filename.slice(0,27) + '...' : a.filename)}
+        <button onclick="removePendingAttachment(${i})" title="Quitar">×</button>
+      </span>`).join('');
+}
+
+function removePendingAttachment(i) {
+  PENDING_ATTACHMENTS.splice(i, 1);
+  renderAttachedPreview();
+}
+
+// ── Snippets admin modal (CRUD) ──
+async function openSnippetsAdmin(editSnip) {
+  await loadSnippets();
+  closeSnippetsPicker();
+  document.getElementById('snippetsAdminModal').classList.add('open');
+  if (editSnip) {
+    renderSnipForm(editSnip);
+  } else {
+    renderSnipAdminList();
+  }
+}
+function closeSnippetsAdmin() {
+  document.getElementById('snippetsAdminModal').classList.remove('open');
+}
+
+function renderSnipAdminList() {
+  const body = document.getElementById('snipAdminBody');
+  document.getElementById('snipAdminTitle').textContent = '⚙️ Gestionar snippets';
+  let html = '<button class="btn-primary" onclick="renderSnipForm(null)" style="margin-bottom:14px">+ Crear snippet</button>';
+  if (!SNIPPETS_CACHE.length) {
+    html += '<div class="snip-empty">Todavía no hay snippets.</div>';
+  } else {
+    html += '<div class="snip-list">';
+    SNIPPETS_CACHE.forEach(s => {
+      html += `
+        <div class="snip-card" style="cursor:default">
+          <div class="snip-card-head">
+            <span class="snip-shortcut">${esc(s.shortcut)}</span>
+            <span class="snip-title">${esc(s.title)}</span>
+            <button class="btn-ghost" style="padding:4px 10px;font-size:11px" onclick='renderSnipForm(${JSON.stringify(s)})'>Editar</button>
+            <button class="btn-ghost" style="padding:4px 10px;font-size:11px;color:var(--red)" onclick="deleteSnippet('${s.id}', '${esc(s.shortcut)}')">Borrar</button>
+          </div>
+          <div class="snip-content-preview">${esc(s.content)}</div>
+          <div class="snip-topics">${s.topics.map(t => `<span class="snip-topic-tag">#${esc(t)}</span>`).join('')}</div>
+        </div>`;
+    });
+    html += '</div>';
+  }
+  body.innerHTML = html;
+}
+
+function renderSnipForm(snip) {
+  const isEdit = !!snip;
+  document.getElementById('snipAdminTitle').textContent = isEdit ? `Editar ${snip.shortcut}` : 'Crear snippet';
+  const body = document.getElementById('snipAdminBody');
+  const existingAttachments = isEdit ? (snip.attachments || []) : [];
+  body.dataset.attachments = JSON.stringify(existingAttachments);
+  body.innerHTML = `
+    <div class="snip-form-row">
+      <label class="snip-form-label">Shortcut</label>
+      <input class="snip-form-input" id="sfShortcut" placeholder="/precio-cardio" value="${isEdit ? esc(snip.shortcut) : ''}">
+      <span class="snip-form-hint">Empieza con "/" y no puede repetirse.</span>
+    </div>
+    <div class="snip-form-row">
+      <label class="snip-form-label">Título</label>
+      <input class="snip-form-input" id="sfTitle" placeholder="Precio curso Cardiología AR" value="${isEdit ? esc(snip.title) : ''}">
+    </div>
+    <div class="snip-form-row">
+      <label class="snip-form-label">Contenido</label>
+      <textarea class="snip-form-textarea" id="sfContent" rows="5" placeholder="Texto del mensaje...">${isEdit ? esc(snip.content) : ''}</textarea>
+    </div>
+    <div class="snip-form-row">
+      <label class="snip-form-label">Topics (separados por coma)</label>
+      <input class="snip-form-input" id="sfTopics" placeholder="ventas, argentina, cardiología" value="${isEdit ? (snip.topics || []).join(', ') : ''}">
+      <span class="snip-form-hint">Tags para filtrar. Podés poner varios.</span>
+    </div>
+    <div class="snip-form-row">
+      <label class="snip-form-label">Adjuntos</label>
+      <input type="file" id="sfAttachFile" style="font-size:12px;color:var(--text2)" onchange="uploadSnipAttachment(this)">
+      <div class="snip-attach-list" id="sfAttachList"></div>
+    </div>
+  `;
+  renderAttachList();
+  document.getElementById('snipAdminFooter').innerHTML = `
+    <button class="btn-ghost" onclick="renderSnipAdminList()">← Volver</button>
+    <button class="btn-primary" onclick="saveSnippet(${isEdit ? `'${snip.id}'` : 'null'})">${isEdit ? 'Guardar cambios' : 'Crear snippet'}</button>
+  `;
+}
+
+function renderAttachList() {
+  const body = document.getElementById('snipAdminBody');
+  const list = document.getElementById('sfAttachList');
+  const atts = JSON.parse(body.dataset.attachments || '[]');
+  if (!atts.length) { list.innerHTML = '<span class="snip-form-hint">Sin adjuntos. Subí archivos arriba.</span>'; return; }
+  list.innerHTML = atts.map((a, i) => `
+    <div class="snip-attach-item">
+      📎 <span>${esc(a.filename)}</span>
+      <span style="color:var(--text3);font-size:11px">${(a.size/1024).toFixed(1)} KB</span>
+      <button class="remove-btn" onclick="removeAttachFromForm(${i})">×</button>
+    </div>`).join('');
+}
+
+function removeAttachFromForm(i) {
+  const body = document.getElementById('snipAdminBody');
+  const atts = JSON.parse(body.dataset.attachments || '[]');
+  atts.splice(i, 1);
+  body.dataset.attachments = JSON.stringify(atts);
+  renderAttachList();
+}
+
+async function uploadSnipAttachment(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const fd = new FormData();
+  fd.append('file', file);
+  showToast('Subiendo adjunto...', 'success');
+  try {
+    const r = await fetch(`${API}/inbox/snippets/upload-attachment`, {
+      method: 'POST', headers: { 'X-Session-Token': SESSION_TOKEN }, body: fd,
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    const body = document.getElementById('snipAdminBody');
+    const atts = JSON.parse(body.dataset.attachments || '[]');
+    atts.push(data);
+    body.dataset.attachments = JSON.stringify(atts);
+    renderAttachList();
+    input.value = '';
+    showToast('Adjunto subido', 'success');
+  } catch (e) {
+    console.error('[snippets] upload failed', e);
+    showToast('Error al subir adjunto', 'error');
+  }
+}
+
+async function saveSnippet(id) {
+  const body = document.getElementById('snipAdminBody');
+  const payload = {
+    shortcut: (document.getElementById('sfShortcut').value || '').trim(),
+    title:    (document.getElementById('sfTitle').value    || '').trim(),
+    content:  (document.getElementById('sfContent').value  || '').trim(),
+    topics:   (document.getElementById('sfTopics').value   || '').split(',').map(t => t.trim().toLowerCase()).filter(Boolean),
+    attachments: JSON.parse(body.dataset.attachments || '[]'),
+  };
+  if (!payload.shortcut || !payload.title || !payload.content) {
+    showToast('Completá shortcut, título y contenido', 'warning');
+    return;
+  }
+  const url = id ? `${API}/inbox/snippets/${id}` : `${API}/inbox/snippets`;
+  const method = id ? 'PATCH' : 'POST';
+  try {
+    const r = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json', 'X-Session-Token': SESSION_TOKEN },
+      body: JSON.stringify(payload),
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      throw new Error(err.detail || ('HTTP ' + r.status));
+    }
+    await loadSnippets();
+    renderSnipAdminList();
+    showToast(id ? 'Snippet actualizado' : 'Snippet creado', 'success');
+  } catch (e) {
+    console.error('[snippets] save failed', e);
+    showToast(e.message || 'Error al guardar', 'error');
+  }
+}
+
+async function deleteSnippet(id, shortcut) {
+  if (!confirm(`¿Borrar snippet ${shortcut}?`)) return;
+  try {
+    const r = await fetch(`${API}/inbox/snippets/${id}`, {
+      method: 'DELETE', headers: { 'X-Session-Token': SESSION_TOKEN },
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    await loadSnippets();
+    renderSnipAdminList();
+    showToast('Snippet borrado', 'success');
+  } catch (e) {
+    console.error('[snippets] delete failed', e);
+    showToast('Error al borrar', 'error');
+  }
+}
+
 // ── AI Prompts (Respond.io-style inline rewrites) ──
 const AI_MENUS = {
   tone: [
@@ -2996,29 +3496,52 @@ async function sendReply() {
   const input = document.getElementById('replyInput');
   const agentName = document.getElementById('agentNameInput').value.trim() || 'Agente';
   let text = input.value.trim();
-  if (!text || !activeSessionId) return;
+  if (!text && !PENDING_ATTACHMENTS.length) return;
+  if (!activeSessionId) return;
 
   // Expand macro if it matches
   const macro = handleMacro(text);
   if (macro) text = macro;
 
-  // Hide macro hint
   const hint = document.getElementById('macroHint');
   if (hint) hint.style.display = 'none';
 
+  // Capturar adjuntos pendientes y limpiar estado de UI
+  const attachments = [...PENDING_ATTACHMENTS];
+  PENDING_ATTACHMENTS = [];
+  renderAttachedPreview();
   input.value = '';
   input.style.height = 'auto';
-  try {
-    const r = await fetch(`${API}/inbox/conversations/${activeSessionId}/reply`, {
-      method:'POST', headers:{'Content-Type':'application/json', 'X-Session-Token': SESSION_TOKEN},
-      body: JSON.stringify({ message: text, agent_name: agentName }),
-    });
-    if (!r.ok) {
-      const err = await r.json().catch(() => ({}));
-      showToast('Error al enviar: ' + (err.detail || r.status), 'error');
+
+  // 1) Enviar texto (si hay)
+  if (text) {
+    try {
+      const r = await fetch(`${API}/inbox/conversations/${activeSessionId}/reply`, {
+        method:'POST', headers:{'Content-Type':'application/json', 'X-Session-Token': SESSION_TOKEN},
+        body: JSON.stringify({ message: text, agent_name: agentName }),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        showToast('Error al enviar: ' + (err.detail || r.status), 'error');
+      }
+    } catch(e) {
+      showToast('Error de red al enviar mensaje', 'error');
     }
-  } catch(e) {
-    showToast('Error de red al enviar mensaje', 'error');
+  }
+
+  // 2) Enviar cada adjunto como mensaje media separado
+  for (const att of attachments) {
+    try {
+      const r = await fetch(`${API}/inbox/conversations/${activeSessionId}/send-attachment`, {
+        method:'POST', headers:{'Content-Type':'application/json', 'X-Session-Token': SESSION_TOKEN},
+        body: JSON.stringify({ media_url: att.url, filename: att.filename, mime: att.mime, caption: '' }),
+      });
+      if (!r.ok) {
+        showToast('Error al enviar adjunto: ' + att.filename, 'error');
+      }
+    } catch(e) {
+      showToast('Error de red al enviar adjunto', 'error');
+    }
   }
 }
 

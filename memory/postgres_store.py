@@ -95,6 +95,22 @@ create table if not exists public.messages (
 create index if not exists messages_conv_time_idx
     on public.messages (conversation_id, created_at);
 
+create table if not exists public.snippets (
+    id uuid primary key,
+    shortcut text not null,
+    title text not null,
+    content text not null,
+    topics text[] not null default '{}',
+    attachments jsonb not null default '[]'::jsonb,
+    created_by text not null,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+);
+
+create unique index if not exists snippets_shortcut_idx on public.snippets (shortcut);
+create index if not exists snippets_topics_idx on public.snippets using gin (topics);
+create index if not exists snippets_updated_idx on public.snippets (updated_at desc);
+
 create or replace function public.touch_conversation_updated_at()
 returns trigger language plpgsql as $func$
 begin
