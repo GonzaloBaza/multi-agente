@@ -39,6 +39,7 @@ if _settings_boot.sentry_dsn:
 # NOTE: api.lifecycle existe pero no se registra por ahora — el Kanban + Reports
 # ya cubren el use case. Se puede activar en el futuro si el equipo crece.
 # from api.lifecycle import router as lifecycle_router
+from api.autonomous import router as autonomous_router
 from api.reports import router as reports_router
 from api.test_agent import router as test_agent_router
 from api.webhooks import router as webhooks_router
@@ -91,10 +92,30 @@ async def lifespan(app: FastAPI):
     pubsub_task = asyncio.create_task(start_pubsub_listener())
     logger.info("pubsub_listener_started")
 
+    # Scheduler autónomo: retargeting cycle cada 1h + auto-retry diario 10am.
+    # Solo 1 worker debe correr el scheduler — usamos lock en Redis.
+    try:
+        from memory.conversation_store import get_conversation_store
+        store = await get_conversation_store()
+        got_lock = await store._redis.set("scheduler:lock", "1", ex=3600, nx=True)
+        if got_lock:
+            from utils.scheduler import start_scheduler
+            await start_scheduler()
+            logger.info("autonomous_scheduler_active")
+        else:
+            logger.info("autonomous_scheduler_skipped_already_running")
+    except Exception as e:
+        logger.warning("scheduler_start_failed", error=str(e))
+
     yield
 
     # Cleanup
     pubsub_task.cancel()
+    try:
+        from utils.scheduler import shutdown_scheduler
+        await shutdown_scheduler()
+    except Exception:
+        pass
 
     logger.info("app_shutdown")
 
@@ -155,6 +176,7 @@ def create_app() -> FastAPI:
     app.include_router(redis_admin_router)
     app.include_router(reports_router)
     app.include_router(test_agent_router)
+    app.include_router(autonomous_router)
 
     # Servir los archivos estáticos del widget
     static_dir = Path(__file__).parent / "widget" / "static"

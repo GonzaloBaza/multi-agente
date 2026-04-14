@@ -310,6 +310,7 @@ tbody tr:hover td { background: rgba(255,45,120,0.04); }
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:18px;border-bottom:1px solid var(--border);padding-bottom:12px;flex-wrap:wrap">
       <button id="tabLive" class="rangebtn active" onclick="setTab('live')">🟢 En vivo</button>
       <button id="tabHist" class="rangebtn" onclick="setTab('hist')">📈 Histórico</button>
+      <button id="tabAuto" class="rangebtn" onclick="setTab('auto')">🤖 Autónomo</button>
       <span style="flex:1"></span>
       <div id="rangeFilter" style="display:none;gap:6px;flex-wrap:wrap">
         <span style="font-size:12px;color:var(--text2);margin-right:4px">Rango:</span>
@@ -375,6 +376,50 @@ tbody tr:hover td { background: rgba(255,45,120,0.04); }
         <div style="position:relative;height:220px;width:100%;margin-top:8px">
           <canvas id="chart-closed"></canvas>
         </div>
+      </div>
+    </div>
+
+    <!-- Vista: autónomo -->
+    <div id="viewAuto" style="display:none">
+      <div class="hist-kpis" style="margin-bottom:14px">
+        <div class="hist-kpi" id="autoSchedulerCard">
+          <div class="hist-kpi-label">Scheduler</div>
+          <div class="hist-kpi-value" id="autoSchedulerStatus">—</div>
+          <div class="hist-kpi-sub" id="autoSchedulerSub">Cargando...</div>
+        </div>
+        <div class="hist-kpi">
+          <div class="hist-kpi-label">Último ciclo</div>
+          <div class="hist-kpi-value" id="autoLastRun">—</div>
+          <div class="hist-kpi-sub" id="autoLastRunSub">—</div>
+        </div>
+        <div class="hist-kpi green">
+          <div class="hist-kpi-label">Enviados</div>
+          <div class="hist-kpi-value" id="autoSent">0</div>
+          <div class="hist-kpi-sub">último ciclo</div>
+        </div>
+        <div class="hist-kpi">
+          <div class="hist-kpi-label">Candidatos</div>
+          <div class="hist-kpi-value" id="autoCandidates">0</div>
+          <div class="hist-kpi-sub">leads evaluados</div>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap">
+        <button class="rangebtn" onclick="autoRunNow()">▶ Correr retargeting ahora</button>
+        <button class="rangebtn" onclick="autoRetryNow()">🔄 Reactivar descartados</button>
+        <button class="rangebtn" id="autoToggleBtn" onclick="autoToggle()">⏸ Pausar sistema</button>
+        <span style="flex:1"></span>
+        <button class="rangebtn" onclick="loadAutonomous()">↻ Refresh</button>
+      </div>
+
+      <div class="chart-card" style="margin-bottom:14px">
+        <div class="card-title"><span class="card-title-icon">📅</span> Jobs programados</div>
+        <div id="autoJobs" style="margin-top:10px"><div class="empty">Cargando...</div></div>
+      </div>
+
+      <div class="chart-card">
+        <div class="card-title"><span class="card-title-icon">📣</span> Acciones recientes del sistema</div>
+        <div id="autoRecent" style="margin-top:10px"><div class="empty">Cargando...</div></div>
       </div>
     </div>
 
@@ -495,11 +540,91 @@ function setTab(tab) {
   currentTab = tab;
   document.getElementById('tabLive').classList.toggle('active', tab === 'live');
   document.getElementById('tabHist').classList.toggle('active', tab === 'hist');
+  const tabAutoEl = document.getElementById('tabAuto');
+  if (tabAutoEl) tabAutoEl.classList.toggle('active', tab === 'auto');
   document.getElementById('viewLive').style.display = tab === 'live' ? '' : 'none';
   document.getElementById('viewHist').style.display = tab === 'hist' ? '' : 'none';
+  const vAuto = document.getElementById('viewAuto');
+  if (vAuto) vAuto.style.display = tab === 'auto' ? '' : 'none';
   const rf = document.getElementById('rangeFilter');
   rf.style.display = tab === 'hist' ? 'flex' : 'none';
   if (tab === 'hist') loadHistorical();
+  if (tab === 'auto') loadAutonomous();
+}
+
+// ── Autónomo ──
+async function loadAutonomous() {
+  try {
+    const st = await authFetch('/admin/autonomous/status');
+    const schedulerOn = st.scheduler_running;
+    const enabled = (st.config && st.config.enabled !== false);
+    document.getElementById('autoSchedulerStatus').textContent = schedulerOn ? (enabled ? '🟢 Activo' : '⏸ Pausado') : '🔴 Detenido';
+    document.getElementById('autoSchedulerSub').textContent = enabled ? 'El sistema decide y envía HSMs automáticamente' : 'Está en pausa — no manda nada';
+
+    const stats = st.last_run_stats || {};
+    if (stats.last_run) {
+      const d = new Date(stats.last_run);
+      document.getElementById('autoLastRun').textContent = d.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
+      document.getElementById('autoLastRunSub').textContent = d.toLocaleDateString('es', { day: '2-digit', month: '2-digit' });
+    } else {
+      document.getElementById('autoLastRun').textContent = '—';
+      document.getElementById('autoLastRunSub').textContent = 'sin corridas aún';
+    }
+    document.getElementById('autoSent').textContent = stats.sent || 0;
+    document.getElementById('autoCandidates').textContent = stats.candidates || 0;
+
+    document.getElementById('autoToggleBtn').textContent = enabled ? '⏸ Pausar sistema' : '▶ Reactivar sistema';
+
+    // Jobs
+    if (!st.jobs || !st.jobs.length) {
+      document.getElementById('autoJobs').innerHTML = '<div class="empty">Sin jobs programados.</div>';
+    } else {
+      document.getElementById('autoJobs').innerHTML = st.jobs.map(j => `
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--surface2);border-radius:8px;margin-bottom:6px;font-size:13px">
+          <span style="font-weight:700">${escHtml(j.name || j.id)}</span>
+          <span style="color:var(--text3);font-size:11px">${escHtml(j.trigger || '')}</span>
+          <span style="flex:1"></span>
+          <span style="font-size:11px;color:var(--text2)">Próxima: ${j.next_run ? new Date(j.next_run).toLocaleString('es') : '—'}</span>
+        </div>`).join('');
+    }
+
+    // Recent actions
+    const rec = await authFetch('/admin/autonomous/recent');
+    if (!rec.recent || !rec.recent.length) {
+      document.getElementById('autoRecent').innerHTML = '<div class="empty">Todavía no hay acciones registradas.</div>';
+    } else {
+      document.getElementById('autoRecent').innerHTML = rec.recent.slice(0, 50).map(a => `
+        <div style="display:grid;grid-template-columns:140px 70px 1fr auto;gap:10px;padding:8px 12px;background:var(--surface2);border-radius:6px;margin-bottom:4px;font-size:12px;align-items:center">
+          <span style="font-family:monospace;color:var(--text)">${escHtml(a.phone)}</span>
+          <span style="color:var(--text3)">${escHtml(a.day)}</span>
+          <span style="color:${a.action === 'skipped' ? 'var(--text3)' : 'var(--primary)'};font-weight:${a.action === 'skipped' ? '400' : '600'}">${a.action === 'skipped' ? '⏭ skip' : '📤 ' + escHtml(a.action)}</span>
+          <span style="font-size:10px;color:var(--text3)">expira en ${Math.floor((a.ttl_seconds || 0) / 3600)}h</span>
+        </div>`).join('');
+    }
+  } catch (e) {
+    document.getElementById('autoSchedulerStatus').textContent = '⚠️ Error';
+    document.getElementById('autoSchedulerSub').textContent = e.message;
+  }
+}
+
+async function autoRunNow() {
+  try {
+    await authFetch('/admin/autonomous/run-now', { method: 'POST' });
+    alert('Ciclo disparado. Refrescá en ~30 segundos.');
+  } catch (e) { alert('Error: ' + e.message); }
+}
+async function autoRetryNow() {
+  try {
+    await authFetch('/admin/autonomous/retry-now', { method: 'POST' });
+    alert('Ciclo de reactivación disparado.');
+  } catch (e) { alert('Error: ' + e.message); }
+}
+async function autoToggle() {
+  try {
+    const r = await fetch('/admin/autonomous/toggle', { method: 'POST', headers: { 'X-Session-Token': token } });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    loadAutonomous();
+  } catch (e) { alert('Error: ' + e.message); }
 }
 function setRange(days, btn) {
   currentDays = days;

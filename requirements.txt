@@ -44,3 +44,6 @@ boto3>=1.35.0
 
 # Postgres durable store (Supabase)
 asyncpg>=0.29.0
+
+# Scheduler persistente (retargeting + pagos sin perder tareas en restart)
+APScheduler>=3.10.4
