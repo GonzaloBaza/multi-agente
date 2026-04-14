@@ -37,6 +37,7 @@ if _settings_boot.sentry_dsn:
     )
 
 from api.reports import router as reports_router
+from api.test_agent import router as test_agent_router
 from api.webhooks import router as webhooks_router
 from api.widget import router as widget_router
 from api.admin import router as admin_router
@@ -150,6 +151,7 @@ def create_app() -> FastAPI:
     app.include_router(flows_router)
     app.include_router(redis_admin_router)
     app.include_router(reports_router)
+    app.include_router(test_agent_router)
 
     # Servir los archivos estáticos del widget
     static_dir = Path(__file__).parent / "widget" / "static"
@@ -243,6 +245,12 @@ def create_app() -> FastAPI:
     async def serve_reports_page():
         """Reports de cierres, leaderboard y funnel para supervisores."""
         html_file = Path(__file__).parent / "widget" / "reports.html"
+        return FileResponse(str(html_file), media_type="text/html")
+
+    @app.get("/admin/test-agent-ui")
+    async def serve_test_agent_page():
+        """Sandbox para probar los agentes IA sin afectar producción."""
+        html_file = Path(__file__).parent / "widget" / "test-agent.html"
         return FileResponse(str(html_file), media_type="text/html")
 
     @app.get("/audio-test")
