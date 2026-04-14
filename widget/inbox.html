@@ -1582,6 +1582,7 @@ body {
         <span class="window-timer" id="windowTimer"></span>
       </div>
 
+
       <!-- HSM Template Picker Panel -->
       <div class="hsm-panel" id="hsmPanel" style="display:none">
         <div class="hsm-header">
@@ -2637,6 +2638,7 @@ function renderConv(conv) {
     document.getElementById('bannerAgent').textContent = conv.agent_name || 'Agente';
   } else { hb.style.display = 'none'; }
 
+
   // Reply area
   const ra = document.getElementById('replyArea');
   const ri = document.getElementById('replyInput');
@@ -2657,7 +2659,7 @@ function renderConv(conv) {
     checkWaWindow(conv.session_id, conv.bot_disabled);
   }
 
-  renderMsgs(conv.messages || []);
+  renderMsgs(conv.messages || [], conv);
 }
 
 function renderLabelSelector(sessionId, currentLabel) {
@@ -3059,7 +3061,7 @@ function renderCobranzas(data, sessionId, container) {
 }
 
 // ─── Message render ───────────────────────────────────────────────────────────
-function renderMsgs(msgs) {
+function renderMsgs(msgs, conv) {
   const c = document.getElementById('messages');
   c.innerHTML = '';
   let lastDate = '';
@@ -3074,7 +3076,54 @@ function renderMsgs(msgs) {
     }
     c.appendChild(buildMsgEl(m));
   });
+  // Closing card al final si la conv está cerrada
+  if (conv && conv.status === 'closed') {
+    const closing = (conv.context && conv.context.closing_note) || null;
+    c.appendChild(buildClosingCard(closing, conv));
+  }
   c.scrollTop = c.scrollHeight;
+}
+
+function buildClosingCard(closing, conv) {
+  const catLabels = {
+    venta_cerrada:   { icon: '💰', text: 'Venta cerrada',   color: '#10b981' },
+    descartado:      { icon: '❌', text: 'Lead descartado',  color: '#ef4444' },
+    info:            { icon: 'ℹ️', text: 'Info entregada',   color: '#60a5fa' },
+    soporte_resuelto:{ icon: '🔧', text: 'Soporte resuelto', color: '#10b981' },
+    derivado:        { icon: '🔀', text: 'Derivado humano',  color: '#a78bfa' },
+    otro:            { icon: '📝', text: 'Otro',             color: '#9ca3af' },
+  };
+  const cat = closing && closing.category ? catLabels[closing.category] : null;
+  const color = cat ? cat.color : 'var(--text3)';
+  const summary = closing && closing.summary ? closing.summary : '';
+  const closedBy = closing && closing.closed_by ? closing.closed_by : '';
+  const closedAt = closing && closing.closed_at ? relTime(closing.closed_at) : '';
+
+  const wrap = document.createElement('div');
+  wrap.className = 'closing-event';
+  wrap.style.cssText = 'display:flex;justify-content:center;padding:12px 20px 18px';
+  const meta = [];
+  if (closedBy) meta.push('Cerrada por <strong>' + esc(closedBy) + '</strong>');
+  if (closedAt) meta.push(closedAt);
+  wrap.innerHTML = `
+    <div style="
+      max-width: 540px; width: 100%;
+      border: 1px solid ${color}33;
+      background: ${color}0d;
+      border-radius: 12px;
+      padding: 14px 18px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <span style="font-size:18px">${cat ? cat.icon : '✓'}</span>
+        <span style="font-size:12px;font-weight:700;letter-spacing:0.3px;text-transform:uppercase;color:${color}">
+          ${cat ? cat.text : 'Conversación cerrada'}
+        </span>
+        <span style="flex:1"></span>
+        <span style="font-size:11px;color:var(--text3)">${meta.join(' · ')}</span>
+      </div>
+      ${summary ? `<div style="font-size:13px;color:var(--text);line-height:1.5;white-space:pre-wrap;border-left:2px solid ${color}44;padding-left:10px;margin-top:6px">${esc(summary)}</div>` : `<div style="font-size:12px;color:var(--text3);font-style:italic">Sin resumen</div>`}
+    </div>`;
+  return wrap;
 }
 
 function filterMessages(query) {
