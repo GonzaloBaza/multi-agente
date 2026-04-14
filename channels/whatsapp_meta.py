@@ -146,6 +146,23 @@ async def process_whatsapp_message(payload: dict) -> None:
         except Exception as e:
             logger.warning("media_download_failed", media_id=media_id, error=str(e))
 
+    # ── STT: transcribir audios entrantes ──
+    # Si recibimos un audio, lo pasamos por Whisper. El texto reemplaza "[Audio]"
+    # para que los agentes IA (router, sales, collections, etc.) puedan entender
+    # al cliente y responder al contenido real de la nota de voz.
+    if data.get("msg_type") == "audio" and media_local_path:
+        try:
+            from integrations import stt
+            if stt.is_enabled():
+                transcription = await stt.transcribe_file(media_local_path, language="es")
+                if transcription:
+                    text = f"🎤 {transcription}"
+                    logger.info("audio_transcribed", phone=phone, chars=len(transcription))
+                else:
+                    text = "[Audio no transcribible]"
+        except Exception as e:
+            logger.warning("audio_transcription_failed", error=str(e))
+
     # Marcar como leído
     try:
         await wa.mark_as_read(message_id)
