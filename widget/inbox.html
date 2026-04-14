@@ -1735,7 +1735,7 @@ body {
   </div>
 
   <!-- CRM RIGHT PANEL -->
-  <div class="crm-panel collapsed" id="crmPanel">
+  <div class="crm-panel" id="crmPanel">
     <div class="crm-header">
       <div class="crm-title">👤 Perfil de Contacto</div>
       <button class="crm-toggle" onclick="toggleCRM()" title="Cerrar">✕</button>
@@ -1823,7 +1823,9 @@ let activeFilter = 'all';
 // activeQueue/activeChannel now in activeFilters object
 let activeLabel = 'ALL';
 let currentView = 'list';
-let crmOpen = false;
+// Contact panel abierto por default (persistido en localStorage).
+// El usuario puede colapsar/expandir con el botón ✕ y la preferencia queda.
+let crmOpen = localStorage.getItem('msk_crm_open') !== 'false';
 let eventSource = null;
 let windowTimer = null;
 
@@ -2696,12 +2698,22 @@ async function setLabel(sessionId, label) {
 // ─── CRM panel ────────────────────────────────────────────────────────────────
 function toggleCRM() {
   crmOpen = !crmOpen;
+  localStorage.setItem('msk_crm_open', crmOpen ? 'true' : 'false');
   const panel = document.getElementById('crmPanel');
   const rail = document.getElementById('crmRail');
   panel.classList.toggle('collapsed', !crmOpen);
   if (rail) rail.classList.toggle('hidden', crmOpen);
   if (crmOpen && activeSessionId) loadContactProfile(activeSessionId);
 }
+
+// Init: aplicar estado inicial del panel según preferencia persistida
+(function initCRMPanel() {
+  const panel = document.getElementById('crmPanel');
+  const rail = document.getElementById('crmRail');
+  if (!panel) return;
+  panel.classList.toggle('collapsed', !crmOpen);
+  if (rail) rail.classList.toggle('hidden', crmOpen);
+})();
 
 async function loadCRM(sessionId) {
   const body = document.getElementById('crmBody');
