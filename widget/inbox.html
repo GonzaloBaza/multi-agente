@@ -774,6 +774,50 @@ body {
 .note-del:hover { color: var(--red); }
 .note-input-area { display: flex; gap: 5px; margin-top: 8px; }
 
+/* ── Unified filters menu (Botmaker-style) ── */
+.filters-menu {
+  position: absolute;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  min-width: 260px;
+  max-height: 420px;
+  overflow-y: auto;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+  z-index: 200;
+  padding: 4px;
+}
+.fm-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px;
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+  border-radius: 6px;
+  user-select: none;
+}
+.fm-item:hover { background: var(--surface2); }
+.fm-item.active-parent { color: var(--primary); font-weight: 600; }
+.fm-icon { font-size: 14px; width: 20px; text-align: center; }
+.fm-label { flex: 1; }
+.fm-arrow { color: var(--text3); font-size: 10px; }
+.fm-count { font-size: 11px; color: var(--text3); padding: 1px 6px; background: var(--surface2); border-radius: 10px; }
+.fm-sep { height: 1px; background: var(--border); margin: 4px 0; }
+
+/* Submenu (cuando hacés click en una opción con ▸) */
+.fm-sub {
+  position: absolute;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  min-width: 220px;
+  max-height: 360px;
+  overflow-y: auto;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+  z-index: 201;
+  padding: 4px;
+}
+
 /* ── Snippets modal + picker (Respond.io style) ── */
 .modal-backdrop {
   position: fixed; inset: 0;
@@ -1467,27 +1511,18 @@ body {
       <button class="filter-btn" data-filter="bot" onclick="setFilter('bot',this)">Bot <span class="filter-badge" id="badge-bot">0</span></button>
     </div>
 
-    <!-- Advanced filter bar -->
+    <!-- Advanced filter bar: unified Botmaker-style -->
     <div class="filter-bar" id="filterBar">
-      <button class="filter-dropdown-btn" id="btnFilterQueue" onclick="toggleFilterPanel('queue', this)">
-        🔗 Cola <span class="caret">▶</span>
-      </button>
-      <button class="filter-dropdown-btn" id="btnFilterChannel" onclick="toggleFilterPanel('channel', this)">
-        📱 Canal <span class="caret">▶</span>
-      </button>
-      <button class="filter-dropdown-btn" id="btnFilterLabel" onclick="toggleFilterPanel('label', this)">
-        🏷️ Etiqueta <span class="caret">▶</span>
-      </button>
-      <button class="filter-dropdown-btn admin-only" id="btnFilterAgent" onclick="toggleFilterPanel('agent', this)" style="display:none">
-        🎧 En atención con <span class="caret">▶</span>
-      </button>
-      <button class="filter-dropdown-btn" id="btnFilterStatus" onclick="toggleFilterPanel('status', this)">
-        📊 Estado <span class="caret">▶</span>
+      <button class="filter-dropdown-btn" id="btnFiltersMain" onclick="toggleMainFiltersMenu(this)">
+        🧰 Filtros <span class="caret">▼</span>
       </button>
       <button class="filter-dropdown-btn" id="btnClearFilters" onclick="clearAllFilters()" style="display:none;color:var(--red);border-color:rgba(239,68,68,0.4)">
         ✕ Limpiar
       </button>
     </div>
+
+    <!-- Unified filter popup menu (Botmaker-style) -->
+    <div class="filters-menu" id="filtersMenu" style="display:none"></div>
     <!-- Active filter chips -->
     <div class="active-filters" id="activeFilters"></div>
 
@@ -1971,6 +2006,104 @@ function buildQueueFilter(userQueues, userRole) {
   const all = Object.values(ALL_QUEUES_BY_AREA).flat();
   availableQueues = (userRole === 'agente' && userQueues && userQueues.length > 0) ? userQueues : all;
 }
+
+// ── Unified filters menu (Botmaker-style) ──
+function toggleMainFiltersMenu(btnEl) {
+  const menu = document.getElementById('filtersMenu');
+  if (menu.style.display !== 'none' && menu.dataset.open === '1') {
+    menu.style.display = 'none';
+    menu.dataset.open = '0';
+    closeAllFilterSubs();
+    return;
+  }
+  const rect = btnEl.getBoundingClientRect();
+  menu.style.top = (rect.bottom + 4) + 'px';
+  menu.style.left = rect.left + 'px';
+  menu.innerHTML = buildMainFiltersMenu();
+  menu.style.display = 'block';
+  menu.dataset.open = '1';
+}
+
+function buildMainFiltersMenu() {
+  const canAgent = currentUser.role === 'admin' || currentUser.role === 'supervisor';
+  const items = [];
+
+  // Top quick toggles (tabs clásicos reconvertidos)
+  items.push({ icon: '📂', label: 'Todos', onclick: "setMainFilter('all')", count: conversations.length });
+  items.push({ icon: '🔴', label: 'No leídos', onclick: "setMainFilter('unread')", count: Object.values(unreadCounts).filter(n => n > 0).length });
+  items.push({ icon: '⏳', label: 'En cola (esperando agente)', onclick: "setMainFilter('queue')" });
+  items.push({ icon: '✋', label: 'En atención humana', onclick: "setMainFilter('human')" });
+  items.push({ icon: '🤖', label: 'Con bot', onclick: "setMainFilter('bot')" });
+  items.push({ sep: true });
+
+  // Submenús
+  items.push({ icon: '📱', label: 'Por canal',    sub: 'channel',  parent: !!activeFilters.channel });
+  items.push({ icon: '🔗', label: 'Por cola',     sub: 'queue',    parent: activeFilters.queues.length > 0 });
+  items.push({ icon: '🏷️', label: 'Por etiqueta', sub: 'label',    parent: !!activeFilters.label });
+  if (canAgent) {
+    items.push({ icon: '🎧', label: 'En atención con', sub: 'agent', parent: activeFilters.agents.length > 0 });
+  }
+  items.push({ icon: '📊', label: 'Estado',        sub: 'status',  parent: !!activeFilters.status });
+  items.push({ sep: true });
+  items.push({ icon: '✕', label: 'Limpiar todos los filtros', onclick: 'clearAllFilters(); toggleMainFiltersMenu(document.getElementById(\'btnFiltersMain\'))' });
+
+  return items.map(it => {
+    if (it.sep) return '<div class="fm-sep"></div>';
+    const countHtml = it.count !== undefined ? `<span class="fm-count">${it.count}</span>` : '';
+    if (it.sub) {
+      return `<div class="fm-item ${it.parent?'active-parent':''}" onclick="openFilterSub('${it.sub}', this, event)">
+        <span class="fm-icon">${it.icon}</span>
+        <span class="fm-label">${it.label}</span>
+        <span class="fm-arrow">▸</span>
+      </div>`;
+    }
+    return `<div class="fm-item" onclick="${it.onclick}">
+      <span class="fm-icon">${it.icon}</span>
+      <span class="fm-label">${it.label}</span>
+      ${countHtml}
+    </div>`;
+  }).join('');
+}
+
+function setMainFilter(f) {
+  // Reusa el setFilter existente (all/unread/queue/human/bot)
+  activeFilter = f;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.toggle('active', b.dataset.filter === f));
+  closeAllFilterSubs();
+  document.getElementById('filtersMenu').style.display = 'none';
+  document.getElementById('filtersMenu').dataset.open = '0';
+  applyFilters();
+}
+
+function openFilterSub(type, itemEl, ev) {
+  if (ev) ev.stopPropagation();
+  // Cerrar otros sub-menús
+  closeAllFilterSubs();
+  const menu = document.getElementById('filtersMenu');
+  const rect = itemEl.getBoundingClientRect();
+  const sub = document.createElement('div');
+  sub.className = 'fm-sub';
+  sub.id = 'filtersSubMenu';
+  sub.innerHTML = buildPanelHTML(type);
+  sub.style.top = rect.top + 'px';
+  sub.style.left = (rect.right + 6) + 'px';
+  document.body.appendChild(sub);
+}
+
+function closeAllFilterSubs() {
+  const sub = document.getElementById('filtersSubMenu');
+  if (sub) sub.remove();
+}
+
+// Cerrar menú al hacer click afuera
+document.addEventListener('click', (e) => {
+  const menu = document.getElementById('filtersMenu');
+  if (!menu || menu.dataset.open !== '1') return;
+  if (e.target.closest('#filtersMenu') || e.target.closest('#btnFiltersMain') || e.target.closest('#filtersSubMenu')) return;
+  menu.style.display = 'none';
+  menu.dataset.open = '0';
+  closeAllFilterSubs();
+});
 
 function toggleFilterPanel(type, btnEl) {
   const panel = document.getElementById('filterPanel');
@@ -2578,6 +2711,8 @@ async function selectConv(sessionId) {
   updateBadges();
   applyFilters();
   await loadConv(sessionId);
+  // Re-afirmar estado del panel según preferencia (por si algo lo cerró)
+  applyCRMPanelState();
   if (crmOpen) loadContactProfile(sessionId);
 }
 
@@ -2709,14 +2844,20 @@ function toggleCRM() {
   if (crmOpen && activeSessionId) loadContactProfile(activeSessionId);
 }
 
-// Init: aplicar estado inicial del panel según preferencia persistida
-(function initCRMPanel() {
+// Init: aplicar estado inicial del panel según preferencia persistida.
+// Usamos DOMContentLoaded para garantizar que el DOM esté listo cuando corre.
+function applyCRMPanelState() {
   const panel = document.getElementById('crmPanel');
   const rail = document.getElementById('crmRail');
   if (!panel) return;
   panel.classList.toggle('collapsed', !crmOpen);
   if (rail) rail.classList.toggle('hidden', crmOpen);
-})();
+}
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', applyCRMPanelState);
+} else {
+  applyCRMPanelState();
+}
 
 async function loadCRM(sessionId) {
   const body = document.getElementById('crmBody');
