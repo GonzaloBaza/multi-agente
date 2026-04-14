@@ -3094,7 +3094,7 @@ function renderMsgs(msgs, conv) {
   });
   // Closing card al final si la conv está cerrada
   if (conv && conv.status === 'closed') {
-    const closing = (conv.context && conv.context.closing_note) || null;
+    const closing = conv.closing_note || (conv.context && conv.context.closing_note) || null;
     c.appendChild(buildClosingCard(closing, conv));
   }
   c.scrollTop = c.scrollHeight;

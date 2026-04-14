@@ -326,6 +326,9 @@ async def get_conversation(session_id: str, user: dict = Depends(get_current_use
 
     label = await _get_label(session_id)
 
+    # Contexto (incluye closing_note si la conv está cerrada con resumen)
+    context = conv.context or {}
+
     return {
         "session_id": session_id,
         "channel": conv.channel.value if hasattr(conv, "channel") else "widget",
@@ -338,6 +341,8 @@ async def get_conversation(session_id: str, user: dict = Depends(get_current_use
         "agent_name": agent_name,
         "label": label,
         "messages": messages,
+        "context": context,
+        "closing_note": context.get("closing_note"),
     }
 
 
