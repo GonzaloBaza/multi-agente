@@ -406,12 +406,15 @@ async function nuclearReset() {
     const lines = [
       d.message,
       '',
-      'Redis:       ' + d.redis.deleted + ' claves',
-      'Customers:   ' + d.supabase.customers_deleted,
-      'Auth users:  ' + d.supabase.auth_users_deleted,
+      'Redis:          ' + d.redis.deleted + ' claves',
+      'Conversations:  ' + (d.postgres ? d.postgres.conversations_deleted : '?'),
+      'Messages:       ' + (d.postgres ? d.postgres.messages_deleted : '?'),
+      'Customers:      ' + d.supabase.customers_deleted,
+      'Auth users:     ' + d.supabase.auth_users_deleted,
     ];
-    if (d.supabase.customers_error) lines.push('⚠️ Error customers: ' + d.supabase.customers_error);
-    if (d.supabase.auth_error)      lines.push('⚠️ Error auth: ' + d.supabase.auth_error);
+    if (d.postgres && d.postgres.error) lines.push('⚠️ Error postgres: ' + d.postgres.error);
+    if (d.supabase.customers_error)     lines.push('⚠️ Error customers: ' + d.supabase.customers_error);
+    if (d.supabase.auth_error)          lines.push('⚠️ Error auth: ' + d.supabase.auth_error);
     alert(lines.join('\n'));
     selectedKey = null;
     document.getElementById('valueHeader').style.display = 'none';

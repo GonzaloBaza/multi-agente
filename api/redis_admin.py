@@ -225,7 +225,29 @@ async def nuclear_reset(user: dict = Depends(require_role("admin"))):
             redis_by_pattern[pattern] = len(keys)
             redis_total += len(keys)
 
-    # 2) Supabase — customers table
+    # 2) Postgres — conversations + messages + conversation_stage (cascade)
+    pg_conversations = 0
+    pg_messages = 0
+    pg_error = None
+    try:
+        from memory import postgres_store as pg
+        if pg.is_enabled():
+            pool = await pg.get_pool()
+            async with pool.acquire() as conn:
+                # messages y conversation_stage tienen ON DELETE CASCADE,
+                # pero los borramos explícitamente para contar.
+                pg_messages = int(await conn.fetchval(
+                    "WITH d AS (DELETE FROM public.messages RETURNING 1) SELECT COUNT(*) FROM d"
+                ) or 0)
+                await conn.execute("DELETE FROM public.conversation_stage")
+                pg_conversations = int(await conn.fetchval(
+                    "WITH d AS (DELETE FROM public.conversations RETURNING 1) SELECT COUNT(*) FROM d"
+                ) or 0)
+    except Exception as e:
+        pg_error = str(e)
+        logger.error("nuclear_reset_postgres_failed", error=pg_error)
+
+    # 3) Supabase — customers table
     customers_deleted = 0
     customers_error = None
     try:
@@ -234,7 +256,7 @@ async def nuclear_reset(user: dict = Depends(require_role("admin"))):
         customers_error = str(e)
         logger.error("nuclear_reset_customers_failed", error=customers_error)
 
-    # 3) Supabase — auth users (preservar perfiles de agentes)
+    # 4) Supabase — auth users (preservar perfiles de agentes)
     auth_deleted = 0
     auth_error = None
     try:
@@ -248,12 +270,19 @@ async def nuclear_reset(user: dict = Depends(require_role("admin"))):
     logger.info(
         "nuclear_reset",
         redis_deleted=redis_total,
+        pg_conversations=pg_conversations,
+        pg_messages=pg_messages,
         customers_deleted=customers_deleted,
         auth_deleted=auth_deleted,
         by=user.get("username"),
     )
     return {
         "redis": {"deleted": redis_total, "by_pattern": redis_by_pattern},
+        "postgres": {
+            "conversations_deleted": pg_conversations,
+            "messages_deleted": pg_messages,
+            "error": pg_error,
+        },
         "supabase": {
             "customers_deleted": customers_deleted,
             "customers_error": customers_error,
@@ -262,8 +291,9 @@ async def nuclear_reset(user: dict = Depends(require_role("admin"))):
         },
         "message": (
             f"☢️ Reset nuclear completado — "
-            f"Redis: {redis_total} claves, "
-            f"Supabase: {customers_deleted} customers + {auth_deleted} auth users"
+            f"Redis: {redis_total} | "
+            f"Postgres: {pg_conversations} conv + {pg_messages} msg | "
+            f"Supabase: {customers_deleted} customers + {auth_deleted} auth"
         ),
     }
 
