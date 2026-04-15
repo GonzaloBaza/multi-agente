@@ -187,17 +187,18 @@ def build_brief_md(item: dict, country: str) -> str:
         lines.append(f"**URL:** {url}")
     lines.append(f"**País:** {COUNTRY_LABEL.get(country.lower(), country.upper())}  ·  **Slug:** `{slug}`")
 
-    # Precio
+    # Precio — REGLA DE MARKETING: siempre hablamos en CUOTAS, nunca total.
+    # El agente tiene que vender cuota, no precio total (menor fricción).
     prices = item.get("prices") or {}
     currency = prices.get("currency") or ""
     total = _to_float(prices.get("total_price")) or _to_float(prices.get("regular_price"))
     max_inst = _to_int(prices.get("max_installments"))
     inst_val = _to_float(prices.get("price_installments"))
-    if total:
-        price_line = f"**Precio:** {currency} {total:,.0f}"
-        if max_inst and inst_val:
-            price_line += f"  ·  **{max_inst} cuotas de {currency} {inst_val:,.2f}**"
-        lines.append(price_line)
+    if max_inst and inst_val:
+        lines.append(f"**Precio (comunicar SIEMPRE en cuotas):** {max_inst} cuotas de {currency} {inst_val:,.2f}")
+    elif total:
+        # Fallback raro: no vino el dato de cuotas (curso al contado)
+        lines.append(f"**Precio:** {currency} {total:,.0f} (pago único — no hay cuotas disponibles)")
 
     # Datos técnicos
     duration = item.get("duration")
@@ -311,15 +312,70 @@ def build_brief_md(item: dict, country: str) -> str:
         lines.append("")
 
     # ── Instituciones avalantes
+    # Separamos explícitamente las certificaciones JURISDICCIONALES AR
+    # (colegios/consejos médicos provinciales que exigen matrícula) del
+    # aval principal (UDIMA, internacional) y avales de otros países.
     insts = (item.get("sections") or {}).get("institutions") or []
     if insts:
-        lines.append("## Instituciones avalantes")
-        for inst in insts[:12]:
-            t = inst.get("title", "")
+        is_ar = country.lower() == "ar"
+        # Heurística: el aval es jurisdiccional AR si la descripción dice
+        # "matriculados" o el título menciona Colegio/Consejo + provincia argentina.
+        jurisdiccionales_ar: list[dict] = []
+        aval_principal: list[dict] = []
+        otros_paises: list[dict] = []
+        for inst in insts:
             d = html_to_text(inst.get("description", ""))
-            if t:
-                lines.append(f"- **{t}**" + (f" — {d}" if d else ""))
-        lines.append("")
+            t = inst.get("title", "")
+            dl = d.lower()
+            tl = t.lower()
+            if ("matricul" in dl and "argentina" in dl) or \
+               any(x in tl for x in ["colegio de médicos", "consejo médico", "consejo superior médico", "colmedcat", "colememi", "csmlp", "cmsc", "cmsf"]):
+                jurisdiccionales_ar.append(inst)
+            elif "udima" in tl or "internacional" in dl.lower():
+                aval_principal.append(inst)
+            else:
+                otros_paises.append(inst)
+
+        lines.append("## Instituciones avalantes")
+
+        if aval_principal:
+            lines.append("### Aval principal (todos los países)")
+            for inst in aval_principal:
+                t = inst.get("title", "")
+                d = html_to_text(inst.get("description", ""))
+                if t:
+                    lines.append(f"- **{t}**" + (f" — {d}" if d else ""))
+            lines.append("")
+
+        if is_ar and jurisdiccionales_ar:
+            lines.append("### Certificaciones de alcance jurisdiccional en Argentina")
+            lines.append(
+                "> Las siguientes certificaciones **solo aplican si el profesional "
+                "está matriculado** en cada institución. No son obligatorias — son "
+                "avales adicionales disponibles para quienes ya tienen matrícula."
+            )
+            for inst in jurisdiccionales_ar:
+                t = inst.get("title", "")
+                if t:
+                    lines.append(f"- **{t}**")
+            lines.append("")
+            lines.append(
+                "**Cómo venderlo**: cuando un médico pregunte por avales, primero "
+                "mencioná el aval principal (UDIMA, internacional). Si pregunta por "
+                "avales locales AR o si vive en Misiones / Catamarca / La Pampa / "
+                "Santa Cruz / Santa Fe, aclarale que también puede obtener el aval "
+                "de su consejo/colegio provincial **si está matriculado ahí**."
+            )
+            lines.append("")
+
+        if otros_paises:
+            lines.append("### Avales en otros países (no aplican para este usuario)")
+            for inst in otros_paises[:8]:
+                t = inst.get("title", "")
+                d = html_to_text(inst.get("description", ""))
+                if t:
+                    lines.append(f"- {t}" + (f" — {d}" if d else ""))
+            lines.append("")
 
     # ── Certificaciones adicionales
     certs = item.get("certificacion_relacionada") or []
