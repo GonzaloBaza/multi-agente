@@ -208,6 +208,14 @@ def create_app() -> FastAPI:
         html_file = Path(__file__).parent / "widget" / "test.html"
         return FileResponse(str(html_file), media_type="text/html")
 
+    @app.get("/demo/curso/cardiologia-amir")
+    async def serve_demo_cardiologia_amir():
+        """Página de prueba: simula estar en /curso/cardiologia-amir.
+        El widget se carga con data-page-slug='cardiologia-amir', lo que
+        permite probar el routing contextual (pre-compra vs cobranzas)."""
+        html_file = Path(__file__).parent / "widget" / "curso_cardiologia_amir.html"
+        return FileResponse(str(html_file), media_type="text/html")
+
     @app.get("/test")
     async def serve_test_redirect():
         """Redirige /test → /msk."""

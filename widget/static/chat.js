@@ -61,6 +61,12 @@
       (scriptEl && scriptEl.getAttribute("data-user-courses")) ||
       (_storedUser && Array.isArray(_storedUser.courses) ? _storedUser.courses.join(",") : "") ||
       "",
+    // Slug del curso que está viendo el usuario (si aplica). Lo usa el router
+    // para desambiguar preguntas de pre-compra vs cobranzas.
+    pageSlug:
+      (scriptEl && scriptEl.getAttribute("data-page-slug")) ||
+      (typeof window !== "undefined" && window.MSK_PAGE_SLUG) ||
+      "",
     quickReplies: (scriptEl && scriptEl.getAttribute("data-quick-replies")) || "Cursos online 💻|Asesoramiento 🤝",
     avatar: (scriptEl && scriptEl.getAttribute("data-avatar")) || "🩺",
     position: (scriptEl && scriptEl.getAttribute("data-position")) || "right",
@@ -367,6 +373,7 @@
       user_name: CONFIG.userName,
       user_phone: CONFIG.userPhone,
       user_courses: CONFIG.userCourses,
+      page_slug: CONFIG.pageSlug,
     };
     if (pendingGreeting) {
       payload.initial_greeting = pendingGreeting;
@@ -690,6 +697,7 @@
           user_email: CONFIG.email,
           user_name: CONFIG.userName,
           user_courses: CONFIG.userCourses,
+          page_slug: CONFIG.pageSlug,
         }),
       });
       if (!res.ok) throw new Error("HTTP " + res.status);
@@ -758,6 +766,7 @@
           user_email: CONFIG.email,
           user_name: CONFIG.userName,
           user_courses: CONFIG.userCourses,
+          page_slug: CONFIG.pageSlug,
         }),
       });
       if (!res.ok) return;
