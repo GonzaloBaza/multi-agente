@@ -131,9 +131,18 @@ async def fetch_country(country: str, timeout: float = 60.0) -> list[dict]:
         logger.warning("msk_courses_unexpected_format", country=country, type=type(data).__name__)
         return []
 
-    # Filtrar solo cursos (el endpoint a veces devuelve certificaciones también)
-    courses = [d for d in data if (d.get("resource") == "course") and d.get("slug")]
-    logger.info("msk_courses_fetched", country=country, total=len(data), courses=len(courses))
+    # El query param `resource=course` ya filtra del lado del WP. Acá solo
+    # validamos que venga con slug+title (el campo `resource` en el payload
+    # es inconsistente entre versiones del plugin MSK-API).
+    courses = [d for d in data if d.get("slug") and d.get("title")]
+    resources_seen = set(d.get("resource") for d in data if d.get("resource") is not None)
+    logger.info(
+        "msk_courses_fetched",
+        country=country,
+        total=len(data),
+        courses=len(courses),
+        resources_seen=list(resources_seen)[:5],
+    )
     return courses
 
 
