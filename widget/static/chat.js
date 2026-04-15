@@ -505,19 +505,8 @@
       startPolling();
     }
     if (!hadHistory) {
-      if (CONFIG.email) {
-        // Usuario logueado: pedir saludo personalizado al backend
-        await fetchPersonalizedGreeting();
-      } else {
-        // Usuario anónimo: saludo genérico estático
-        setTimeout(() => {
-          appendMessage("bot", CONFIG.greeting);
-          if (CONFIG.quickReplies) {
-            const btns = CONFIG.quickReplies.split('|').map(s => s.trim()).filter(Boolean);
-            showQuickReplies(btns);
-          }
-        }, 600);
-      }
+      // Siempre pedir saludo al backend (inicializa la máquina de estados del menú)
+      await fetchPersonalizedGreeting();
     }
   }
 
@@ -594,12 +583,12 @@
       }
     } catch (err) {
       hideTyping();
-      // Fallback al saludo genérico si algo falla
-      appendMessage("bot", CONFIG.greeting);
-      if (CONFIG.quickReplies) {
-        const btns = CONFIG.quickReplies.split('|').map(s => s.trim()).filter(Boolean);
-        showQuickReplies(btns);
-      }
+      // Fallback si el backend falla
+      const fallbackGreeting = CONFIG.greeting || "¡Hola! 😊 Soy tu asistente virtual de MSK. Estoy aquí para guiarte.";
+      appendMessage("bot", fallbackGreeting);
+      const fallbackBtns = (CONFIG.quickReplies || "Explorar cursos 📖|Asistencia 📩 💻")
+        .split('|').map(s => s.trim()).filter(Boolean);
+      showQuickReplies(fallbackBtns);
       console.error("[CM Widget] greeting failed:", err);
     }
   }
