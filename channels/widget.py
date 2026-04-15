@@ -277,7 +277,8 @@ async def process_widget_message(
                 "El usuario acaba de abrir el chat. "
                 "Generá UN saludo breve (2-3 oraciones), cálido y personalizado. "
                 "Si sabés el nombre, usá solo el primero. "
-                "Si tenés sus cursos finalizados, podés mencionarlos brevemente. "
+                "Si conocés sus cursos, podés mencionar UNO O DOS usando el nombre EXACTO "
+                "que figura en los datos — nunca parafrasees ni inventes nombres de cursos. "
                 "Invitalo a consultar. "
                 "No listés datos. Solo el saludo, sin explicaciones."
             )
