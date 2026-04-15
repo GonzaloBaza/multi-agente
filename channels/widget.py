@@ -327,11 +327,13 @@ async def process_widget_message(
     # INIT: saludo personalizado + botones del menú
     # ─────────────────────────────────────────────────────────────────────────
     if message_text == "__widget_init__":
-        await log_event(session_id, "info", {
+        await log_event(session_id, "info" if user_email else "error", {
             "action": "widget_init",
             "detail": (
-                f"Email frontend: {user_email or '(anónimo)'} | "
+                f"Email frontend: {user_email or '❌ NO RECIBIDO (anónimo)'} | "
                 f"Nombre: {user_name or '—'} | "
+                f"Cursos: {user_courses[:50] if user_courses else '—'} | "
+                f"Página: {page_slug or '—'} | "
                 f"Sesión nueva: {is_new}"
             ),
         })

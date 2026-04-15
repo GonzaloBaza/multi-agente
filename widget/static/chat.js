@@ -508,8 +508,50 @@
       startPolling();
     }
     if (!hadHistory) {
+      // Esperar hasta 2s a que msk-front setee window.CM_USER / atributos de email
+      // (algunos front loguean al usuario DESPUÉS de que el script carga)
+      await waitForUserData(2000);
       // Siempre pedir saludo al backend (inicializa la máquina de estados del menú)
       await fetchPersonalizedGreeting();
+    }
+  }
+
+  // ─── Espera a que msk-front setee los datos del usuario ───────────────────
+  // Revisa cada 200ms durante `timeoutMs` si apareció email en:
+  //   1. window.CM_USER  = { email, name, phone, courses }
+  //   2. scriptEl data-user-email / data-email (por si se setea async)
+  //   3. meta tag <meta name="msk-user-email" content="...">
+  async function waitForUserData(timeoutMs) {
+    if (CONFIG.email) return; // ya lo tenemos, no esperar
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      // 1. window.CM_USER
+      if (window.CM_USER && window.CM_USER.email) {
+        CONFIG.email = window.CM_USER.email;
+        CONFIG.userName = window.CM_USER.name || CONFIG.userName;
+        CONFIG.userPhone = window.CM_USER.phone || CONFIG.userPhone;
+        CONFIG.userCourses = window.CM_USER.courses || CONFIG.userCourses;
+        return;
+      }
+      // 2. data-* attribute se actualizó
+      if (scriptEl) {
+        const e2 = scriptEl.getAttribute("data-user-email") || scriptEl.getAttribute("data-email");
+        if (e2) {
+          CONFIG.email = e2;
+          const n2 = scriptEl.getAttribute("data-user-name");
+          if (n2) CONFIG.userName = n2;
+          const c2 = scriptEl.getAttribute("data-user-courses");
+          if (c2) CONFIG.userCourses = c2;
+          return;
+        }
+      }
+      // 3. meta tag
+      const meta = document.querySelector('meta[name="msk-user-email"]');
+      if (meta && meta.content) {
+        CONFIG.email = meta.content;
+        return;
+      }
+      await new Promise(r => setTimeout(r, 200));
     }
   }
 
