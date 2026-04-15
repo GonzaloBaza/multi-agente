@@ -18,6 +18,18 @@
     document.querySelector('script[src*="chat.js"]') ||
     document.querySelector('script[src*="widget.js"]');
 
+  // Fallback: leer datos del usuario del localStorage (test.html guarda 'customer_user')
+  function _readStoredUser() {
+    try {
+      const raw = localStorage.getItem("customer_user");
+      if (!raw) return null;
+      return JSON.parse(raw);
+    } catch (e) {
+      return null;
+    }
+  }
+  const _storedUser = _readStoredUser();
+
   const CONFIG = {
     country: (scriptEl && scriptEl.getAttribute("data-country")) || "AR",
     apiUrl:
@@ -32,10 +44,23 @@
     greeting:
       (scriptEl && scriptEl.getAttribute("data-greeting")) ||
       "¡Hola! Soy tu asesor de cursos médicos. ¿En qué especialidad estás buscando capacitarte?",
-    email: (scriptEl && scriptEl.getAttribute("data-user-email")) || (scriptEl && scriptEl.getAttribute("data-email")) || "",
-    userName: (scriptEl && scriptEl.getAttribute("data-user-name")) || "",
-    userPhone: (scriptEl && scriptEl.getAttribute("data-user-phone")) || "",
-    userCourses: (scriptEl && scriptEl.getAttribute("data-user-courses")) || "",
+    email:
+      (scriptEl && scriptEl.getAttribute("data-user-email")) ||
+      (scriptEl && scriptEl.getAttribute("data-email")) ||
+      (_storedUser && _storedUser.email) ||
+      "",
+    userName:
+      (scriptEl && scriptEl.getAttribute("data-user-name")) ||
+      (_storedUser && _storedUser.name) ||
+      "",
+    userPhone:
+      (scriptEl && scriptEl.getAttribute("data-user-phone")) ||
+      (_storedUser && _storedUser.phone) ||
+      "",
+    userCourses:
+      (scriptEl && scriptEl.getAttribute("data-user-courses")) ||
+      (_storedUser && Array.isArray(_storedUser.courses) ? _storedUser.courses.join(",") : "") ||
+      "",
     quickReplies: (scriptEl && scriptEl.getAttribute("data-quick-replies")) || "Cursos online 💻|Asesoramiento 🤝",
     avatar: (scriptEl && scriptEl.getAttribute("data-avatar")) || "🩺",
     position: (scriptEl && scriptEl.getAttribute("data-position")) || "right",
@@ -549,6 +574,15 @@
       const meta = document.querySelector('meta[name="msk-user-email"]');
       if (meta && meta.content) {
         CONFIG.email = meta.content;
+        return;
+      }
+      // 4. localStorage (test.html guarda customer_user)
+      const u = _readStoredUser();
+      if (u && u.email) {
+        CONFIG.email = u.email;
+        if (u.name) CONFIG.userName = u.name;
+        if (u.phone) CONFIG.userPhone = u.phone;
+        if (Array.isArray(u.courses)) CONFIG.userCourses = u.courses.join(",");
         return;
       }
       await new Promise(r => setTimeout(r, 200));
