@@ -312,9 +312,9 @@ async def process_widget_message(
             logger.warning("widget_init_greeting_failed", error=str(e))
             nombre = user_name.split()[0] if user_name else ""
             greeting = (
-                f"¡Hola{' ' + nombre if nombre else ''}! 👋 "
-                "Soy tu asesor de MSK Latam. "
-                "¿En qué te puedo ayudar hoy?"
+                f"¡Hola{' ' + nombre if nombre else ''}! 😊 "
+                "Soy tu asistente virtual de MSK. "
+                "Estoy aquí para guiarte y brindarte la información que necesites."
             )
 
         # Agregar botones del menú principal

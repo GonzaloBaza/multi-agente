@@ -28,8 +28,8 @@ S_EMAIL = "pending_email"
 S_DONE = "done"
 
 # ── Botones ──────────────────────────────────────────────────────────────────
-MAIN_BUTTONS = ["🎓 Cursos online", "🤝 Asesoramiento"]
-ASESORIA_BUTTONS = ["👤 Consultas de alumnos", "💳 Cobranzas y pagos"]
+MAIN_BUTTONS    = ["Explorar cursos 📖", "Asistencia 📩 💻"]
+ASESORIA_BUTTONS = ["Soporte Alumnos 🛠️", "Soporte Cobros 🤝"]
 
 _EMAIL_RE = re.compile(r"[a-zA-Z0-9_.+%-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
 
@@ -131,12 +131,12 @@ async def process_step(
             logger.info("wflow_to_agent", session=session_id, agent="ventas")
             return {"needs_routing": True, "forced_agent": "ventas", "collected_email": None}
 
-        if match:  # "Asesoramiento" (único otro botón)
+        if match:  # "Asistencia" (único otro botón)
             await _set(redis, session_id, S_ASESORIA)
             logger.info("wflow_submenu", session=session_id)
             return {
                 "response": fmt_buttons(
-                    "¿Sobre qué necesitás asesoramiento?",
+                    "¿Con qué necesitás asistencia?",
                     ASESORIA_BUTTONS,
                 ),
                 "needs_routing": False,
@@ -151,9 +151,9 @@ async def process_step(
     if state == S_ASESORIA:
         match = _match(user_message, ASESORIA_BUTTONS)
 
-        if match and ("alumno" in _alpha(match) or "consulta" in _alpha(match)):
+        if match and ("alumno" in _alpha(match) or "soporte" in _alpha(match) and "cobro" not in _alpha(match)):
             next_agent = "post_venta"
-        elif match and ("cobranza" in _alpha(match) or "pago" in _alpha(match)):
+        elif match and ("cobro" in _alpha(match) or "cobranza" in _alpha(match) or "pago" in _alpha(match)):
             next_agent = "cobranzas"
         else:
             await _set(redis, session_id, S_DONE)
