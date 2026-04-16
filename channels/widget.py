@@ -830,6 +830,19 @@ async def process_widget_message(
         )
         ctx = "\n".join(ctx_lines) if ctx_lines else ""
 
+        # Sincronizar nombre del CRM al perfil de la conversación
+        _init_dirty = False
+        _init_name = _signals.get("profile_name", "")
+        if _init_name and not conversation.user_profile.name:
+            conversation.user_profile.name = _init_name
+            _init_dirty = True
+        for _cl in ctx_lines:
+            if _cl.startswith("Teléfono:") and not conversation.user_profile.phone:
+                conversation.user_profile.phone = _cl.split(":", 1)[1].strip()
+                _init_dirty = True
+        if _init_dirty:
+            await store.save(conversation)
+
         # Generar saludo con IA
         try:
             from langchain_openai import ChatOpenAI
@@ -1007,6 +1020,25 @@ async def process_widget_message(
     user_context_lines, user_signals = await _build_user_context(
         user_email, store, session_id, user_courses, page_slug
     )
+
+    # ── Sincronizar datos del CRM al perfil de la conversación ──────────────
+    # _build_user_context resuelve el nombre, teléfono y cursos desde
+    # Zoho/Supabase pero esos datos solo se usaban para el LLM context.
+    # Ahora los persistimos en conversation.user_profile para que el inbox
+    # muestre datos completos del contacto.
+    _profile_dirty = False
+    crm_name = user_signals.get("profile_name", "")
+    if crm_name and not conversation.user_profile.name:
+        conversation.user_profile.name = crm_name
+        _profile_dirty = True
+    # Extraer teléfono y profesión de las líneas de contexto
+    for _ctx_line in user_context_lines:
+        if _ctx_line.startswith("Teléfono:") and not conversation.user_profile.phone:
+            conversation.user_profile.phone = _ctx_line.split(":", 1)[1].strip()
+            _profile_dirty = True
+    if _profile_dirty:
+        await store.save(conversation)
+
     if user_context_lines:
         await log_event(session_id, "info", {
             "action": "contexto_usuario_listo",
