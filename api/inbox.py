@@ -227,41 +227,33 @@ def is_within_business_hours() -> bool:
 # ─── Endpoints ────────────────────────────────────────────────────────────────
 
 @router.get("/conversations")
-async def list_conversations(user: dict = Depends(get_current_user)):
+async def list_conversations(
+    user: dict = Depends(get_current_user),
+    date_from: str | None = None,
+    date_to: str | None = None,
+    limit: int = 500,
+    offset: int = 0,
+):
     """
-    Lista todas las sesiones de widget activas en Redis.
-    Devuelve hasta 100 sesiones ordenadas por actividad reciente.
+    Lista conversaciones desde Postgres (fuente histórica permanente).
+    Enriquece con metadata de Redis para las activas (bot_disabled, label, queue, assigned).
     """
+    from memory import postgres_store
+
     store = await get_conversation_store()
 
-    # Buscar todas las claves idx:widget:* e idx:whatsapp:* usando SCAN
-    keys = []
-    async for key in store._redis.scan_iter("idx:widget:*", count=200):
-        keys.append(key)
-    async for key in store._redis.scan_iter("idx:whatsapp:*", count=200):
-        keys.append(key)
+    # ── Fuente primaria: Postgres ──
+    rows = await postgres_store.list_conversations_summary(
+        limit=limit,
+        offset=offset,
+        date_from=date_from,
+        date_to=date_to,
+    )
 
+    # ── Enriquecer con Redis (metadata volátil) ──
     conversations = []
-    for key in keys:
-        raw_key = key.decode() if isinstance(key, bytes) else key
-        if "idx:widget:" in raw_key:
-            channel = Channel.WIDGET
-            session_id = raw_key.split("idx:widget:")[-1]
-        else:
-            channel = Channel.WHATSAPP
-            session_id = raw_key.split("idx:whatsapp:")[-1]
-
-        conv = await store.get_by_external(channel, session_id)
-        if not conv:
-            continue
-
-        # Último mensaje
-        last_msg = None
-        last_ts = ""
-        if conv.messages:
-            last = conv.messages[-1]
-            last_msg = last.content[:80] + ("…" if len(last.content) > 80 else "")
-            last_ts = last.timestamp.isoformat()
+    for row in rows:
+        session_id = row["session_id"]
 
         bot_disabled = await _is_bot_disabled(session_id)
         label = await _get_label(session_id)
@@ -272,28 +264,30 @@ async def list_conversations(user: dict = Depends(get_current_user)):
         assigned_name_raw = await store._redis.get(f"conv_assigned_name:{session_id}")
         assigned_to_name = assigned_name_raw.decode() if isinstance(assigned_name_raw, bytes) else (assigned_name_raw or "")
 
+        phone = row["phone"] or ""
+        if not phone and row["channel"] == "whatsapp":
+            phone = session_id
+
         conversations.append({
             "session_id": session_id,
-            "channel": channel.value,
-            "name": conv.user_profile.name or "",
-            "email": conv.user_profile.email or "",
-            "phone": conv.user_profile.phone or session_id if channel == Channel.WHATSAPP else "",
-            "country": conv.user_profile.country or "AR",
-            "status": conv.status.value,
+            "channel": row["channel"],
+            "name": row["name"] or "",
+            "email": row["email"] or "",
+            "phone": phone,
+            "country": row["country"] or "AR",
+            "status": row["status"],
             "bot_disabled": bot_disabled,
             "label": label,
             "queue": queue,
             "assigned_to": assigned_to,
             "assigned_to_name": assigned_to_name,
-            "message_count": len(conv.messages),
-            "last_message": last_msg or "",
-            "last_timestamp": last_ts,
-            "created_at": conv.created_at.isoformat() if hasattr(conv, "created_at") else "",
+            "message_count": row["message_count"],
+            "last_message": row["last_message"],
+            "last_timestamp": row["last_timestamp"],
+            "created_at": row["created_at"],
         })
 
-    # Ordenar por último timestamp desc
-    conversations.sort(key=lambda x: x["last_timestamp"], reverse=True)
-    return {"conversations": conversations[:100]}
+    return {"conversations": conversations}
 
 
 @router.get("/conversations/{session_id}")

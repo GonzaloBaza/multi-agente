@@ -63,10 +63,30 @@
       "",
     // Slug del curso que está viendo el usuario (si aplica). Lo usa el router
     // para desambiguar preguntas de pre-compra vs cobranzas.
-    pageSlug:
-      (scriptEl && scriptEl.getAttribute("data-page-slug")) ||
-      (typeof window !== "undefined" && window.MSK_PAGE_SLUG) ||
-      "",
+    // Prioridad: data-page-slug > window.MSK_PAGE_SLUG > auto-detect de URL
+    // Sanitiza cualquier input: "/curso/slug-name/" → "slug-name"
+    pageSlug: (function() {
+      var raw =
+        (scriptEl && scriptEl.getAttribute("data-page-slug")) ||
+        (typeof window !== "undefined" && window.MSK_PAGE_SLUG) ||
+        '';
+      // Auto-detect de URL si no vino explícito
+      if (!raw) {
+        try {
+          var path = window.location.pathname.replace(/\/+$/, '');
+          var match = path.match(/\/(?:curso|checkout)\/([^/]+)$/);
+          raw = match ? match[1] : '';
+        } catch(e) { raw = ''; }
+      }
+      // Sanitizar: extraer solo el último segmento, sin barras
+      if (raw) {
+        raw = raw.replace(/^\/+|\/+$/g, '');
+        var parts = raw.split('/');
+        // Si viene "/curso/slug" o "curso/slug", tomar el último segmento
+        raw = parts[parts.length - 1] || '';
+      }
+      return raw;
+    })(),
     quickReplies: (scriptEl && scriptEl.getAttribute("data-quick-replies")) || "Cursos online 💻|Asesoramiento 🤝",
     avatar: (scriptEl && scriptEl.getAttribute("data-avatar")) || "🩺",
     position: (scriptEl && scriptEl.getAttribute("data-position")) || "right",
@@ -586,6 +606,7 @@
 
     // Detectar cambios de identity (login tardío, logout, cambio de cuenta)
     startIdentityWatcher();
+    startSlugWatcher();
   }
 
   // ─── Espera a que msk-front setee los datos del usuario ───────────────────
@@ -842,6 +863,38 @@
         }
       }
     }, 1000);
+  }
+
+  // ─── Watcher: detecta cambios de page_slug (SPA navigation) ───────────────
+  // En SPAs como Next.js, la URL cambia sin recargar el script.
+  // Si el slug cambia y no hay conversación activa, regeneramos el greeting.
+  function _detectSlugFromURL() {
+    try {
+      var path = window.location.pathname.replace(/\/+$/, '');
+      var match = path.match(/\/(?:curso|checkout)\/([^/]+)$/);
+      return match ? match[1] : '';
+    } catch(e) { return ''; }
+  }
+
+  var _lastSlug = CONFIG.pageSlug || '';
+  function startSlugWatcher() {
+    setInterval(async function() {
+      // Prioridad: window.MSK_PAGE_SLUG > auto-detect URL
+      var raw = window.MSK_PAGE_SLUG || _detectSlugFromURL();
+      // Sanitizar
+      if (raw) {
+        raw = raw.replace(/^\/+|\/+$/g, '');
+        var parts = raw.split('/');
+        raw = parts[parts.length - 1] || '';
+      }
+      if (raw === _lastSlug) return;
+      _lastSlug = raw;
+      CONFIG.pageSlug = raw;
+      // Solo regenerar greeting si no hay conversación activa
+      if (!conversationMaterialized) {
+        await refreshGreetingForNewUser();
+      }
+    }, 1500);
   }
 
   // ─── B6: cambio de cuenta → limpia UI y arranca nueva sesión ──────────────

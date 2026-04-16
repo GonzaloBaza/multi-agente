@@ -349,6 +349,94 @@ def _build_conversation(conv_row, msg_rows) -> Conversation:
     )
 
 
+# ─── List (para inbox histórico) ─────────────────────────────────────────────
+
+async def list_conversations_summary(
+    limit: int = 500,
+    offset: int = 0,
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> list[dict]:
+    """
+    Lista resumida de conversaciones para el inbox.
+    Consulta directo a Postgres — incluye históricas fuera de Redis.
+    Devuelve dicts con metadata + último mensaje (sin cargar todos los mensajes).
+    """
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        conditions = []
+        params: list = []
+        idx = 1
+
+        if date_from:
+            conditions.append(f"c.updated_at >= ${idx}::timestamptz")
+            params.append(date_from + "T00:00:00Z")
+            idx += 1
+        if date_to:
+            conditions.append(f"c.updated_at <= ${idx}::timestamptz")
+            params.append(date_to + "T23:59:59Z")
+            idx += 1
+
+        where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+
+        params.append(limit)
+        params.append(offset)
+
+        query = f"""
+            SELECT c.id, c.channel, c.external_id, c.current_agent, c.status,
+                   c.user_profile, c.context, c.created_at, c.updated_at,
+                   lm.content   AS last_message,
+                   lm.created_at AS last_message_at,
+                   mc.cnt        AS message_count
+            FROM public.conversations c
+            LEFT JOIN LATERAL (
+                SELECT content, created_at
+                FROM public.messages
+                WHERE conversation_id = c.id
+                ORDER BY created_at DESC
+                LIMIT 1
+            ) lm ON true
+            LEFT JOIN LATERAL (
+                SELECT count(*)::int AS cnt
+                FROM public.messages
+                WHERE conversation_id = c.id
+            ) mc ON true
+            {where}
+            ORDER BY c.updated_at DESC
+            LIMIT ${idx} OFFSET ${idx + 1}
+        """
+
+        rows = await conn.fetch(query, *params)
+
+    results = []
+    for r in rows:
+        profile = r["user_profile"]
+        if isinstance(profile, str):
+            profile = json.loads(profile)
+
+        last_msg = r["last_message"] or ""
+        if len(last_msg) > 80:
+            last_msg = last_msg[:80] + "…"
+
+        results.append({
+            "id": str(r["id"]),
+            "session_id": r["external_id"],
+            "channel": r["channel"],
+            "name": profile.get("name", ""),
+            "email": profile.get("email", ""),
+            "phone": profile.get("phone", ""),
+            "country": profile.get("country", "AR"),
+            "status": r["status"],
+            "current_agent": r["current_agent"],
+            "message_count": r["message_count"] or 0,
+            "last_message": last_msg,
+            "last_timestamp": r["last_message_at"].isoformat() if r["last_message_at"] else "",
+            "created_at": r["created_at"].isoformat() if r["created_at"] else "",
+            "updated_at": r["updated_at"].isoformat() if r["updated_at"] else "",
+        })
+    return results
+
+
 # ─── Courses ─────────────────────────────────────────────────────────────────
 
 async def upsert_course(row: dict) -> None:

@@ -1998,7 +1998,7 @@ const LABEL_OPTIONS = {
   seguimiento:'📞 Seguimiento', no_interesa:'🚫 No interesa',
 };
 
-let activeFilters = { queues: [], channel: null, label: null, agents: [], status: null };
+let activeFilters = { queues: [], channel: null, label: null, agents: [], status: null, dateFrom: null, dateTo: null };
 let availableQueues = [];
 let openFilterType = null;
 
@@ -2162,6 +2162,7 @@ function buildMainFiltersMenu() {
     items.push({ icon: '🎧', label: 'En atención con', sub: 'agent', parent: activeFilters.agents.length > 0 });
   }
   items.push({ icon: '📊', label: 'Estado',        sub: 'status',  parent: !!activeFilters.status });
+  items.push({ icon: '📅', label: 'Por fecha',     sub: 'date',    parent: !!(activeFilters.dateFrom || activeFilters.dateTo) });
   items.push({ sep: true });
   items.push({ icon: '✕', label: 'Limpiar todos los filtros', onclick: 'clearAllFilters(); toggleMainFiltersMenu(document.getElementById(\'btnFiltersMain\'))' });
 
@@ -2326,6 +2327,26 @@ function buildPanelHTML(type) {
     });
     return html;
   }
+  if (type === 'date') {
+    var today = new Date().toISOString().slice(0,10);
+    var yesterday = new Date(Date.now()-86400000).toISOString().slice(0,10);
+    var week = new Date(Date.now()-7*86400000).toISOString().slice(0,10);
+    var html = '';
+    html += '<div style="padding:8px 12px;font-size:11px;color:var(--text3);font-weight:600">Accesos rápidos</div>';
+    html += '<div class="fp-item" onclick="setDateFilter(\'' + today + '\',\'' + today + '\')"><span class="check">' + (activeFilters.dateFrom===today&&activeFilters.dateTo===today?'✓':'') + '</span>Hoy</div>';
+    html += '<div class="fp-item" onclick="setDateFilter(\'' + yesterday + '\',\'' + yesterday + '\')"><span class="check">' + (activeFilters.dateFrom===yesterday&&activeFilters.dateTo===yesterday?'✓':'') + '</span>Ayer</div>';
+    html += '<div class="fp-item" onclick="setDateFilter(\'' + week + '\',\'' + today + '\')"><span class="check">' + (activeFilters.dateFrom===week&&activeFilters.dateTo===today?'✓':'') + '</span>Últimos 7 días</div>';
+    html += '<div style="padding:8px 12px;font-size:11px;color:var(--text3);font-weight:600;border-top:1px solid rgba(46,50,73,0.3);margin-top:4px">Rango personalizado</div>';
+    html += '<div style="padding:6px 12px;display:flex;gap:6px;align-items:center">';
+    html += '<input type="date" id="dateFromInput" value="' + (activeFilters.dateFrom||'') + '" style="background:var(--surface3);border:1px solid rgba(46,50,73,0.4);border-radius:6px;padding:4px 6px;color:var(--text);font-size:11px;width:120px" onchange="setDateFilter(this.value, document.getElementById(\'dateToInput\').value)">';
+    html += '<span style="color:var(--text3);font-size:11px">→</span>';
+    html += '<input type="date" id="dateToInput" value="' + (activeFilters.dateTo||'') + '" style="background:var(--surface3);border:1px solid rgba(46,50,73,0.4);border-radius:6px;padding:4px 6px;color:var(--text);font-size:11px;width:120px" onchange="setDateFilter(document.getElementById(\'dateFromInput\').value, this.value)">';
+    html += '</div>';
+    if (activeFilters.dateFrom || activeFilters.dateTo) {
+      html += '<div class="fp-item" onclick="setDateFilter(null,null)" style="color:var(--red);margin-top:4px"><span class="check"></span>✕ Quitar filtro de fecha</div>';
+    }
+    return html;
+  }
   return '';
 }
 
@@ -2345,6 +2366,16 @@ function setStatusFilter(s) {
   activeFilters.status = s;
   closeFilterPanel();
   updateFilterUI();
+}
+function setDateFilter(from, to) {
+  activeFilters.dateFrom = from || null;
+  activeFilters.dateTo = to || null;
+  closeAllFilterSubs();
+  document.getElementById('filtersMenu').style.display = 'none';
+  document.getElementById('filtersMenu').dataset.open = '0';
+  updateFilterUI();
+  // Recargar desde Postgres con el nuevo rango de fecha
+  loadConversations();
 }
 
 function toggleFpCategory(el) {
@@ -2379,7 +2410,7 @@ function closeFilterPanel() {
 }
 
 function clearAllFilters() {
-  activeFilters = { queues: [], channel: null, label: null, agents: [], status: null };
+  activeFilters = { queues: [], channel: null, label: null, agents: [], status: null, dateFrom: null, dateTo: null };
   closeFilterPanel();
   updateFilterUI();
 }
@@ -2390,12 +2421,13 @@ function removeFilter(type, value) {
   else if (type === 'label') activeFilters.label = null;
   else if (type === 'agent') activeFilters.agents = activeFilters.agents.filter(a => a !== value);
   else if (type === 'status') activeFilters.status = null;
+  else if (type === 'date') { activeFilters.dateFrom = null; activeFilters.dateTo = null; }
   updateFilterUI();
 }
 
 function updateFilterUI() {
   const hasFilters = activeFilters.queues.length > 0 || activeFilters.channel || activeFilters.label
-    || activeFilters.agents.length > 0 || activeFilters.status;
+    || activeFilters.agents.length > 0 || activeFilters.status || activeFilters.dateFrom || activeFilters.dateTo;
   document.getElementById('btnClearFilters').style.display = hasFilters ? '' : 'none';
 
   // Update button styles
@@ -2426,6 +2458,19 @@ function updateFilterUI() {
   if (activeFilters.status) {
     const statusLabels = { active: 'Activas', bot: 'Con bot', human: 'En atención', queue: 'En cola', unassigned: 'Sin agente', closed: 'Cerradas' };
     chips += `<span class="af-chip">📊 ${statusLabels[activeFilters.status]} <span class="rm" onclick="removeFilter('status')">×</span></span>`;
+  }
+  if (activeFilters.dateFrom || activeFilters.dateTo) {
+    var dateLabel = '';
+    if (activeFilters.dateFrom && activeFilters.dateTo && activeFilters.dateFrom === activeFilters.dateTo) {
+      dateLabel = activeFilters.dateFrom;
+    } else if (activeFilters.dateFrom && activeFilters.dateTo) {
+      dateLabel = activeFilters.dateFrom + ' → ' + activeFilters.dateTo;
+    } else if (activeFilters.dateFrom) {
+      dateLabel = 'Desde ' + activeFilters.dateFrom;
+    } else {
+      dateLabel = 'Hasta ' + activeFilters.dateTo;
+    }
+    chips += `<span class="af-chip">📅 ${dateLabel} <span class="rm" onclick="removeFilter('date')">×</span></span>`;
   }
   container.innerHTML = chips;
   container.classList.toggle('visible', hasFilters);
@@ -2475,6 +2520,13 @@ function applyFilters() {
     if (activeFilter === 'queue' && cls !== 'queue') return false;
     if (activeFilter === 'human' && cls !== 'human') return false;
     if (activeFilter === 'bot' && cls !== 'bot') return false;
+    // Filtro de fecha
+    if (activeFilters.dateFrom || activeFilters.dateTo) {
+      var convDate = (conv.last_timestamp || conv.created_at || '').slice(0, 10);
+      if (!convDate) return false;
+      if (activeFilters.dateFrom && convDate < activeFilters.dateFrom) return false;
+      if (activeFilters.dateTo && convDate > activeFilters.dateTo) return false;
+    }
     return true;
   });
 
@@ -2811,7 +2863,13 @@ async function loadConversations() {
   setTimeout(() => btn.classList.remove('spinning'), 600);
 
   try {
-    const res = await fetch(`${API}/inbox/conversations`, {headers: {'X-Session-Token': SESSION_TOKEN}});
+    var url = `${API}/inbox/conversations`;
+    var params = [];
+    if (activeFilters.dateFrom) params.push('date_from=' + activeFilters.dateFrom);
+    if (activeFilters.dateTo) params.push('date_to=' + activeFilters.dateTo);
+    if (params.length) url += '?' + params.join('&');
+
+    const res = await fetch(url, {headers: {'X-Session-Token': SESSION_TOKEN}});
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     conversations = data.conversations || [];

@@ -158,6 +158,36 @@ def _build_priority_profile_header(
         else:
             cs = str(courses_done)
         lines.append(f"- **Cursos que ya hizo en MSK:** {cs}")
+        lines.extend([
+            "",
+            "## 🚫 REGLA CRÍTICA — CURSOS QUE YA TIENE (PROHIBIDO RECOMENDAR)",
+            "",
+            f"El usuario **YA completó** estos cursos: {cs}.",
+            "",
+            "**PROHIBIDO:**",
+            "  - Recomendarlos como opción",
+            "  - Incluirlos en listados de cursos sugeridos",
+            "  - Mencionarlos como 'te podría interesar'",
+            "  - Sugerir 'profundizar' o 'complementar' con un curso que ya hizo",
+            "",
+            "**Si el usuario está viendo la página de un curso que ya tiene**, no intentes vendérselo de nuevo. ",
+            "Reconocé que ya lo hizo y sugerí algo complementario o de nivel superior.",
+            "",
+            "**Si buscás cursos con `search_courses`, filtrá mentalmente los resultados** y NO muestres los que ya tiene.",
+        ])
+
+    # Regla de confianza: lo que dice el usuario pisa los datos del CRM
+    if prof or spec:
+        lines.extend([
+            "",
+            "## ⚠️ REGLA — SI EL USUARIO CONTRADICE ESTOS DATOS, CREELE",
+            "",
+            "Los datos de arriba vienen del CRM y pueden estar desactualizados.",
+            "Si el usuario dice algo distinto (ej: el CRM dice 'Cardiología' pero el ",
+            "usuario dice 'soy médico general'), **creele al usuario**. ",
+            "Adaptá tu respuesta a lo que ÉL dice, no a lo que dice el CRM.",
+            "No le corrijas ni le contradigas — ajustá tu pitch a su realidad actual.",
+        ])
 
     # Directiva crítica sobre colegio con aval jurisdiccional
     if colegio:

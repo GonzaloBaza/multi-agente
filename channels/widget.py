@@ -466,7 +466,9 @@ async def _build_user_context(
     # 4. Sincronizar Zoho → Supabase (Zoho pisa, es fuente de verdad)
     #    Solo si hay datos que falten o difieran en Supabase. Best-effort,
     #    no bloquea el flujo del agente.
-    if zoho_profile_for_sync and log_events:
+    #    Corre siempre (incluso en greeting) para que el primer contacto
+    #    ya tenga los datos completos en Supabase.
+    if zoho_profile_for_sync:
         try:
             from integrations.supabase_client import (
                 create_customer_profile,
@@ -621,6 +623,11 @@ async def generate_greeting_stateless(
         user_email, store, ephemeral_sid, user_courses, page_slug,
         log_events=False,
     )
+
+    # Si el frontend mandó user_name pero el CRM no devolvió nombre, usarlo como fallback
+    if user_name and not _signals.get("profile_name"):
+        ctx_lines.insert(0, f"Nombre del cliente: {user_name}")
+
     ctx = "\n".join(ctx_lines) if ctx_lines else ""
 
     try:
@@ -648,11 +655,8 @@ async def generate_greeting_stateless(
                         + "\n- ".join(brief["perfiles"])
                     )
                 system_txt += block
-            else:
-                system_txt += (
-                    f"\n\nEl usuario está viendo la página del curso «{page_slug}». "
-                    "Podés mencionarlo como 'veo que estás explorando ese curso'."
-                )
+            # Si no tenemos el título real, NO mencionamos "ese curso"
+            # porque genera saludos genéricos confusos.
 
         llm = ChatOpenAI(
             model="gpt-4o-mini",
@@ -868,11 +872,9 @@ async def process_widget_message(
                             + "\n- ".join(brief["perfiles"])
                         )
                     system_txt += block
-                else:
-                    system_txt += (
-                        f"\n\nEl usuario está viendo la página del curso «{page_slug}». "
-                        "Podés mencionarlo como 'veo que estás explorando ese curso'."
-                    )
+                # Si no tenemos el título real, NO mencionamos "ese curso"
+                # porque el slug crudo queda feo y "ese curso" es genérico.
+                # El saludo será genérico sin mención del curso.
 
             llm = ChatOpenAI(
                 model="gpt-4o-mini",

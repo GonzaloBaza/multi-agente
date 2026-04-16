@@ -230,6 +230,10 @@ async def run_sales_node(state: SupervisorState) -> dict:
         _m = re.search(r"HANDOFF_REQUIRED\s*:\s*([^\n\r]+)", str(last_ai.content))
         if _m:
             reason = _m.group(1).strip().rstrip(".").strip()
+        # Limpiar tags internas del texto visible
+        cleaned = re.sub(r"HANDOFF_REQUIRED(\s*:\s*[^\n\r]*)?", "", str(last_ai.content))
+        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+        last_ai.content = cleaned
 
     return {"messages": result["messages"], "handoff_requested": handoff, "handoff_reason": reason}
 
@@ -307,12 +311,12 @@ async def run_collections_node(state: SupervisorState) -> dict:
             verificar_pago = True
 
         # Limpiar tags internas del texto visible
-        cleaned = (content
-                   .replace("[LINK_REBILL_ENVIADO]", "")
-                   .replace("[VERIFICAR_PAGO]", "")
-                   .replace("HANDOFF_REQUIRED:", "")
-                   .replace("HANDOFF_REQUIRED", "")
-                   .strip())
+        cleaned = content
+        cleaned = cleaned.replace("[LINK_REBILL_ENVIADO]", "")
+        cleaned = cleaned.replace("[VERIFICAR_PAGO]", "")
+        # Borrar HANDOFF_REQUIRED + motivo completo (regex para capturar todo)
+        cleaned = re.sub(r"HANDOFF_REQUIRED(\s*:\s*[^\n\r]*)?", "", cleaned)
+        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
         last_ai.content = cleaned
 
     return {
@@ -339,6 +343,10 @@ async def run_post_sales_node(state: SupervisorState) -> dict:
             reason = _m.group(1).strip().rstrip(".").strip()
         else:
             reason = "post_venta"
+        # Limpiar tags internas del texto visible
+        cleaned = re.sub(r"HANDOFF_REQUIRED(\s*:\s*[^\n\r]*)?", "", str(last_ai.content))
+        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+        last_ai.content = cleaned
 
     return {"messages": result["messages"], "handoff_requested": handoff, "handoff_reason": reason}
 
@@ -402,6 +410,10 @@ async def run_closer_node(state: SupervisorState) -> dict:
             reason = _m.group(1).strip().rstrip(".").strip()
         else:
             reason = "closer"
+        # Limpiar tags internas del texto visible
+        cleaned = re.sub(r"HANDOFF_REQUIRED(\s*:\s*[^\n\r]*)?", "", str(last_ai.content))
+        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+        last_ai.content = cleaned
 
     return {"messages": result["messages"], "handoff_requested": handoff, "handoff_reason": reason}
 
@@ -498,7 +510,9 @@ async def route_message(
     for m in history:
         role = m.get("role", "user")
         content = m.get("content", "")
-        if role == "user":
+        if role == "system":
+            lc_messages.append(SystemMessage(content=content))
+        elif role == "user":
             lc_messages.append(HumanMessage(content=content))
         elif role == "assistant":
             lc_messages.append(AIMessage(content=content))
