@@ -115,13 +115,16 @@ async def snooze(conversation_id: str, until_iso: Optional[str]) -> None:
                 conversation_id,
             )
         else:
+            # asyncpg requiere datetime.datetime, no str (con statement_cache_size=0)
+            from datetime import datetime
+            until_dt = datetime.fromisoformat(until_iso)
             await conn.execute(
                 """
                 update public.conversation_meta
-                set snoozed_until=$2::timestamptz, snoozed_at=now()
+                set snoozed_until=$2, snoozed_at=now()
                 where conversation_id=$1
                 """,
-                conversation_id, until_iso,
+                conversation_id, until_dt,
             )
 
 
@@ -258,6 +261,8 @@ async def bulk_set_status(conversation_ids: list[str], status: ConvStatus) -> in
 
 
 async def bulk_snooze(conversation_ids: list[str], until_iso: str) -> int:
+    from datetime import datetime
+    until_dt = datetime.fromisoformat(until_iso)
     pool = await get_pool()
     async with pool.acquire() as conn:
         await conn.executemany(
@@ -267,10 +272,10 @@ async def bulk_snooze(conversation_ids: list[str], until_iso: str) -> int:
         r = await conn.execute(
             """
             update public.conversation_meta
-            set snoozed_until=$2::timestamptz, snoozed_at=now()
+            set snoozed_until=$2, snoozed_at=now()
             where conversation_id = any($1::uuid[])
             """,
-            conversation_ids, until_iso,
+            conversation_ids, until_dt,
         )
     try:
         return int(r.split()[-1])
