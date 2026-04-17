@@ -55,13 +55,13 @@ class ConversationOut(BaseModel):
     id: str
     session_id: str
     channel: str
-    name: str
-    email: str
-    phone: str
-    country: str
-    last_message: str
-    last_timestamp: str
-    message_count: int
+    name: str = ""
+    email: str = ""
+    phone: str = ""
+    country: str = "AR"
+    last_message: str = ""
+    last_timestamp: str = ""
+    message_count: int = 0
     # meta
     assigned_agent_id: Optional[str] = None
     status: str = "open"
@@ -205,14 +205,14 @@ async def list_conversations(
         last_msg = (r["last_message"] or "")[:120]
         out.append(ConversationOut(
             id=str(r["id"]),
-            session_id=r["external_id"],
+            session_id=r["external_id"] or "",
             channel=r["channel"],
-            name=profile.get("name", ""),
-            email=profile.get("email", ""),
-            phone=profile.get("phone", ""),
-            country=profile.get("country", "AR"),
-            last_message=last_msg,
-            last_timestamp=(r["last_message_at"] or r["updated_at"]).isoformat(),
+            name=profile.get("name") or "",
+            email=profile.get("email") or "",
+            phone=profile.get("phone") or "",
+            country=profile.get("country") or "AR",
+            last_message=last_msg or "",
+            last_timestamp=(r["last_message_at"] or r["updated_at"]).isoformat() if (r["last_message_at"] or r["updated_at"]) else "",
             message_count=r["message_count"] or 0,
             assigned_agent_id=r["assigned_agent_id"],
             status=r["status"] or "open",
