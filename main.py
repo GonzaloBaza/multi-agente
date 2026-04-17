@@ -47,6 +47,7 @@ from api.widget import router as widget_router
 from api.admin import router as admin_router
 from api.admin_courses import router as admin_courses_router
 from api.inbox import router as inbox_router
+from api.inbox_api import router as inbox_api_router
 from api.templates import router as templates_router
 from api.admin_prompts import router as admin_prompts_router
 from api.flows import router as flows_router
@@ -183,6 +184,7 @@ def create_app() -> FastAPI:
     app.include_router(admin_router)
     app.include_router(admin_courses_router)
     app.include_router(inbox_router)
+    app.include_router(inbox_api_router)
     app.include_router(templates_router)
     app.include_router(admin_prompts_router)
     app.include_router(flows_router)
