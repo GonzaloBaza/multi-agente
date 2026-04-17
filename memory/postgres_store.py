@@ -151,8 +151,6 @@ create table if not exists public.courses (
     total_price numeric(14,2),
     max_installments integer,
     price_installments numeric(14,2),
-    url text,
-    image_url text,
     brief_md text,
     raw jsonb not null default '{}'::jsonb,
     source_updated_at timestamptz,
@@ -444,13 +442,11 @@ async def upsert_course(row: dict) -> None:
                 country, slug, product_id, title, categoria, cedente,
                 duration_hours, modules_count, currency,
                 total_price, max_installments, price_installments,
-                url, image_url, brief_md, raw,
-                source_updated_at, synced_at
+                brief_md, raw, source_updated_at, synced_at
             ) values (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9,
                 $10, $11, $12,
-                $13, $14, $15, $16::jsonb,
-                $17, now()
+                $13, $14::jsonb, $15, now()
             )
             on conflict (country, slug) do update set
                 product_id = excluded.product_id,
@@ -463,8 +459,6 @@ async def upsert_course(row: dict) -> None:
                 total_price = excluded.total_price,
                 max_installments = excluded.max_installments,
                 price_installments = excluded.price_installments,
-                url = excluded.url,
-                image_url = excluded.image_url,
                 brief_md = excluded.brief_md,
                 raw = excluded.raw,
                 source_updated_at = excluded.source_updated_at,
@@ -475,7 +469,6 @@ async def upsert_course(row: dict) -> None:
             row.get("duration_hours"), row.get("modules_count"),
             row.get("currency"), row.get("total_price"),
             row.get("max_installments"), row.get("price_installments"),
-            row.get("url"), row.get("image_url"),
             row.get("brief_md"), json.dumps(row.get("raw", {}), default=str),
             row.get("source_updated_at"),
         )
@@ -503,7 +496,7 @@ async def list_courses(country: str, limit: int = 200) -> list[dict]:
             """
             select country, slug, product_id, title, categoria, cedente,
                    duration_hours, modules_count, currency, total_price,
-                   max_installments, price_installments, url, image_url, synced_at
+                   max_installments, price_installments, synced_at
             from public.courses
             where country = $1
             order by title asc

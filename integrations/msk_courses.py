@@ -177,10 +177,15 @@ def build_brief_md(item: dict, country: str) -> str:
     slug = item.get("slug") or ""
     cedente = (item.get("cedente") or {}).get("title") or (item.get("cedente") or {}).get("name") or ""
 
+    # URL del curso — construida, no del WP
+    url = f"https://msklatam.com/curso/{slug}" if slug else ""
+
     lines.append(f"# {title}")
     if cedente:
         lines.append(f"**Cedente:** {cedente}")
     lines.append(f"**País:** {COUNTRY_LABEL.get(country.lower(), country.upper())}  ·  **Slug:** `{slug}`")
+    if url:
+        lines.append(f"**URL:** {url}")
 
     # Precio — REGLA DE MARKETING: siempre hablamos en CUOTAS, nunca total.
     prices = item.get("prices") or {}
@@ -261,12 +266,10 @@ def build_brief_md(item: dict, country: str) -> str:
         lines.append(desc)
         lines.append("")
 
-    # ── Objetivos de aprendizaje (kb_ai)
+    # ── Objetivos de aprendizaje (kb_ai) — completos, sin recortar
     objetivos = html_to_text(kb_ai.get("objetivos_de_aprendizaje") or "")
     if objetivos:
         lines.append("## Objetivos de aprendizaje")
-        if len(objetivos) > 1500:
-            objetivos = objetivos[:1500].rsplit(" ", 1)[0] + "…"
         lines.append(objetivos)
         lines.append("")
 
@@ -521,12 +524,15 @@ def build_brief_md(item: dict, country: str) -> str:
 
 def to_row(item: dict, country: str) -> dict:
     prices = item.get("prices") or {}
-    images = item.get("featured_images") or {}
     cedente = (item.get("cedente") or {}).get("title") or (item.get("cedente") or {}).get("name") or None
 
-    url = item.get("link") or ""
-    if url and not url.startswith("http"):
-        url = f"https://msklatam.com/{url.lstrip('/')}"
+    # product_id ← codes[0].unique_code (código de producto MSK)
+    codes = item.get("codes") or []
+    product_id = None
+    if codes and isinstance(codes[0], dict):
+        product_id = _to_int(codes[0].get("unique_code"))
+    if not product_id:
+        product_id = _to_int(item.get("id"))  # fallback al ID de WP
 
     raw_date = item.get("date")
     source_updated_at: Optional[datetime] = None
@@ -541,7 +547,7 @@ def to_row(item: dict, country: str) -> dict:
     return {
         "country": country.lower(),
         "slug": item.get("slug"),
-        "product_id": _to_int(item.get("id")),
+        "product_id": product_id,
         "title": item.get("title") or "(sin título)",
         "categoria": _primary_category(item),
         "cedente": cedente,
@@ -551,8 +557,6 @@ def to_row(item: dict, country: str) -> dict:
         "total_price": _to_float(prices.get("total_price")),
         "max_installments": _to_int(prices.get("max_installments")),
         "price_installments": _to_float(prices.get("price_installments")),
-        "url": url,
-        "image_url": images.get("high") or images.get("medium") or images.get("low"),
         "brief_md": brief,
         "raw": item,
         "source_updated_at": source_updated_at,
