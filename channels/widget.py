@@ -661,7 +661,7 @@ async def generate_greeting_stateless(
         llm = ChatOpenAI(
             model="gpt-4o-mini",
             api_key=get_settings().openai_api_key,
-            temperature=0.7,
+            temperature=0.4,  # bajado de 0.7: reglas estrictas + temperatura alta = alucina (inventa "curso de Cardiología")
             max_tokens=160,
         )
         resp = await llm.ainvoke([

@@ -90,12 +90,13 @@ async def build_sales_agent(
     except Exception as e:
         logger.warning("catalog_inject_failed", error=str(e))
 
-    # --- STEP 5: append contexto del curso (brief completo + instrucción contextual) al final ---
+    # --- STEP 5: append brief del curso activo (SIN re-inyectar perfil — ya está en el priority header) ---
     if course:
-        system_prompt += _format_course_context(course, user_profile)
+        system_prompt += _format_course_context(course, user_profile, has_priority_header=bool(priority_header))
 
-    # --- STEP 6: fallback — perfil suelto cuando no hay page_slug ---
-    if user_profile and not page_slug:
+    # --- STEP 6: fallback — perfil suelto SOLO si NO hay priority header Y NO hay curso ---
+    # (si hay priority_header, el perfil ya está inyectado al INICIO; no lo dupliques al final)
+    if user_profile and not page_slug and not priority_header:
         prof_ctx = _format_user_profile(user_profile)
         if prof_ctx:
             system_prompt += prof_ctx
@@ -250,14 +251,27 @@ def _build_priority_profile_header(
     return "\n".join(lines)
 
 
-def _format_course_context(course: dict, user_profile: Optional[dict] = None) -> str:
-    """Arma el bloque del curso + instrucción de venta contextualizada."""
+def _format_course_context(
+    course: dict,
+    user_profile: Optional[dict] = None,
+    has_priority_header: bool = False,
+) -> str:
+    """
+    Arma el bloque del curso + instrucción de venta contextualizada.
+
+    Si `has_priority_header=True` → el perfil del usuario YA está inyectado al
+    inicio del system prompt, así que acá NO lo repetimos (evita duplicación
+    que confunde al LLM). Solo se incluye el perfil dentro del course context
+    cuando NO hay priority header (ej: llamada sin user_profile pero con curso).
+    """
     brief = course.get("brief_md") or ""
     slug = course.get("slug") or ""
     title = course.get("title") or ""
+    country_code = (course.get("country") or "").upper()
 
     profile_line = ""
-    if user_profile:
+    if user_profile and not has_priority_header:
+        # Solo inyectamos perfil acá si no se inyectó arriba.
         prof = user_profile.get("profession") or user_profile.get("Profession") or ""
         spec = user_profile.get("specialty") or user_profile.get("Specialty") or ""
         name = user_profile.get("name") or user_profile.get("Full_Name") or ""
@@ -284,7 +298,6 @@ def _format_course_context(course: dict, user_profile: Optional[dict] = None) ->
         if bits:
             profile_line = "- El usuario " + ", ".join(bits) + ".\n"
 
-        # Matrícula / Colegio — crítico para jurisdiccionales AR
         if colegio:
             profile_line += (
                 f"- **Matrícula activa en: {colegio}**. "
@@ -305,16 +318,24 @@ def _format_course_context(course: dict, user_profile: Optional[dict] = None) ->
                 cs = str(courses_done)
             profile_line += f"- Cursos que ya realizó en MSK: {cs}.\n"
 
+    # Si hay priority header, NO repetimos la cabecera "El usuario entró al
+    # chat desde la página del curso X" porque el priority header ya lo dice.
+    # Solo dejamos el brief + la instrucción de venta.
+    intro = (
+        ""
+        if has_priority_header
+        else f"El usuario entró al chat desde la página del curso **{title}** (slug: `{slug}`).\nAsumí que la consulta es sobre ESTE curso salvo que diga lo contrario.\n\n"
+    )
+
+    profile_block = f"{profile_line}" if profile_line else ""
+
     return f"""
 
 ---
 
-## CURSO QUE EL USUARIO ESTÁ VIENDO AHORA
+## CURSO ACTIVO — BRIEF COMPLETO
 
-El usuario entró al chat desde la página del curso **{title}** (slug: `{slug}`).
-Asumí que la consulta es sobre ESTE curso salvo que diga lo contrario.
-
-### Brief del curso (úsalo como fuente primaria — los datos son oficiales y actualizados)
+{intro}### Brief del curso **{title}** (slug: `{slug}`) — fuente primaria, datos oficiales
 
 {brief}
 
@@ -322,12 +343,13 @@ Asumí que la consulta es sobre ESTE curso salvo que diga lo contrario.
 
 ## INSTRUCCIÓN DE VENTA CONTEXTUAL
 
-{profile_line}- **Hablá de este curso por nombre** — ya sabés cuál es, no preguntes "qué curso te interesa".
+{profile_block}- **Hablá de este curso por nombre** — ya sabés cuál es, no preguntes "qué curso te interesa".
 - **Elegí el perfil objetivo que mejor encaje** con el usuario (ver "Perfiles objetivo — dolor y beneficio"):
   usá el **dolor** del perfil para mostrar empatía y el **beneficio** para construir el pitch.
-- **Precio y cuotas**: ya los tenés en el brief — mostralos con seguridad cuando el usuario pregunte.
+- **Primera respuesta sobre este curso**: 4-5 líneas + gancho + pregunta bifurcada. **Sin precio, sin volcar módulos, sin subheaders.** (ver sección 2.1)
+- **Precio y cuotas**: solo cuando el usuario lo pregunta o da señal de compra — nunca de entrada.
 - Si el usuario quiere profundizar en un módulo, el equipo docente o las certificaciones,
-  usá la tool `get_course_deep(slug="{slug}", country="{course.get('country', '').upper()}", section="…")`
+  usá la tool `get_course_deep(slug="{slug}", country="{country_code}", section="…")`
   con secciones como `modules`, `teaching_team`, `institutions`, `certificacion_relacionada`.
 - **No repitas el brief literal** — conversá, referite a los puntos que apliquen.
 - Si el usuario intenta inscribirse, seguí el flujo de inscripción normal (nombre + email → link).
