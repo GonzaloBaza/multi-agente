@@ -507,6 +507,42 @@ async def list_courses(country: str, limit: int = 200) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+async def get_catalog_compact(country: str) -> str:
+    """
+    Devuelve el catálogo compacto de un país para inyectar en el system prompt.
+    ~40 tokens por curso × 100 cursos ≈ 4,000 tokens.
+    """
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            select slug, title, categoria, currency, max_installments, price_installments
+            from public.courses
+            where country = $1
+            order by categoria asc, title asc
+            """,
+            country.lower(),
+        )
+    if not rows:
+        return ""
+    lines = [f"## Catálogo {country.upper()} ({len(rows)} cursos)\n"]
+    lines.append("| Slug | Título | Categoría | Precio |")
+    lines.append("|---|---|---|---|")
+    for r in rows:
+        slug = r["slug"]
+        title = r["title"] or ""
+        cat = r["categoria"] or ""
+        inst = r["max_installments"]
+        val = r["price_installments"]
+        cur = r["currency"] or ""
+        if inst and val:
+            precio = f"{inst}x {cur} {val:,.0f}"
+        else:
+            precio = "Consultar"
+        lines.append(f"| {slug} | {title} | {cat} | {precio} |")
+    return "\n".join(lines)
+
+
 async def delete_missing_courses(country: str, keep_slugs: list[str]) -> int:
     """Borra cursos de un país cuyo slug ya no viene del WP (curso discontinuado)."""
     if not keep_slugs:

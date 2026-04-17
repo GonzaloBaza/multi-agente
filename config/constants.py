@@ -36,9 +36,6 @@ COUNTRY_CURRENCY: dict[Country, str] = {
     Country.URUGUAY: "UYU",
 }
 
-# Pinecone namespace per country
-PINECONE_NAMESPACE_PREFIX = "cursos"
-
 # Conversation TTL in Redis (seconds)
 CONVERSATION_TTL = 60 * 60 * 24 * 7  # 7 days
 

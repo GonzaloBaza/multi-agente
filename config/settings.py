@@ -8,12 +8,6 @@ class Settings(BaseSettings):
     # LLM
     openai_api_key: str = ""
     openai_model: str = "gpt-4o"
-    openai_embedding_model: str = "text-embedding-3-small"
-
-    # Pinecone
-    pinecone_api_key: str = ""
-    pinecone_index_name: str = "cursos-medicos"
-    pinecone_environment: str = "us-east-1"
 
     # Redis (cache caliente)
     redis_url: str = "redis://localhost:6379/0"

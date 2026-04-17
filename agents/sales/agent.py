@@ -1,6 +1,6 @@
 """
-Agente de Ventas — LangGraph ReAct agent con RAG sobre cursos médicos.
-Capacidades: buscar cursos, responder dudas, generar links de pago, registrar en Zoho.
+Agente de Ventas — LangGraph ReAct agent.
+Catálogo completo en system prompt + tools para brief detallado y deep drill-down.
 """
 from typing import Optional
 
@@ -11,8 +11,7 @@ import structlog
 
 from config.settings import get_settings
 from agents.sales.tools import (
-    search_courses,
-    get_course_details,
+    get_course_brief,
     get_course_deep,
     create_payment_link,
     create_or_update_lead,
@@ -23,8 +22,7 @@ from agents.sales.prompts import build_sales_prompt
 logger = structlog.get_logger(__name__)
 
 SALES_TOOLS = [
-    search_courses,
-    get_course_details,
+    get_course_brief,
     get_course_deep,
     create_payment_link,
     create_or_update_lead,
@@ -78,11 +76,25 @@ async def build_sales_agent(
     base_prompt = build_sales_prompt(country=country, channel=channel)
     system_prompt = (priority_header + base_prompt) if priority_header else base_prompt
 
-    # --- STEP 4: append contexto del curso (brief completo + instrucción contextual) al final ---
+    # --- STEP 4: inyectar catálogo compacto del país ---
+    try:
+        from memory import postgres_store
+        catalog = await postgres_store.get_catalog_compact(country)
+        if catalog:
+            system_prompt += f"\n\n---\n\n{catalog}\n\n"
+            system_prompt += (
+                "👆 Este es el catálogo completo. Ya lo tenés — NO necesitás buscar.\n"
+                "Para vender un curso distinto al actual, usá `get_course_brief(slug)` "
+                "para obtener el brief con perfiles, datos técnicos y argumentos de venta.\n"
+            )
+    except Exception as e:
+        logger.warning("catalog_inject_failed", error=str(e))
+
+    # --- STEP 5: append contexto del curso (brief completo + instrucción contextual) al final ---
     if course:
         system_prompt += _format_course_context(course, user_profile)
 
-    # --- STEP 5: fallback — perfil suelto cuando no hay page_slug ---
+    # --- STEP 6: fallback — perfil suelto cuando no hay page_slug ---
     if user_profile and not page_slug:
         prof_ctx = _format_user_profile(user_profile)
         if prof_ctx:

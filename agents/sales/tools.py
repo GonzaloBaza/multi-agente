@@ -1,13 +1,15 @@
 """
 Herramientas del agente de ventas:
-- search_courses: RAG sobre Pinecone
-- get_course_details: detalle de un curso específico
-- create_payment_link: genera link MP o Rebill según el curso
+- get_course_brief: brief completo de un curso para venderlo
+- get_course_deep: sección puntual del JSON original
+- create_payment_link: genera link de pago
 - create_lead: crea lead en Zoho
 - create_sales_order: crea orden de venta en Zoho
+
+Nota: el catálogo compacto (título + categoría + precio de todos los cursos)
+se inyecta directo en el system prompt — el agente NO necesita buscar.
 """
 from langchain_core.tools import tool
-from rag.retriever import get_retriever
 from integrations.payments.mercadopago import MercadoPagoClient
 from integrations.payments.rebill import RebillClient
 from integrations.zoho.leads import ZohoLeads
@@ -20,66 +22,32 @@ logger = structlog.get_logger(__name__)
 
 
 @tool
-async def search_courses(query: str, country: str = "AR", categoria: str = "") -> str:
+async def get_course_brief(slug: str, country: str = "AR") -> str:
     """
-    Busca cursos médicos relevantes según la consulta del usuario.
-    Retorna una lista formateada de los cursos más relevantes con precio y detalles.
+    Devuelve el brief completo de un curso — perfiles objetivo, datos técnicos,
+    objetivos, certificaciones, precio. Usalo cuando querés vender un curso
+    distinto al que el usuario está viendo, o para comparar cursos.
 
     Args:
-        query: Descripción de lo que busca el usuario (ej: 'cardiología para médicos generales')
-        country: Código de país del usuario (AR, MX, CO, PE, CL, UY)
-        categoria: Filtro opcional por categoría (ej: 'Pediatría', 'Cardiología')
+        slug: Slug del curso (lo ves en el catálogo del system prompt)
+        country: Código de país del usuario (AR, MX, CO, PE, CL, UY, etc.)
     """
-    retriever = get_retriever()
-    filters = {}
-    if categoria:
-        filters["categoria"] = {"$eq": categoria}
+    from integrations import courses_cache
+    course = await courses_cache.get_course(country.lower(), slug)
+    if not course:
+        return f"No encontré el curso '{slug}' para {country}. Verificá el slug en el catálogo."
 
-    results = await retriever.search(query, country=country, filters=filters or None)
-    return retriever.format_for_llm(results)
+    brief = course.get("brief_md") or ""
+    if brief:
+        return brief
 
-
-@tool
-async def get_course_details(course_name: str, country: str = "AR") -> str:
-    """
-    Obtiene detalles completos de un curso específico por nombre.
-    Usar cuando el usuario pregunta por un curso en particular.
-
-    Args:
-        course_name: Nombre o parte del nombre del curso
-        country: Código de país del usuario
-    """
-    retriever = get_retriever()
-    results = await retriever.search(course_name, country=country, top_k=1)
-    if not results:
-        return f"No encontré el curso '{course_name}' para el país {country}."
-
-    c = results[0].course
-    lines = [
-        f"📚 {c.nombre}",
-        f"",
-        f"📋 Descripción: {c.descripcion}",
-        f"🏷️ Categoría: {c.categoria}",
-        f"💰 Precio: {c.precio_formateado}",
-    ]
-    if c.cuotas_disponibles and c.precio_cuota:
-        lines.append(f"💳 Cuotas: {c.cuotas_disponibles} cuotas de {c.moneda} {c.precio_cuota:,.0f}")
-    if c.duracion_horas:
-        lines.append(f"⏱️ Duración: {c.duracion_horas} horas")
-    if c.modalidad:
-        lines.append(f"🖥️ Modalidad: {c.modalidad}")
-    if c.tiene_certificado:
-        cert = c.tipo_certificado or "Sí"
-        lines.append(f"🎓 Certificado: {cert}")
-    if c.docentes:
-        lines.append(f"👨‍⚕️ Docentes: {', '.join(c.docentes)}")
-    if c.fecha_inicio:
-        lines.append(f"📅 Próximo inicio: {c.fecha_inicio}")
-    if c.rebill_plan_id:
-        lines.append(f"✅ Disponible en cuotas vía Rebill")
-    lines.append(f"🆔 ID interno: {c.id}")
-
-    return "\n".join(lines)
+    # Fallback mínimo si no tiene brief
+    return (
+        f"Título: {course.get('title')}\n"
+        f"Categoría: {course.get('categoria')}\n"
+        f"Precio: {course.get('currency')} {course.get('total_price')}\n"
+        f"Slug: {slug}"
+    )
 
 
 @tool
