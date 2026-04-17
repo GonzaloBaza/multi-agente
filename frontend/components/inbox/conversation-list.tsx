@@ -46,6 +46,11 @@ interface Props {
   queue: Queue | null;
   onQueueChange: (q: Queue | null) => void;
 
+  country: string | null;
+  onCountryChange: (c: string | null) => void;
+  /** stats real backend: { sales: { AR: 12, MX: 3 }, billing: {...} } */
+  queueStats?: Record<string, Record<string, number>>;
+
   search: string;
   onSearchChange: (s: string) => void;
 
@@ -113,6 +118,9 @@ export function ConversationList({
   onChannelChange,
   queue,
   onQueueChange,
+  country,
+  onCountryChange,
+  queueStats,
   search,
   onSearchChange,
   counts,
@@ -226,21 +234,66 @@ export function ConversationList({
                   })}
 
                   <DropdownSeparator />
-                  <DropdownLabel title="Cola asignada por el bot router según contenido + país">
+                  <DropdownLabel>
                     Por cola de atención
                   </DropdownLabel>
                   {(["sales", "billing", "post-sales"] as Queue[]).map((q) => {
                     const active = queue === q;
+                    const stats = queueStats?.[q] ?? {};
+                    const totalForQueue = Object.values(stats).reduce((a, b) => a + b, 0);
+                    const countries = Object.keys(stats).sort();
                     return (
-                      <DropdownItem
+                      <CollapsibleSection
                         key={q}
-                        onClick={() => { onQueueChange(active ? null : q); close(); }}
+                        title={
+                          <span className="flex items-center gap-1.5">
+                            <span className={cn("w-2 h-2 rounded-full", QUEUE_COLOR[q].split(" ")[0])} />
+                            {QUEUE_LABEL[q]}
+                          </span>
+                        }
+                        defaultOpen={active}
+                        rightAccessory={
+                          <span className="text-[10px] text-fg-dim">
+                            {totalForQueue || counts.byQueue[q]}
+                            {active && country && (
+                              <span className="ml-1 text-accent">· {country}</span>
+                            )}
+                          </span>
+                        }
                       >
-                        <span className={cn("w-2 h-2 rounded-full", QUEUE_COLOR[q].split(" ")[0])} />
-                        <span className="flex-1">{QUEUE_LABEL[q]}</span>
-                        <span className="text-[10px] text-fg-dim">{counts.byQueue[q]}</span>
-                        {active && <span className="text-accent text-[10px]">activo</span>}
-                      </DropdownItem>
+                        <button
+                          onClick={() => { onQueueChange(active ? null : q); onCountryChange(null); close(); }}
+                          className={cn(
+                            "w-full px-9 py-1 text-[11px] flex items-center gap-2 hover:bg-hover transition-colors",
+                            active && country === null && "bg-accent/10 text-accent"
+                          )}
+                        >
+                          <span className="flex-1 text-left">Todos los países</span>
+                          <span className="text-[10px] text-fg-dim">{totalForQueue}</span>
+                        </button>
+                        {countries.length === 0 && (
+                          <div className="px-9 py-1 text-[10px] text-fg-dim italic">
+                            sin convs en esta cola
+                          </div>
+                        )}
+                        {countries.map((cc) => {
+                          const cActive = active && country === cc;
+                          return (
+                            <button
+                              key={cc}
+                              onClick={() => { onQueueChange(q); onCountryChange(cc); close(); }}
+                              className={cn(
+                                "w-full px-9 py-1 text-[11px] flex items-center gap-2 hover:bg-hover transition-colors",
+                                cActive && "bg-accent/10 text-accent"
+                              )}
+                            >
+                              <Flag iso={cc} size={10} />
+                              <span className="flex-1 text-left">{cc}</span>
+                              <span className="text-[10px] text-fg-dim">{stats[cc]}</span>
+                            </button>
+                          );
+                        })}
+                      </CollapsibleSection>
                     );
                   })}
 

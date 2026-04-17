@@ -24,6 +24,7 @@ import {
   useBulkAssign,
   useBulkResolve,
   useBulkSnooze,
+  useQueueStats,
 } from "@/lib/api/inbox";
 
 const ME_ID = "u-gbaza"; // TODO: leer del auth
@@ -36,12 +37,14 @@ export default function InboxPage() {
   const [lifecycle, setLifecycle] = useState<LifecycleStage | null>(null);
   const [channel, setChannel] = useState<Channel | null>(null);
   const [queue, setQueue] = useState<Queue | null>(null);
+  const [country, setCountry] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [bulkSelected, setBulkSelected] = useState<Set<string>>(new Set());
 
   // ── Queries ────────────────────────────────────────────────────────────
-  const convsQ = useConversations({ view, lifecycle, channel, queue, search });
+  const convsQ = useConversations({ view, lifecycle, channel, queue, country, search });
   const items = convsQ.data ?? [];
+  const queueStatsQ = useQueueStats();
 
   // Auto-seleccionar la primera cuando carga
   const effectiveSelectedId =
@@ -150,6 +153,9 @@ export default function InboxPage() {
         onChannelChange={setChannel}
         queue={queue}
         onQueueChange={setQueue}
+        country={country}
+        onCountryChange={setCountry}
+        queueStats={queueStatsQ.data}
         search={search}
         onSearchChange={setSearch}
         counts={counts}

@@ -90,6 +90,32 @@ async def list_agents():
     return await cm.list_agents()
 
 
+@router.get("/queue-stats")
+async def queue_stats():
+    """Retorna conteo de conversaciones por (queue, country). Para el filtro
+    Cola → País del inbox."""
+    pool = await postgres_store.get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("""
+            select
+                coalesce(cm.queue, 'sales') as queue,
+                upper(coalesce(c.user_profile->>'country', 'AR')) as country,
+                count(*)::int as cnt
+            from public.conversations c
+            left join public.conversation_meta cm on cm.conversation_id = c.id
+            where coalesce(cm.status, 'open') != 'resolved'
+            group by 1, 2
+            order by 1, 2
+        """)
+    out: dict[str, dict[str, int]] = {"sales": {}, "billing": {}, "post-sales": {}}
+    for r in rows:
+        q = r["queue"]; c = r["country"]; n = r["cnt"]
+        if q not in out:
+            out[q] = {}
+        out[q][c] = n
+    return out
+
+
 @router.get("/conversations", response_model=list[ConversationOut])
 async def list_conversations(
     limit: int = Query(50, le=200),
@@ -98,6 +124,7 @@ async def list_conversations(
     lifecycle:   Optional[str] = None,
     channel:     Optional[str] = None,
     queue:       Optional[str] = None,
+    country:     Optional[str] = None,
     assigned_to: Optional[str] = None,
     search:      Optional[str] = None,
     date_from:   Optional[str] = None,
@@ -125,6 +152,10 @@ async def list_conversations(
     if queue:
         where_parts.append(f"cm.queue = ${idx}")
         params.append(queue); idx += 1
+    if country:
+        # filtra por user_profile.country (ISO-2). Case-insensitive.
+        where_parts.append(f"upper(coalesce(c.user_profile->>'country', 'AR')) = upper(${idx})")
+        params.append(country); idx += 1
     if lifecycle:
         where_parts.append(f"coalesce(cm.lifecycle_override, cm.lifecycle_auto, 'new') = ${idx}")
         params.append(lifecycle); idx += 1

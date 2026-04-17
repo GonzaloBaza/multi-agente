@@ -227,7 +227,14 @@ export function ConversationDetail({
       </div>
 
       {/* Composer (componente extraído) */}
-      <Composer botPaused={conversation.botPaused} onToggleBot={onToggleBot} />
+      <Composer
+        botPaused={conversation.botPaused}
+        onToggleBot={onToggleBot}
+        conversationId={conversation.id}
+        channel={conversation.channel}
+        agentId={ME.id}
+        agentName={ME.name}
+      />
     </div>
   );
 }

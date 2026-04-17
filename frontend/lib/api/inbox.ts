@@ -179,6 +179,19 @@ export function apiToContactDetail(c: ApiContact): ContactDetail {
 // Hooks
 // ─────────────────────────────────────────────────────────────────────
 
+/**
+ * Conteo de conversaciones por (queue, country) — para el filtro Cola → País.
+ * Devuelve { sales: { AR: 12, MX: 3, ... }, billing: {...}, "post-sales": {...} }
+ */
+export function useQueueStats() {
+  return useQuery<Record<string, Record<string, number>>>({
+    queryKey: ["inbox", "queue-stats"],
+    queryFn: async () => api.get(`/inbox/queue-stats`),
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  });
+}
+
 export function useAgents() {
   return useQuery<Agent[]>({
     queryKey: ["inbox", "agents"],
@@ -195,6 +208,7 @@ export type ConversationsParams = {
   lifecycle?: LifecycleStage | null;
   channel?: Channel | null;
   queue?: Queue | null;
+  country?: string | null;
   search?: string;
   limit?: number;
 };
@@ -205,6 +219,7 @@ export function useConversations(params: ConversationsParams) {
   if (params.lifecycle) qs.set("lifecycle", params.lifecycle);
   if (params.channel)   qs.set("channel", params.channel);
   if (params.queue)     qs.set("queue", params.queue);
+  if (params.country)   qs.set("country", params.country);
   if (params.search)    qs.set("search", params.search);
   qs.set("limit", String(params.limit ?? 100));
 
@@ -350,5 +365,26 @@ export function useCorrectSpelling() {
   return useMutation({
     mutationFn: ({ text }: { text: string }) =>
       api.post<{ corrected: string; changed: boolean }>(`/inbox/llm/correct-spelling`, { text }),
+  });
+}
+
+export function useSendMessage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ conversationId, text, agentId, agentName }: {
+      conversationId: string;
+      text: string;
+      agentId?: string;
+      agentName?: string;
+    }) =>
+      api.post<{ ok: boolean; delivered: boolean; channel: string }>(
+        `/inbox/conversations/${conversationId}/send`,
+        { text, agent_id: agentId, agent_name: agentName ?? "Agente" }
+      ),
+    onSuccess: (_, vars) => {
+      // refetch mensajes + lista de convs (para que se vea el último mensaje)
+      qc.invalidateQueries({ queryKey: ["inbox", "messages", vars.conversationId] });
+      qc.invalidateQueries({ queryKey: ["inbox", "conversations"] });
+    },
   });
 }

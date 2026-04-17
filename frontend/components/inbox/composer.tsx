@@ -14,7 +14,8 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dropdown, DropdownItem, DropdownLabel } from "@/components/ui/dropdown";
-import { useCorrectSpelling } from "@/lib/api/inbox";
+import { useCorrectSpelling, useSendMessage } from "@/lib/api/inbox";
+import type { Channel } from "@/lib/mock-data";
 
 // Picker pesado, lazy load (no entra al bundle inicial)
 const EmojiPicker = dynamic(() => import("emoji-picker-react"), { ssr: false });
@@ -29,9 +30,16 @@ const QUICK_TEMPLATES = [
 interface Props {
   botPaused: boolean;
   onToggleBot: () => void;
+  conversationId?: string;
+  channel?: Channel;
+  agentId?: string;
+  agentName?: string;
 }
 
-export function Composer({ botPaused, onToggleBot }: Props) {
+export function Composer({
+  botPaused, onToggleBot,
+  conversationId, channel, agentId, agentName,
+}: Props) {
   const [draft, setDraft] = useState("");
   const [attachments, setAttachments] = useState<File[]>([]);
   const [recording, setRecording] = useState(false);
@@ -154,11 +162,35 @@ export function Composer({ botPaused, onToggleBot }: Props) {
   };
 
   // ── Enviar ────────────────────────────────────────────────────────────
-  const handleSend = () => {
+  const sendMut = useSendMessage();
+  const [sendError, setSendError] = useState<string | null>(null);
+
+  const canSend = !!conversationId && channel === "widget";
+  const sendDisabledReason = !conversationId
+    ? "Seleccioná una conversación"
+    : channel !== "widget"
+      ? `Envío desde la UI aún no soportado para canal '${channel}' (solo widget por ahora)`
+      : "";
+
+  const handleSend = async () => {
     if (!draft.trim() && attachments.length === 0) return;
-    console.log("[mock send]", { text: draft, attachments: attachments.map((f) => f.name) });
-    setDraft("");
-    setAttachments([]);
+    if (!canSend) {
+      setSendError(sendDisabledReason);
+      return;
+    }
+    setSendError(null);
+    try {
+      await sendMut.mutateAsync({
+        conversationId: conversationId!,
+        text: draft.trim(),
+        agentId, agentName,
+      });
+      setDraft("");
+      setAttachments([]);
+      // TODO: subir adjuntos. Por ahora se borran (no soportado en /send).
+    } catch (err) {
+      setSendError((err as Error).message || "Error desconocido al enviar");
+    }
   };
 
   // ─────────────────────────────────────────────────────────────────────
@@ -347,13 +379,27 @@ export function Composer({ botPaused, onToggleBot }: Props) {
                 {attachments.length > 0 && ` · ${attachments.length} adj`}
               </span>
               <Button
-                disabled={(!draft.trim() && attachments.length === 0) || correcting}
+                disabled={(!draft.trim() && attachments.length === 0) || correcting || sendMut.isPending || !canSend}
                 onClick={handleSend}
+                title={!canSend ? sendDisabledReason : undefined}
               >
-                Enviar
+                {sendMut.isPending ? (
+                  <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Enviando...</>
+                ) : "Enviar"}
               </Button>
             </div>
           </div>
+
+          {sendError && (
+            <div className="mt-2 px-2 py-1.5 bg-danger/10 border border-danger/30 rounded text-[10px] text-danger">
+              ⚠ {sendError}
+            </div>
+          )}
+          {!canSend && !sendError && conversationId && (
+            <div className="mt-2 px-2 py-1.5 bg-warn/5 border border-warn/20 rounded text-[10px] text-warn">
+              ⚠ {sendDisabledReason}
+            </div>
+          )}
         </div>
       )}
     </div>
