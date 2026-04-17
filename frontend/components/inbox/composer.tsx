@@ -179,15 +179,40 @@ export function Composer({
       return;
     }
     setSendError(null);
+
+    // Si no hay texto pero sí adjuntos, generar un placeholder descriptivo.
+    // (El upload real de adjuntos al canal aún no está implementado — los
+    //  archivos se descartan después de "enviar". Mostramos warning honesto.)
+    let textToSend = draft.trim();
+    if (!textToSend && attachments.length > 0) {
+      const audios = attachments.filter((f) => f.type.startsWith("audio/"));
+      const others = attachments.filter((f) => !f.type.startsWith("audio/"));
+      const parts: string[] = [];
+      for (const a of audios) {
+        const sizeKb = Math.round(a.size / 1024);
+        parts.push(`🎤 Mensaje de voz (${sizeKb}KB)`);
+      }
+      for (const f of others) {
+        parts.push(`📎 ${f.name}`);
+      }
+      textToSend = parts.join("  ·  ");
+    }
+
     try {
       await sendMut.mutateAsync({
         conversationId: conversationId!,
-        text: draft.trim(),
+        text: textToSend,
         agentId, agentName,
       });
       setDraft("");
       setAttachments([]);
-      // TODO: subir adjuntos. Por ahora se borran (no soportado en /send).
+      // Aviso honesto: el archivo en sí NO se subió al canal todavía.
+      if (attachments.length > 0) {
+        setSendError(
+          "⚠ Texto enviado, pero los adjuntos aún no se suben al canal del usuario " +
+          "(falta integrar storage). Solo queda el placeholder en el historial."
+        );
+      }
     } catch (err) {
       setSendError((err as Error).message || "Error desconocido al enviar");
     }
