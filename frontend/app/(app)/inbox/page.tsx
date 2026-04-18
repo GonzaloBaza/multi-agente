@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useEffect, useCallback } from "react";
+import { Suspense, useMemo, useState, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { ConversationList } from "@/components/inbox/conversation-list";
 import { ConversationDetail } from "@/components/inbox/conversation-detail";
@@ -29,7 +29,19 @@ import {
   useAIInsights,
 } from "@/lib/api/inbox";
 
+// Next 15 obliga a wrappear cualquier uso de useSearchParams en <Suspense>
+// si la página puede pre-renderizarse estática. /inbox es CSR puro (auth +
+// React Query) así que el fallback nunca se va a ver en runtime, pero el
+// build lo exige. Este wrapper arregla "missing-suspense-with-csr-bailout".
 export default function InboxPage() {
+  return (
+    <Suspense fallback={null}>
+      <InboxPageInner />
+    </Suspense>
+  );
+}
+
+function InboxPageInner() {
   // El id del agente actual sale del JWT (profiles.id uuid).
   // Si no hay sesión (modo dev con admin key), queda vacío y los filtros
   // de "mías" no matchean nada — comportamiento esperado.
