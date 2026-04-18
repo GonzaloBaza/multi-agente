@@ -23,7 +23,8 @@ import {
 } from "@/components/ui/dropdown";
 import { Composer } from "./composer";
 import { MessageBubble } from "./message-bubble";
-import { TEAM, ME } from "@/lib/mock-data";
+import { useAgents } from "@/lib/api/inbox";
+import { useAuth } from "@/lib/auth";
 import type { ContactDetail, ConversationListItem, LifecycleStage, Message } from "@/lib/mock-data";
 
 const LIFECYCLE_OPTIONS: { value: LifecycleStage; label: string; color: string }[] = [
@@ -63,6 +64,11 @@ export function ConversationDetail({
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages.length, conversation?.id]);
 
+  // Equipo real desde el backend (profiles con role agente/supervisor/admin)
+  const { data: agents = [] } = useAgents();
+  const { user } = useAuth();
+  const meId = user?.id ?? null;
+
   if (!contact || !conversation) {
     return (
       <div className="flex-1 flex items-center justify-center bg-bg text-fg-dim text-sm">
@@ -72,7 +78,7 @@ export function ConversationDetail({
   }
 
   const assignedAgent = conversation.assignedTo
-    ? TEAM.find((a) => a.id === conversation.assignedTo)
+    ? agents.find((a) => a.id === conversation.assignedTo)
     : null;
 
   return (
@@ -151,7 +157,10 @@ export function ConversationDetail({
             {(close) => (
               <>
                 <DropdownLabel>Asignar a</DropdownLabel>
-                {TEAM.map((a) => (
+                {agents.length === 0 && (
+                  <div className="px-3 py-2 text-[11px] text-fg-dim">Cargando equipo…</div>
+                )}
+                {agents.map((a) => (
                   <DropdownItem
                     key={a.id}
                     onClick={() => { onAssign(a.id); close(); }}
@@ -159,7 +168,7 @@ export function ConversationDetail({
                     <div className={`w-5 h-5 rounded-full bg-gradient-to-br ${a.color} text-white text-[9px] font-bold flex items-center justify-center`}>
                       {a.initials}
                     </div>
-                    <span>{a.name}{a.id === ME.id && " (yo)"}</span>
+                    <span>{a.name}{a.id === meId && " (yo)"}</span>
                     {conversation.assignedTo === a.id && <Check className="w-3 h-3 ml-auto text-accent" />}
                   </DropdownItem>
                 ))}
@@ -239,8 +248,8 @@ export function ConversationDetail({
         onToggleBot={onToggleBot}
         conversationId={conversation.id}
         channel={conversation.channel}
-        agentId={ME.id}
-        agentName={ME.name}
+        agentId={user?.id ?? ""}
+        agentName={user?.name ?? "Agente"}
       />
     </div>
   );

@@ -15,10 +15,10 @@ import {
   type Channel,
   type InboxView,
   type Queue,
-  TEAM,
   QUEUE_LABEL,
   QUEUE_COLOR,
 } from "@/lib/mock-data";
+import { useAgents } from "@/lib/api/inbox";
 
 interface Props {
   items: ConversationListItem[];
@@ -128,6 +128,10 @@ export function ConversationList({
   const bulkMode = bulkSelected.size > 0;
   const allVisibleSelected = items.length > 0 && items.every((i) => bulkSelected.has(i.id));
 
+  // Equipo real desde backend (profiles con role agente/supervisor/admin).
+  // Usado en bulk assign + sidebar "Asignado a".
+  const { data: agents = [] } = useAgents();
+
   return (
     <div className="w-[340px] bg-panel border-r border-border flex flex-col shrink-0">
       {/* ===== BULK ACTIONS BAR (cuando hay selección) ===== */}
@@ -156,7 +160,10 @@ export function ConversationList({
               {(close) => (
                 <>
                   <DropdownLabel>Reasignar {bulkSelected.size} a</DropdownLabel>
-                  {TEAM.map((a) => (
+                  {agents.length === 0 && (
+                    <div className="px-3 py-2 text-[11px] text-fg-dim">Cargando equipo…</div>
+                  )}
+                  {agents.map((a) => (
                     <DropdownItem key={a.id} onClick={() => { onBulkAssign(a.id); close(); }}>
                       <div className={`w-5 h-5 rounded-full bg-gradient-to-br ${a.color} text-white text-[9px] font-bold flex items-center justify-center`}>
                         {a.initials}
@@ -363,9 +370,9 @@ export function ConversationList({
                   <CollapsibleSection
                     title="Asignado a"
                     defaultOpen={false}
-                    rightAccessory={<span className="text-[9px] text-fg-dim">{TEAM.length}</span>}
+                    rightAccessory={<span className="text-[9px] text-fg-dim">{agents.length}</span>}
                   >
-                    {TEAM.map((a) => (
+                    {agents.map((a) => (
                       <button
                         key={a.id}
                         onClick={() => { close(); }}

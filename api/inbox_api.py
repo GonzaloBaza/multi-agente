@@ -328,7 +328,9 @@ async def list_conversations(
         where_parts.append(f"c.channel = ${idx}")
         params.append(channel); idx += 1
     if assigned_to:
-        where_parts.append(f"cm.assigned_agent_id = ${idx}")
+        # cm.assigned_agent_id es uuid (FK a profiles.id) — cast explícito necesario
+        # porque asyncpg pasa el query param como text y postgres no infiere uuid=text
+        where_parts.append(f"cm.assigned_agent_id = ${idx}::uuid")
         params.append(assigned_to); idx += 1
     if queue:
         where_parts.append(f"cm.queue = ${idx}")
