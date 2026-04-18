@@ -60,7 +60,9 @@ export default function InboxPage() {
   const contactQ = useContact(selected?.contact.email ?? null);
   const aiInsightsQ = useAIInsights(effectiveSelectedId || null);
 
-  // Mergear AI insights al contact (sobreescribe los mock con los reales)
+  // Mergear AI insights al contact (sobreescribe los mock con los reales).
+  // Si la conv es de un visitante anonimo (sin email → no hay perfil Zoho),
+  // construimos un "stub" para que el detalle se renderice igual.
   const contactWithInsights = contactQ.data
     ? {
         ...contactQ.data,
@@ -69,6 +71,30 @@ export default function InboxPage() {
           nextStep: "—",
           scoringReasons: [],
         },
+      }
+    : selected
+    ? {
+        id: selected.id,
+        zohoId: undefined,
+        name: selected.contact.name,
+        email: selected.contact.email || "",
+        phone: selected.contact.phone || "",
+        country: selected.contact.country || "AR",
+        countryName: "",
+        channel: selected.channel as any,
+        pageContext: undefined,
+        lifecycle: selected.lifecycle,
+        professional: {},
+        jurisdictionalCert: undefined,
+        coursesTaken: [],
+        scoring: { perfil: 0, venta: 0 } as any,
+        tags: selected.tags ?? [],
+        ai: aiInsightsQ.data ?? {
+          summary: aiInsightsQ.isLoading ? "Generando insights con IA..." : "—",
+          nextStep: "—",
+          scoringReasons: [],
+        },
+        cobranzas: undefined as any,
       }
     : null;
 
