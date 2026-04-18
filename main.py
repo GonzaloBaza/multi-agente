@@ -228,56 +228,6 @@ def create_app() -> FastAPI:
         js_file = Path(__file__).parent / "widget" / "static" / "chat.js"
         return FileResponse(str(js_file), media_type="application/javascript")
 
-    # Redirects 301 a la UI nueva (Next.js) — bookmarks viejos del equipo
-    # siguen cayendo en la pantalla correcta. Toda la UI admin vive hoy en
-    # Next.js bajo el mismo dominio; estas rutas FastAPI solo empujan al
-    # destino correcto.
-    from fastapi.responses import RedirectResponse
-
-    @app.get("/inbox-ui")
-    @app.get("/inbox-ui/{session_id}")
-    async def redirect_inbox_ui(session_id: str = ""):
-        target = f"/inbox?conv={session_id}" if session_id else "/inbox"
-        return RedirectResponse(url=target, status_code=301)
-
-    @app.get("/admin/prompts-ui")
-    async def redirect_prompts_ui():
-        return RedirectResponse(url="/prompts", status_code=301)
-
-    @app.get("/admin/users-ui")
-    async def redirect_users_ui():
-        return RedirectResponse(url="/users", status_code=301)
-
-    @app.get("/admin/redis-ui")
-    async def redirect_redis_ui():
-        return RedirectResponse(url="/redis", status_code=301)
-
-    @app.get("/admin/templates-ui")
-    async def redirect_templates_ui():
-        return RedirectResponse(url="/templates", status_code=301)
-
-    @app.get("/admin/dashboard-ui")
-    async def redirect_dashboard_ui():
-        return RedirectResponse(url="/dashboard", status_code=301)
-
-    @app.get("/admin/test-agent-ui")
-    async def redirect_test_agent_ui():
-        return RedirectResponse(url="/test-agent", status_code=301)
-
-    @app.get("/admin/flows-ui")
-    @app.get("/admin/channels-ui")
-    async def redirect_channels_ui():
-        # /flows ya no existe (Drawflow builder eliminado, dead code).
-        # La config del widget embebible ahora vive en /channels.
-        return RedirectResponse(url="/channels", status_code=301)
-
-    # Compat: el widget JS embebido en sitios externos puede tener el bundle
-    # viejo cacheado apuntando a /admin/flows/widget-config/public. Redirect
-    # temporal al endpoint canónico; se puede borrar tras unas semanas.
-    @app.get("/admin/flows/widget-config/public", include_in_schema=False)
-    async def redirect_legacy_widget_config_public():
-        return RedirectResponse(url="/admin/widget-config/public", status_code=301)
-
     return app
 
 
