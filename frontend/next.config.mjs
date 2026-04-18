@@ -2,13 +2,6 @@
 const nextConfig = {
   reactStrictMode: true,
 
-  // Desactiva el indicador flotante de Next en dev (rayito abajo izq que
-  // se pisaba con el avatar del usuario).
-  devIndicators: {
-    appIsrStatus: false,
-    buildActivity: false,
-  },
-
   // Reverse proxy local: en dev, las rutas /api/* las redirige al FastAPI.
   // En prod (mismo dominio agentes.msklatam.com), Nginx hace el routing.
   // OJO: preservar el prefix /api/ porque el backend tiene endpoints /api/inbox/*
