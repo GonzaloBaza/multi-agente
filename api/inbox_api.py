@@ -33,11 +33,11 @@ from pydantic import BaseModel, Field
 
 from memory import postgres_store, conversation_meta as cm
 from integrations.zoho.contacts import ZohoContacts
-from api.admin import verify_admin_key  # ya existe — protege estos endpoints
+from api.admin import verify_admin_or_session  # acepta admin key O session token
 
 logger = structlog.get_logger(__name__)
 
-router = APIRouter(prefix="/api/inbox", tags=["inbox"], dependencies=[Depends(verify_admin_key)])
+router = APIRouter(prefix="/api/inbox", tags=["inbox"], dependencies=[Depends(verify_admin_or_session)])
 
 
 # ─── Schemas ─────────────────────────────────────────────────────────────────

@@ -2,6 +2,7 @@
 Endpoints de administración (protegidos con API key interna):
 - GET  /admin/status   → estado del sistema
 """
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Header
 from config.settings import get_settings
 import structlog
@@ -12,10 +13,54 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 
 def verify_admin_key(x_admin_key: str = Header(...)):
+    """Solo admin key — para scripts/cron/webhooks internos.
+
+    Endpoints que sirven al UI logueado deben usar `verify_admin_or_session`
+    para que el browser no necesite mandar el admin key (que sería expuesto
+    en el bundle JS).
+    """
     settings = get_settings()
     if x_admin_key != settings.app_secret_key:
         raise HTTPException(status_code=403, detail="Invalid admin key")
     return x_admin_key
+
+
+async def verify_admin_or_session(
+    x_admin_key: Optional[str] = Header(None),
+    x_session_token: Optional[str] = Header(None),
+) -> dict:
+    """Acepta cualquiera de:
+      - `X-Admin-Key: <secret>` → para scripts internos / cron / curl manual.
+      - `X-Session-Token: <jwt>` → para el browser autenticado vía /auth/login.
+
+    Retorna dict con `{auth: "admin"}` o `{auth: "session", user: {...}}`.
+
+    Esto reemplaza a `verify_admin_key` en endpoints que el UI consume:
+    sin esto, el frontend tendría que mandar el admin key embebido en el
+    bundle JS (que se descarga en claro), bypaseando todo el sistema de
+    sesiones. Con esto el browser solo necesita su JWT.
+    """
+    settings = get_settings()
+
+    # 1. Admin key (preferido si viene — backward-compat con scripts).
+    if x_admin_key:
+        if x_admin_key == settings.app_secret_key:
+            return {"auth": "admin"}
+        raise HTTPException(status_code=403, detail="Invalid admin key")
+
+    # 2. Session token vía Redis (mismo storage que get_current_user).
+    if x_session_token:
+        from memory.conversation_store import get_conversation_store
+        import json as _json
+        store = await get_conversation_store()
+        data = await store._redis.get(f"session:{x_session_token}")
+        if not data:
+            raise HTTPException(status_code=401, detail="Sesión expirada")
+        if isinstance(data, bytes):
+            data = data.decode("utf-8")
+        return {"auth": "session", "user": _json.loads(data)}
+
+    raise HTTPException(status_code=401, detail="No autenticado")
 
 
 @router.get("/status")
