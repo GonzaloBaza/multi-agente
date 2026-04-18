@@ -128,9 +128,107 @@ async def list_agents():
     return await cm.list_agents()
 
 
+class CreateAgentBody(BaseModel):
+    id: str
+    name: str
+    email: Optional[str] = None
+    initials: Optional[str] = None
+    color: Optional[str] = "from-pink-500 to-fuchsia-600"
+
+@router.post("/agents")
+async def create_agent(body: CreateAgentBody):
+    pool = await postgres_store.get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            insert into public.agents (id, name, email, initials, color, active)
+            values ($1, $2, $3, $4, $5, true)
+            on conflict (id) do update set
+              name=excluded.name, email=excluded.email,
+              initials=excluded.initials, color=excluded.color, active=true
+            """,
+            body.id, body.name, body.email, body.initials or body.name[:2].upper(), body.color,
+        )
+    return {"ok": True}
+
+
+@router.delete("/agents/{agent_id}")
+async def delete_agent(agent_id: str):
+    pool = await postgres_store.get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "update public.agents set active = false where id = $1",
+            agent_id,
+        )
+    return {"ok": True}
+
+
 # Países "primarios" — los que tienen su propia sub-cola en el inbox.
 # El resto se agrupa bajo "MP" (multi-país).
 PRIMARY_COUNTRIES = {"AR", "CL", "EC", "MX", "CO"}
+
+
+@router.get("/analytics")
+async def analytics(days: int = 30):
+    """Métricas básicas para la página /analytics."""
+    pool = await postgres_store.get_pool()
+    async with pool.acquire() as conn:
+        # Conteos generales
+        total_convs = await conn.fetchval("select count(*) from public.conversations where created_at > now() - $1::interval", f"{days} days")
+        total_msgs = await conn.fetchval("select count(*) from public.messages where created_at > now() - $1::interval", f"{days} days")
+        active_today = await conn.fetchval("select count(*) from public.conversations where updated_at > now() - interval '24 hours'")
+        resolved_count = await conn.fetchval("select count(*) from public.conversation_meta where status = 'resolved'")
+        # Convs por día
+        daily = await conn.fetch(f"""
+            select date_trunc('day', created_at)::date as day, count(*)::int as cnt
+            from public.conversations
+            where created_at > now() - interval '{int(days)} days'
+            group by 1 order by 1
+        """)
+        # Por canal
+        by_channel = await conn.fetch(f"""
+            select channel, count(*)::int as cnt
+            from public.conversations
+            where created_at > now() - interval '{int(days)} days'
+            group by 1
+        """)
+        # Por queue
+        by_queue = await conn.fetch(f"""
+            select coalesce(cm.queue, 'sales') as queue, count(*)::int as cnt
+            from public.conversations c
+            left join public.conversation_meta cm on cm.conversation_id = c.id
+            where c.created_at > now() - interval '{int(days)} days'
+            group by 1
+        """)
+        # Por país
+        by_country = await conn.fetch(f"""
+            select upper(coalesce(user_profile->>'country', 'AR')) as cc, count(*)::int as cnt
+            from public.conversations
+            where created_at > now() - interval '{int(days)} days'
+            group by 1 order by 2 desc limit 10
+        """)
+        # Lifecycle
+        by_lifecycle = await conn.fetch(f"""
+            select coalesce(cm.lifecycle_override, cm.lifecycle_auto, 'new') as lc, count(*)::int as cnt
+            from public.conversations c
+            left join public.conversation_meta cm on cm.conversation_id = c.id
+            where c.created_at > now() - interval '{int(days)} days'
+            group by 1
+        """)
+
+    return {
+        "totals": {
+            "conversations": total_convs or 0,
+            "messages": total_msgs or 0,
+            "active_today": active_today or 0,
+            "resolved": resolved_count or 0,
+        },
+        "daily": [{"day": str(r["day"]), "count": r["cnt"]} for r in daily],
+        "by_channel":   {r["channel"]: r["cnt"] for r in by_channel},
+        "by_queue":     {r["queue"]: r["cnt"] for r in by_queue},
+        "by_country":   {r["cc"]: r["cnt"] for r in by_country},
+        "by_lifecycle": {r["lc"]: r["cnt"] for r in by_lifecycle},
+    }
 
 
 @router.get("/courses")
@@ -585,7 +683,15 @@ class AssignBody(BaseModel):
 @router.post("/conversations/{conv_id}/assign")
 async def assign(conv_id: str, body: AssignBody):
     await cm.assign(conv_id, body.agent_id)
+    from utils.inbox_jobs import log_action
+    await log_action("system", "assign", conv_id, {"agent_id": body.agent_id})
     return {"ok": True}
+
+
+@router.get("/audit-log")
+async def get_audit_log(limit: int = 100, conversation_id: Optional[str] = None, actor_id: Optional[str] = None):
+    from utils.inbox_jobs import list_audit_log
+    return await list_audit_log(limit=limit, conversation_id=conversation_id, actor_id=actor_id)
 
 class StatusBody(BaseModel):
     status: Literal["open", "pending", "resolved"]
@@ -611,6 +717,8 @@ class ClassifyBody(BaseModel):
 @router.post("/conversations/{conv_id}/classify")
 async def classify(conv_id: str, body: ClassifyBody):
     await cm.classify(conv_id, body.lifecycle)
+    from utils.inbox_jobs import log_action
+    await log_action("system", "classify", conv_id, {"lifecycle": body.lifecycle})
     return {"ok": True}
 
 class QueueBody(BaseModel):
