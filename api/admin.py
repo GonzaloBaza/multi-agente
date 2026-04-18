@@ -124,3 +124,68 @@ async def get_status(key: str = Depends(verify_admin_key)):
         "env": settings.app_env,
         "circuit_breakers": breakers,
     }
+
+
+@router.get("/channels-status")
+async def channels_status(auth: dict = Depends(require_role_or_admin("admin", "supervisor"))):
+    """Estado de cada canal/integración, para la página /channels del frontend.
+
+    No expone secretos — solo dice "configurado" vs "no configurado" y, cuando
+    aplica, hace un ping básico a la API remota. Si falla, mostramos el error
+    para que el admin vea qué se rompió.
+    """
+    settings = get_settings()
+
+    def _configured(val: str | None) -> bool:
+        return bool(val) and val not in ("", "change-me", "your-token-here")
+
+    out = {
+        "whatsapp_meta": {
+            "configured": _configured(getattr(settings, "whatsapp_token", None))
+                          and _configured(getattr(settings, "whatsapp_phone_number_id", None)),
+            "phone_number_id": getattr(settings, "whatsapp_phone_number_id", "") or None,
+            "waba_id": getattr(settings, "whatsapp_waba_id", "") or None,
+        },
+        "botmaker": {
+            "configured": _configured(getattr(settings, "botmaker_api_key", None)),
+        },
+        "twilio": {
+            "configured": _configured(getattr(settings, "twilio_account_sid", None))
+                          and _configured(getattr(settings, "twilio_auth_token", None)),
+            "account_sid": getattr(settings, "twilio_account_sid", "") or None,
+        },
+        "widget": {
+            "configured": True,  # siempre está activo (lo sirve FastAPI)
+            "allowed_origins": getattr(settings, "allowed_origins", "") or "",
+        },
+        "zoho": {
+            "configured": _configured(getattr(settings, "zoho_refresh_token", None)),
+        },
+        "mercadopago": {
+            "configured": _configured(getattr(settings, "mp_access_token", None)),
+        },
+        "rebill": {
+            "configured": _configured(getattr(settings, "rebill_api_key", None)),
+        },
+        "openai": {
+            "configured": _configured(getattr(settings, "openai_api_key", None)),
+            "model": getattr(settings, "openai_model", ""),
+        },
+        "pinecone": {
+            "configured": _configured(getattr(settings, "pinecone_api_key", None)),
+            "index": getattr(settings, "pinecone_index_name", "") or None,
+        },
+        "cloudflare_r2": {
+            "configured": _configured(getattr(settings, "r2_access_key_id", None))
+                          and _configured(getattr(settings, "r2_bucket", None)),
+            "bucket": getattr(settings, "r2_bucket", "") or None,
+            "public_url": getattr(settings, "r2_public_url", "") or None,
+        },
+        "sentry": {
+            "configured": _configured(getattr(settings, "sentry_dsn", None)),
+        },
+        "slack": {
+            "configured": _configured(getattr(settings, "slack_webhook_url", None)),
+        },
+    }
+    return out

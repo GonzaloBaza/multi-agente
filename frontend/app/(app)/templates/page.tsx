@@ -3,15 +3,19 @@
 /**
  * /templates — gestión de plantillas HSM de WhatsApp (Meta Cloud API).
  *
- * Paridad con widget/templates.html: lista con stats por estado (APPROVED /
- * PENDING / REJECTED), filtro por estado + búsqueda, creación y eliminación.
+ * Paridad total con widget/templates.html (excepto el preview WA-like, que
+ * acá es más minimalista):
+ *   - Lista con stats por estado + filtros + search
+ *   - Ver detalle (header/body/footer/buttons/rejected_reason)
+ *   - Eliminar (admin)
+ *   - Modal crear con:
+ *       · header opcional (texto | imagen | video | documento)
+ *       · media upload via /templates/hsm/upload-media (devuelve handle)
+ *       · body con {{N}} variables
+ *       · footer opcional
+ *       · hasta 3 botones (QUICK_REPLY | URL | PHONE_NUMBER)
  *
- * Media uploads para headers (image/video/document) todavía NO migrados —
- * requieren upload resumible a Meta + handle. Para eso, por ahora, usar la
- * UI vieja (/admin/templates-ui). El core del CRUD texto + botones quick
- * reply / URL / phone ya está acá.
- *
- * Auth: leer = supervisor+; crear/borrar = admin (enforced en backend).
+ * Auth: leer = supervisor+; crear/borrar = admin.
  */
 
 import { useMemo, useState } from "react";
@@ -23,6 +27,8 @@ import {
   Plus,
   Search,
   Trash2,
+  Upload,
+  X,
   XCircle,
 } from "lucide-react";
 import { RoleGate, useRole } from "@/lib/auth";
@@ -30,14 +36,17 @@ import { NoAccess } from "@/components/ui/coming-soon";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
+import { getAuthToken } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 
-type Button_ = {
+type HSMButton = {
   type: "QUICK_REPLY" | "URL" | "PHONE_NUMBER";
   text: string;
   url?: string;
   phone_number?: string;
 };
+
+type HeaderType = "" | "TEXT" | "IMAGE" | "VIDEO" | "DOCUMENT";
 
 type Template = {
   id: string;
@@ -48,7 +57,7 @@ type Template = {
   body: string;
   header: { format: string; text: string } | null;
   footer: string;
-  buttons: Button_[];
+  buttons: HSMButton[];
   body_var_count: number;
   rejected_reason: string;
 };
@@ -65,13 +74,30 @@ const STATUS_COLOR: Record<Template["status"], string> = {
 const LANGUAGES = ["es_AR", "es_MX", "es", "en_US", "pt_BR"] as const;
 const CATEGORIES: Template["category"][] = ["MARKETING", "UTILITY", "AUTHENTICATION"];
 
-const EMPTY_DRAFT = {
+type Draft = {
+  name: string;
+  category: Template["category"];
+  language: (typeof LANGUAGES)[number];
+  header_type: HeaderType;
+  header_text: string;
+  header_handle: string;
+  header_file_label: string;
+  body_text: string;
+  footer_text: string;
+  buttons: HSMButton[];
+};
+
+const EMPTY_DRAFT: Draft = {
   name: "",
-  category: "MARKETING" as Template["category"],
-  language: "es_AR" as (typeof LANGUAGES)[number],
+  category: "MARKETING",
+  language: "es_AR",
+  header_type: "",
+  header_text: "",
+  header_handle: "",
+  header_file_label: "",
   body_text: "",
   footer_text: "",
-  buttons: [] as Button_[],
+  buttons: [],
 };
 
 export default function TemplatesPage() {
@@ -88,8 +114,9 @@ function TemplatesPageInner() {
   const [filter, setFilter] = useState<StatusFilter>("ALL");
   const [search, setSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
-  const [draft, setDraft] = useState(EMPTY_DRAFT);
+  const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
   const [formError, setFormError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
 
   const q = useQuery<{ templates: Template[]; error?: string }>({
     queryKey: ["templates", "all"],
@@ -98,7 +125,23 @@ function TemplatesPageInner() {
   });
 
   const create = useMutation({
-    mutationFn: () => api.post("/templates/hsm/create", draft),
+    mutationFn: () => {
+      const payload = {
+        name: draft.name,
+        category: draft.category,
+        language: draft.language,
+        body_text: draft.body_text,
+        header_text: draft.header_type === "TEXT" ? draft.header_text : "",
+        header_type:
+          draft.header_type === "IMAGE" || draft.header_type === "VIDEO" || draft.header_type === "DOCUMENT"
+            ? draft.header_type
+            : "",
+        header_handle: draft.header_handle,
+        footer_text: draft.footer_text,
+        buttons: draft.buttons,
+      };
+      return api.post("/templates/hsm/create", payload);
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["templates"] });
       setShowForm(false);
@@ -128,11 +171,11 @@ function TemplatesPageInner() {
   }, [templates]);
 
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const query = search.trim().toLowerCase();
     return templates.filter((t) => {
       if (filter !== "ALL" && t.status !== filter) return false;
-      if (!q) return true;
-      return t.name.toLowerCase().includes(q) || (t.body || "").toLowerCase().includes(q);
+      if (!query) return true;
+      return t.name.toLowerCase().includes(query) || (t.body || "").toLowerCase().includes(query);
     });
   }, [templates, filter, search]);
 
@@ -140,11 +183,61 @@ function TemplatesPageInner() {
     isAdmin &&
     /^[a-z0-9_]+$/.test(draft.name) &&
     draft.body_text.trim().length > 0 &&
-    draft.body_text.length <= 1024;
+    draft.body_text.length <= 1024 &&
+    !uploading &&
+    // Si hay tipo media, tenemos que tener handle
+    (!["IMAGE", "VIDEO", "DOCUMENT"].includes(draft.header_type) || draft.header_handle !== "");
 
   const handleDelete = (name: string) => {
     if (!confirm(`Eliminar la plantilla "${name}"? No se puede deshacer.`)) return;
     remove.mutate(name);
+  };
+
+  const uploadMedia = async (file: File) => {
+    setUploading(true);
+    setFormError(null);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const token = getAuthToken();
+      const res = await fetch("/api/templates/hsm/upload-media", {
+        method: "POST",
+        body: form,
+        headers: token ? { "x-session-token": token } : {},
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(`Upload falló: ${text || res.status}`);
+      }
+      const data: { handle: string; media_type: string; filename: string } = await res.json();
+      setDraft((d) => ({
+        ...d,
+        header_handle: data.handle,
+        header_file_label: `${data.filename} (${data.media_type})`,
+      }));
+    } catch (e) {
+      setFormError((e as Error).message);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const addButton = () => {
+    if (draft.buttons.length >= 3) return;
+    setDraft({
+      ...draft,
+      buttons: [...draft.buttons, { type: "QUICK_REPLY", text: "" }],
+    });
+  };
+
+  const updateButton = (i: number, patch: Partial<HSMButton>) => {
+    const next = [...draft.buttons];
+    next[i] = { ...next[i], ...patch };
+    setDraft({ ...draft, buttons: next });
+  };
+
+  const removeButton = (i: number) => {
+    setDraft({ ...draft, buttons: draft.buttons.filter((_, idx) => idx !== i) });
   };
 
   return (
@@ -213,7 +306,7 @@ function TemplatesPageInner() {
             <div key={t.id || t.name} className="px-6 py-3 hover:bg-hover transition-colors">
               <div className="flex items-start gap-3">
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
                     <span className="font-mono text-sm">{t.name}</span>
                     <span className={cn("text-[9px] px-1.5 py-0.5 rounded", STATUS_COLOR[t.status])}>
                       {t.status}
@@ -223,6 +316,9 @@ function TemplatesPageInner() {
                     <span className="text-[10px] text-fg-dim font-mono">{t.language}</span>
                     {t.body_var_count > 0 && (
                       <span className="text-[10px] text-accent">· {t.body_var_count} variables</span>
+                    )}
+                    {t.header?.format && t.header.format !== "TEXT" && (
+                      <span className="text-[10px] text-info">· header {t.header.format.toLowerCase()}</span>
                     )}
                   </div>
                   {t.header?.text && (
@@ -273,7 +369,7 @@ function TemplatesPageInner() {
       {/* Modal crear */}
       {showForm && isAdmin && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-panel border border-border rounded-lg w-full max-w-2xl max-h-[85vh] flex flex-col">
+          <div className="bg-panel border border-border rounded-lg w-full max-w-2xl max-h-[90vh] flex flex-col">
             <div className="px-4 py-3 border-b border-border flex items-center justify-between">
               <div className="text-sm font-semibold">Nueva plantilla HSM</div>
               <button
@@ -283,12 +379,14 @@ function TemplatesPageInner() {
                 ×
               </button>
             </div>
-            <div className="p-4 space-y-3 overflow-y-auto scroll-thin">
+            <div className="p-4 space-y-4 overflow-y-auto scroll-thin">
               {formError && (
                 <div className="bg-danger/10 border border-danger/30 text-danger text-[11px] px-3 py-2 rounded">
                   {formError}
                 </div>
               )}
+
+              {/* Basics */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-[10px] text-fg-muted uppercase">Nombre</label>
@@ -300,7 +398,7 @@ function TemplatesPageInner() {
                     placeholder="saludo_inicial_ar"
                   />
                   <div className="text-[10px] text-fg-dim mt-1">
-                    Solo letras minúsculas, números y guión bajo.
+                    Solo minúsculas, números y guión bajo.
                   </div>
                 </div>
                 <div>
@@ -334,9 +432,93 @@ function TemplatesPageInner() {
                   </div>
                 </div>
               </div>
-              <div>
-                <label className="text-[10px] text-fg-muted uppercase">
-                  Cuerpo ({draft.body_text.length}/1024)
+
+              {/* Header */}
+              <div className="border-t border-border pt-3">
+                <div className="text-[11px] font-semibold mb-1.5">Header (opcional)</div>
+                <div className="flex gap-1 mb-2 flex-wrap">
+                  {(
+                    [
+                      { v: "",         label: "Sin header" },
+                      { v: "TEXT",     label: "Texto" },
+                      { v: "IMAGE",    label: "Imagen" },
+                      { v: "VIDEO",    label: "Video" },
+                      { v: "DOCUMENT", label: "PDF" },
+                    ] as { v: HeaderType; label: string }[]
+                  ).map(({ v, label }) => (
+                    <button
+                      key={label}
+                      type="button"
+                      onClick={() =>
+                        setDraft({ ...draft, header_type: v, header_handle: "", header_file_label: "", header_text: "" })
+                      }
+                      className={cn(
+                        "text-[11px] px-2 py-1 rounded border transition-colors",
+                        draft.header_type === v
+                          ? "bg-accent/15 border-accent text-accent"
+                          : "bg-bg border-border text-fg-muted",
+                      )}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                {draft.header_type === "TEXT" && (
+                  <Input
+                    value={draft.header_text}
+                    onChange={(e) => setDraft({ ...draft, header_text: e.target.value })}
+                    placeholder="Título del mensaje (max 60 chars)"
+                    maxLength={60}
+                  />
+                )}
+                {(draft.header_type === "IMAGE" ||
+                  draft.header_type === "VIDEO" ||
+                  draft.header_type === "DOCUMENT") && (
+                  <div className="space-y-2">
+                    <label className="inline-flex items-center gap-2 text-xs cursor-pointer bg-bg border border-border rounded px-3 py-1.5 hover:bg-hover">
+                      {uploading ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Upload className="w-3.5 h-3.5" />
+                      )}
+                      {draft.header_handle ? "Cambiar archivo" : "Subir archivo"}
+                      <input
+                        type="file"
+                        className="hidden"
+                        accept={
+                          draft.header_type === "IMAGE"
+                            ? "image/jpeg,image/png,image/webp"
+                            : draft.header_type === "VIDEO"
+                            ? "video/mp4,video/3gpp"
+                            : "application/pdf"
+                        }
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) uploadMedia(file);
+                        }}
+                      />
+                    </label>
+                    {draft.header_file_label && (
+                      <div className="text-[10px] text-success flex items-center gap-1.5">
+                        <CheckCircle2 className="w-3 h-3" /> {draft.header_file_label}
+                      </div>
+                    )}
+                    <div className="text-[10px] text-fg-dim">
+                      Max 16MB.{" "}
+                      {draft.header_type === "IMAGE"
+                        ? "JPG / PNG / WebP"
+                        : draft.header_type === "VIDEO"
+                        ? "MP4 / 3GPP"
+                        : "PDF"}.
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Body */}
+              <div className="border-t border-border pt-3">
+                <label className="text-[11px] font-semibold block mb-1.5">
+                  Cuerpo ({draft.body_text.length}/1024) <span className="text-danger">*</span>
                 </label>
                 <textarea
                   value={draft.body_text}
@@ -350,6 +532,8 @@ function TemplatesPageInner() {
                   Usá <span className="font-mono">{"{{1}}"}</span>, <span className="font-mono">{"{{2}}"}</span>... para variables.
                 </div>
               </div>
+
+              {/* Footer */}
               <div>
                 <label className="text-[10px] text-fg-muted uppercase">Footer (opcional)</label>
                 <Input
@@ -359,12 +543,71 @@ function TemplatesPageInner() {
                   maxLength={60}
                 />
               </div>
-              <div className="text-[11px] text-fg-dim border-t border-border pt-2">
-                Headers con imagen/video/PDF y botones se siguen gestionando desde la{" "}
-                <a href="/admin/templates-ui" className="text-accent hover:underline">
-                  UI vieja
-                </a>
-                . Esta migración cubre el 80% de los casos (texto puro).
+
+              {/* Buttons */}
+              <div className="border-t border-border pt-3">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-[11px] font-semibold">Botones ({draft.buttons.length}/3)</div>
+                  {draft.buttons.length < 3 && (
+                    <button
+                      type="button"
+                      onClick={addButton}
+                      className="text-[11px] text-accent hover:underline flex items-center gap-1"
+                    >
+                      <Plus className="w-3 h-3" /> Agregar
+                    </button>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  {draft.buttons.map((b, i) => (
+                    <div
+                      key={i}
+                      className="bg-bg border border-border rounded p-2 space-y-2 relative"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => removeButton(i)}
+                        className="absolute top-1 right-1 text-fg-dim hover:text-danger"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                      <div className="grid grid-cols-3 gap-2">
+                        <select
+                          value={b.type}
+                          onChange={(e) =>
+                            updateButton(i, { type: e.target.value as HSMButton["type"] })
+                          }
+                          className="h-7 px-1 bg-bg border border-border rounded text-xs"
+                        >
+                          <option value="QUICK_REPLY">Respuesta rápida</option>
+                          <option value="URL">URL</option>
+                          <option value="PHONE_NUMBER">Teléfono</option>
+                        </select>
+                        <Input
+                          className="col-span-2"
+                          value={b.text}
+                          onChange={(e) => updateButton(i, { text: e.target.value })}
+                          placeholder="Texto del botón"
+                          maxLength={25}
+                        />
+                      </div>
+                      {b.type === "URL" && (
+                        <Input
+                          value={b.url || ""}
+                          onChange={(e) => updateButton(i, { url: e.target.value })}
+                          placeholder="https://msklatam.com/..."
+                        />
+                      )}
+                      {b.type === "PHONE_NUMBER" && (
+                        <Input
+                          value={b.phone_number || ""}
+                          onChange={(e) => updateButton(i, { phone_number: e.target.value })}
+                          placeholder="+5491134567890"
+                        />
+                      )}
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
             <div className="px-4 py-3 border-t border-border flex justify-end gap-2">
