@@ -145,9 +145,10 @@ async def analytics(days: int = 30):
     """Métricas básicas para la página /analytics."""
     pool = await postgres_store.get_pool()
     async with pool.acquire() as conn:
-        # Conteos generales
-        total_convs = await conn.fetchval("select count(*) from public.conversations where created_at > now() - $1::interval", f"{days} days")
-        total_msgs = await conn.fetchval("select count(*) from public.messages where created_at > now() - $1::interval", f"{days} days")
+        # Conteos generales — usamos f-string con int(days) para evitar SQL injection
+        # y sortear el bug de asyncpg con $1::interval (que espera timedelta, no str)
+        total_convs = await conn.fetchval(f"select count(*) from public.conversations where created_at > now() - interval '{int(days)} days'")
+        total_msgs = await conn.fetchval(f"select count(*) from public.messages where created_at > now() - interval '{int(days)} days'")
         active_today = await conn.fetchval("select count(*) from public.conversations where updated_at > now() - interval '24 hours'")
         resolved_count = await conn.fetchval("select count(*) from public.conversation_meta where status = 'resolved'")
         # Convs por día
