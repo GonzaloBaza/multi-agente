@@ -12,15 +12,21 @@ class ApiError extends Error {
   }
 }
 
+function getToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem("msk_console_token");
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const res = await fetch(`/api${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      "x-admin-key": ADMIN_KEY,
-      ...(init.headers || {}),
-    },
-  });
+  const token = getToken();
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "x-admin-key": ADMIN_KEY,
+    ...(init.headers as Record<string, string> || {}),
+  };
+  if (token) headers["x-session-token"] = token;
+
+  const res = await fetch(`/api${path}`, { ...init, headers });
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");

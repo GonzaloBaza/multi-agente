@@ -252,7 +252,7 @@ export function ConversationList({
                             {QUEUE_LABEL[q]}
                           </span>
                         }
-                        defaultOpen={active}
+                        defaultOpen={true}
                         rightAccessory={
                           <span className="text-[10px] text-fg-dim">
                             {totalForQueue}
