@@ -19,6 +19,7 @@ import {
   QUEUE_COLOR,
 } from "@/lib/mock-data";
 import { useAgents } from "@/lib/api/inbox";
+import { useRole } from "@/lib/auth";
 
 interface Props {
   items: ConversationListItem[];
@@ -121,7 +122,12 @@ export function ConversationList({
   onSearchChange,
   counts,
 }: Props) {
-  const bulkMode = bulkSelected.size > 0;
+  // Bulk actions solo para supervisor+. Para un agente común ocultamos los
+  // checkbox y la toolbar — el backend también rechaza bulk ops con 403 si
+  // intenta forzarlo, esto es defensa en profundidad + UX.
+  const { isSupervisor } = useRole();
+  const canBulk = isSupervisor;
+  const bulkMode = canBulk && bulkSelected.size > 0;
   const allVisibleSelected = items.length > 0 && items.every((i) => bulkSelected.has(i.id));
 
   // Equipo real desde backend (profiles con role agente/supervisor/admin).
@@ -455,21 +461,24 @@ export function ConversationList({
                   !item.unread && "opacity-75"
                 )}
               >
-                {/* Columna del checkbox — siempre 24px, evita pisarse con avatar */}
-                <div
-                  className={cn(
-                    "shrink-0 flex items-center justify-center transition-all",
-                    bulkMode || isChecked ? "w-7 opacity-100" : "w-0 opacity-0 group-hover:w-7 group-hover:opacity-100"
-                  )}
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <input
-                    type="checkbox"
-                    checked={isChecked}
-                    onChange={() => onBulkToggle(item.id)}
-                    className="w-3.5 h-3.5 rounded border-border bg-bg text-accent focus:ring-accent focus:ring-1 cursor-pointer"
-                  />
-                </div>
+                {/* Columna del checkbox — siempre 24px, evita pisarse con avatar.
+                    Para rol agente el checkbox no aparece (no puede hacer bulk). */}
+                {canBulk && (
+                  <div
+                    className={cn(
+                      "shrink-0 flex items-center justify-center transition-all",
+                      bulkMode || isChecked ? "w-7 opacity-100" : "w-0 opacity-0 group-hover:w-7 group-hover:opacity-100"
+                    )}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={() => onBulkToggle(item.id)}
+                      className="w-3.5 h-3.5 rounded border-border bg-bg text-accent focus:ring-accent focus:ring-1 cursor-pointer"
+                    />
+                  </div>
+                )}
 
                 <button
                   onClick={() => onSelect(item.id)}

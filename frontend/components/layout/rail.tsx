@@ -12,36 +12,49 @@ import {
   Settings,
   Bell,
   LogOut,
+  MessageSquare,
+  GitBranch,
+  Users,
 } from "lucide-react";
 import { cn, initials } from "@/lib/utils";
-import { useAuth } from "@/lib/auth";
+import { useAuth, hasRole, type Role } from "@/lib/auth";
 
 type RailLink = {
   href: string;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   badge?: number;
+  // Rol mínimo (jerárquico) para ver el item. Si no está, visible para todos.
+  min?: Role;
 };
 
+// Orden = orden en el rail. Los que tienen `min` se filtran según rol del
+// usuario logueado. Items nuevos (templates, flujos, equipo) salen de la
+// paridad con la UI vieja — ver HANDOFF_QA_PARITY.md.
 const NAV: RailLink[] = [
-  { href: "/inbox",     label: "Inbox",                icon: Inbox },
-  { href: "/courses",   label: "Catálogo de cursos",   icon: BookOpen },
-  { href: "/agents",    label: "Agentes IA",           icon: Bot },
-  { href: "/prompts",   label: "Editor de prompts",    icon: FileCode },
-  { href: "/channels",  label: "Canales",              icon: Plug },
-  { href: "/analytics", label: "Analytics",            icon: BarChart3 },
+  { href: "/inbox",     label: "Inbox",               icon: Inbox },
+  { href: "/analytics", label: "Analytics",           icon: BarChart3,    min: "supervisor" },
+  { href: "/courses",   label: "Catálogo de cursos",  icon: BookOpen,     min: "supervisor" },
+  { href: "/templates", label: "Plantillas HSM",      icon: MessageSquare, min: "supervisor" },
+  { href: "/agents",    label: "Agentes IA",          icon: Bot,          min: "admin" },
+  { href: "/prompts",   label: "Editor de prompts",   icon: FileCode,     min: "admin" },
+  { href: "/flows",     label: "Flujos",              icon: GitBranch,    min: "admin" },
+  { href: "/channels",  label: "Canales",             icon: Plug,         min: "admin" },
 ];
 
 export function Rail() {
   const pathname = usePathname();
   const router = useRouter();
   const { user, logout } = useAuth();
-  // Iniciales y label dinámicos del usuario logueado.
-  // Sin sesión (modo dev con admin key) cae a un placeholder neutro.
   const avatarInitials = user?.name ? initials(user.name) : "·";
   const tooltip = user
     ? `${user.name} · ${user.email}${user.role ? ` (${user.role})` : ""} · click para cerrar sesión`
     : "Sin sesión · click para iniciar sesión";
+
+  // Filtrado por rol. Sin user (pre-login) el rail se muestra vacío —
+  // igualmente el AppLayout redirige a /login antes de renderizar.
+  const visibleNav = NAV.filter((item) => !item.min || hasRole(user, item.min));
+  const canSeeTeam = hasRole(user, "supervisor");
 
   return (
     <aside className="w-14 bg-panel border-r border-border flex flex-col items-center py-2 shrink-0">
@@ -54,7 +67,7 @@ export function Rail() {
 
       {/* Nav */}
       <nav className="flex flex-col items-center gap-1 flex-1">
-        {NAV.map((item) => {
+        {visibleNav.map((item) => {
           const active = pathname.startsWith(item.href);
           const Icon = item.icon;
           return (
@@ -83,6 +96,20 @@ export function Rail() {
 
       {/* Bottom */}
       <div className="flex flex-col items-center gap-1 mt-auto">
+        {canSeeTeam && (
+          <Link
+            href="/users"
+            className={cn(
+              "rail-tooltip-wrap relative w-9 h-9 rounded-md flex items-center justify-center",
+              pathname.startsWith("/users")
+                ? "bg-accent/18 text-fg"
+                : "text-fg-muted hover:bg-hover hover:text-fg"
+            )}
+            data-tooltip="Equipo"
+          >
+            <Users className="w-[18px] h-[18px]" />
+          </Link>
+        )}
         <Link
           href="/settings"
           className={cn(
@@ -91,7 +118,7 @@ export function Rail() {
               ? "bg-accent/18 text-fg"
               : "text-fg-muted hover:bg-hover hover:text-fg"
           )}
-          data-tooltip="Settings"
+          data-tooltip="Configuración"
         >
           <Settings className="w-[18px] h-[18px]" />
         </Link>

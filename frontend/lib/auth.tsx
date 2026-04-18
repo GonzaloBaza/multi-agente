@@ -3,11 +3,14 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 
-type User = {
+export type Role = "admin" | "supervisor" | "agente";
+
+export type User = {
   id: string;
   email: string;
   name: string;
-  role: string;
+  role: Role;
+  queues: string[];
 };
 
 type AuthCtx = {
@@ -106,4 +109,65 @@ export function useAuth() {
 export function getAuthToken(): string | null {
   if (typeof window === "undefined") return null;
   return localStorage.getItem(TOKEN_KEY);
+}
+
+// ── Role helpers ─────────────────────────────────────────────────────────────
+// Jerarquía: admin > supervisor > agente. Un admin pasa cualquier chequeo,
+// un supervisor pasa chequeos de supervisor y agente, y un agente solo los
+// suyos. Se usa para ocultar nav items y proteger rutas.
+
+const ROLE_RANK: Record<Role, number> = { agente: 1, supervisor: 2, admin: 3 };
+
+export function hasRole(user: User | null, min: Role): boolean {
+  if (!user) return false;
+  return (ROLE_RANK[user.role] ?? 0) >= ROLE_RANK[min];
+}
+
+export function hasAnyRole(user: User | null, allowed: Role[]): boolean {
+  if (!user) return false;
+  return allowed.includes(user.role);
+}
+
+export function useRole() {
+  const { user, loading } = useAuth();
+  return {
+    user,
+    loading,
+    role: user?.role ?? null,
+    isAdmin: user?.role === "admin",
+    isSupervisor: user?.role === "supervisor" || user?.role === "admin",
+    isAgente: !!user,
+    hasRole: (min: Role) => hasRole(user, min),
+    hasAnyRole: (allowed: Role[]) => hasAnyRole(user, allowed),
+  };
+}
+
+/**
+ * Envoltorio declarativo para ocultar contenido según rol.
+ *
+ * - `min`: rol mínimo jerárquico (admin pasa todo, supervisor pasa >= supervisor, etc).
+ * - `anyOf`: lista explícita de roles permitidos (ignora la jerarquía).
+ * - Si `denyFallback` viene, se muestra en vez de esconder (útil para una
+ *   página completa que el user navegó manualmente sin permisos).
+ * - Mientras `loading`, muestra `loadingFallback` (default: null) — evita
+ *   flash de "sin permisos" antes de que `/auth/me` responda.
+ */
+export function RoleGate({
+  children,
+  min,
+  anyOf,
+  denyFallback = null,
+  loadingFallback = null,
+}: {
+  children: React.ReactNode;
+  min?: Role;
+  anyOf?: Role[];
+  denyFallback?: React.ReactNode;
+  loadingFallback?: React.ReactNode;
+}) {
+  const { user, loading } = useAuth();
+  if (loading) return <>{loadingFallback}</>;
+  const ok = anyOf ? hasAnyRole(user, anyOf) : min ? hasRole(user, min) : !!user;
+  if (!ok) return <>{denyFallback}</>;
+  return <>{children}</>;
 }
