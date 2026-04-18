@@ -65,25 +65,52 @@ async def notify_human_request(conv_id: str, contact_name: str, last_msg: str) -
 # ─── Cron loop ───────────────────────────────────────────────────────────────
 
 async def _cron_loop():
+    """
+    Loop del cron del inbox.
+
+    OJO multi-worker: con uvicorn/gunicorn corriendo N workers, este loop se
+    arranca N veces. Sin coordinación, `wake_expired_snoozed()` correría N
+    veces por ciclo y dispararía N notifs Slack ("⏰ X conversaciones...").
+    Para evitarlo, intentamos tomar un lock en Redis (NX + TTL menor al ciclo)
+    antes de hacer el laburo. Solo el worker que gana el SET corre el body.
+
+    Si Redis está caído, fallamos abierto (corremos en todos los workers) —
+    es preferible duplicar notifs a que el snooze nunca despierte.
+    """
     global _running
     _running = True
     logger.info("inbox_jobs_started")
     while _running:
         try:
-            # 1) Despertar snoozeados vencidos
-            woken = await cm.wake_expired_snoozed()
-            for conv_id in woken:
-                logger.info("snooze_woken", conv_id=conv_id)
-                broadcast_event({
-                    "type": "snooze_woken",
-                    "conversation_id": conv_id,
-                })
-
-            if woken:
-                await slack_notify(
-                    f"⏰ {len(woken)} conversaciones despertaron del snooze "
-                    f"y vuelven al inbox activo."
+            # Lock cross-worker. TTL=240s < ciclo de 300s para que si el worker
+            # que tomó el lock muere, otro lo agarre en la próxima corrida.
+            got_lock = True  # default: si Redis no está, corremos igual
+            try:
+                from memory.conversation_store import get_conversation_store
+                store = await get_conversation_store()
+                got_lock = bool(
+                    await store._redis.set("inbox:cron:lock", "1", ex=240, nx=True)
                 )
+            except Exception as e:
+                logger.warning("inbox_cron_lock_unavailable", error=str(e))
+
+            if got_lock:
+                # 1) Despertar snoozeados vencidos
+                woken = await cm.wake_expired_snoozed()
+                for conv_id in woken:
+                    logger.info("snooze_woken", conv_id=conv_id)
+                    broadcast_event({
+                        "type": "snooze_woken",
+                        "conversation_id": conv_id,
+                    })
+
+                if woken:
+                    await slack_notify(
+                        f"⏰ {len(woken)} conversaciones despertaron del snooze "
+                        f"y vuelven al inbox activo."
+                    )
+            else:
+                logger.debug("inbox_cron_skipped_other_worker_holds_lock")
 
         except Exception as e:
             logger.error("cron_loop_error", error=str(e))
