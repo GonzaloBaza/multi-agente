@@ -63,6 +63,29 @@ async def verify_admin_or_session(
     raise HTTPException(status_code=401, detail="No autenticado")
 
 
+def require_role_or_admin(*roles: str):
+    """Dependencia: acepta admin key (pasa siempre) o sesión con role en roles.
+
+    Pensada para endpoints que ya dependen de `verify_admin_or_session` a
+    nivel de router pero necesitan gate adicional por rol (bulk ops,
+    administración de templates, etc).
+
+    Uso:
+        @router.post("/bulk/assign")
+        async def bulk_assign(..., auth: dict = Depends(require_role_or_admin("admin", "supervisor"))):
+            ...
+    """
+    async def _check(auth: dict = Depends(verify_admin_or_session)) -> dict:
+        # Admin key ≡ rol admin (scripts internos, cron)
+        if auth.get("auth") == "admin":
+            return auth
+        user = auth.get("user") or {}
+        if user.get("role") not in roles:
+            raise HTTPException(status_code=403, detail="Sin permisos para esta acción")
+        return auth
+    return _check
+
+
 @router.get("/status")
 async def get_status(key: str = Depends(verify_admin_key)):
     """Estado general del sistema."""

@@ -33,7 +33,7 @@ from pydantic import BaseModel, Field
 
 from memory import postgres_store, conversation_meta as cm
 from integrations.zoho.contacts import ZohoContacts
-from api.admin import verify_admin_or_session  # acepta admin key O session token
+from api.admin import verify_admin_or_session, require_role_or_admin  # admin key + session + role gate
 
 logger = structlog.get_logger(__name__)
 
@@ -155,6 +155,58 @@ async def list_agents():
 # Países "primarios" — los que tienen su propia sub-cola en el inbox.
 # El resto se agrupa bajo "MP" (multi-país).
 PRIMARY_COUNTRIES = {"AR", "CL", "EC", "MX", "CO"}
+
+# Prefijo del nombre de cola (definidos en api/auth.py ALL_QUEUES) → valor
+# almacenado en conversation_meta.queue. Los agentes tienen colas tipo
+# "ventas_AR", "cobranzas_MX"... que mapean a (queue, country).
+QUEUE_PREFIX_MAP = {
+    "ventas":     "sales",
+    "cobranzas":  "billing",
+    "post_venta": "post-sales",
+}
+
+
+def _agent_queue_scope_sql(user_queues: list[str]) -> Optional[str]:
+    """Arma el fragmento SQL que restringe las conversaciones visibles a un
+    agente según sus colas asignadas (de `profiles.queues`).
+
+    Cada cola del agente es tipo `ventas_AR`, `cobranzas_MP`, etc. El
+    fragmento resultante va OR-ed entre todas las colas del agente.
+
+    Retorna `None` si el agente no tiene colas (→ sin visibilidad fuera de
+    conversaciones asignadas directamente a él, enforced aparte).
+    Retorna SQL literal (sin params) porque los valores vienen de un enum
+    cerrado definido en código (no user input).
+    """
+    if not user_queues:
+        return None
+    primary_list = ",".join(f"'{c}'" for c in sorted(PRIMARY_COUNTRIES))
+    pieces: list[str] = []
+    for raw in user_queues:
+        if not isinstance(raw, str) or "_" not in raw:
+            continue
+        prefix, country = raw.rsplit("_", 1)
+        queue_val = QUEUE_PREFIX_MAP.get(prefix)
+        if not queue_val:
+            continue
+        country = country.upper()
+        if country == "MP":
+            pieces.append(
+                f"(cm.queue = '{queue_val}' AND "
+                f"upper(coalesce(c.user_profile->>'country','AR')) NOT IN ({primary_list}))"
+            )
+        else:
+            # País fijo — validamos que sea [A-Z]{2} para cerrar toda vía de
+            # injection incluso si alguien mete una queue rara en profiles.
+            if not (len(country) == 2 and country.isalpha()):
+                continue
+            pieces.append(
+                f"(cm.queue = '{queue_val}' AND "
+                f"upper(coalesce(c.user_profile->>'country','AR')) = '{country}')"
+            )
+    if not pieces:
+        return None
+    return "(" + " OR ".join(pieces) + ")"
 
 
 @router.get("/analytics")
@@ -328,13 +380,45 @@ async def list_conversations(
     search:      Optional[str] = None,
     date_from:   Optional[str] = None,
     date_to:     Optional[str] = None,
+    auth:        dict = Depends(verify_admin_or_session),
 ):
-    """Lista de conversaciones con todos los filtros del inbox."""
+    """Lista de conversaciones con todos los filtros del inbox.
+
+    Scope según rol del user logueado (ignorado si el caller usa admin key):
+      - admin / supervisor → ven todo.
+      - agente → solo conversaciones asignadas a él, o sin asignar dentro de
+        sus colas (profiles.queues). Este enforcement es server-side para que
+        un agente no pueda ver convs ajenas aunque forcee un query param.
+    """
     pool = await postgres_store.get_pool()
 
     where_parts = []
     params: list = []
     idx = 1
+
+    # Scope por rol — ANTES de los filtros del user, para que la query base
+    # ya vuelva solo lo que el agente puede ver. Admin key (scripts) y roles
+    # admin/supervisor pasan sin restricción.
+    user = (auth or {}).get("user") if (auth or {}).get("auth") == "session" else None
+    if user and user.get("role") == "agente":
+        agent_id = user.get("id")
+        queue_scope = _agent_queue_scope_sql(user.get("queues") or [])
+        scope_parts = []
+        if agent_id:
+            scope_parts.append(f"cm.assigned_agent_id = ${idx}::uuid")
+            params.append(agent_id); idx += 1
+        if queue_scope:
+            # Un agente ve las conversaciones de sus colas que estén SIN
+            # asignar (libres para tomar). Si ya las asignó otro agente,
+            # ese otro las gestiona. Esto reproduce el filtro de la UI
+            # vieja (widget/inbox.html:2497).
+            scope_parts.append(f"(cm.assigned_agent_id IS NULL AND {queue_scope})")
+        if scope_parts:
+            where_parts.append("(" + " OR ".join(scope_parts) + ")")
+        else:
+            # Sin id ni colas → no ve nada. Retornamos lista vacía para evitar
+            # un SELECT sin scope.
+            return []
 
     if date_from:
         where_parts.append(f"c.updated_at >= ${idx}::timestamptz")
@@ -921,7 +1005,10 @@ class BulkAssignBody(BaseModel):
     agent_id: Optional[str] = None
 
 @router.post("/bulk/assign")
-async def bulk_assign(body: BulkAssignBody):
+async def bulk_assign(
+    body: BulkAssignBody,
+    auth: dict = Depends(require_role_or_admin("admin", "supervisor")),
+):
     n = await cm.bulk_assign(body.ids, body.agent_id)
     return {"ok": True, "updated": n}
 
@@ -930,7 +1017,10 @@ class BulkStatusBody(BaseModel):
     status: Literal["open", "pending", "resolved"]
 
 @router.post("/bulk/status")
-async def bulk_status(body: BulkStatusBody):
+async def bulk_status(
+    body: BulkStatusBody,
+    auth: dict = Depends(require_role_or_admin("admin", "supervisor")),
+):
     n = await cm.bulk_set_status(body.ids, body.status)
     return {"ok": True, "updated": n}
 
