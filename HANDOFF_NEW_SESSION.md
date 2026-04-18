@@ -102,12 +102,17 @@ Estos NO los hice — el user los puso fuera de scope o no se llegaron:
 7. **Lifecycle automático del bot**: hoy el bot NO calcula lifecycle (Hot/Cold/etc)
    automáticamente — solo se setea manualmente vía `/classify`. Hay que agregar
    `cm.set_lifecycle_auto()` al final de cada turno del agent runner.
-8. **Multi-usuario completo**: backend tiene `/auth/login`, `/auth/me`, `/auth/users`
-   pero falta:
-   - Identidad real del agente actual en frontend (hoy `ME_ID = "u-gbaza"` hardcoded
-     en `inbox/page.tsx`)
-   - Filtro "Mías" usa el ME_ID hardcoded; debería leer del `useAuth().user.id`
-   - Permisos por rol (admin/supervisor/agent)
+8. **Multi-usuario completo**: ✅ migración 004 + audit completados.
+   - ✅ Identidad real: `ME_ID = useAuth().user?.id` en `inbox/page.tsx` (ya
+     no `"u-gbaza"`).
+   - ✅ Filtro "Mías" usa el id real.
+   - ✅ Equipo (`useAgents()`) lee de `profiles` — `ME`/`TEAM` mock eliminados.
+   - ✅ Settings (CRUD del equipo) ahora llama a `/auth/users` con role +
+     queues + password (antes pegaba a `/inbox/agents` que ya no existe).
+   - ✅ Rail muestra avatar/iniciales del usuario logueado (antes hardcoded
+     a Gonzalo) + botón logout.
+   - Pendiente: enforcer auth en frontend prod (esconder fallback admin-key
+     en `lib/auth.tsx`).
 9. **Sanitización HTML** en mensajes salientes
 10. **Rate limiting** del endpoint `/llm/correct-spelling`
 
@@ -208,7 +213,8 @@ multi-agente/
 └── migrations/
     ├── 001_*.sql
     ├── 002_conversation_meta.sql
-    └── 003_inbox_audit_log.sql
+    ├── 003_inbox_audit_log.sql
+    └── 004_drop_agents_use_profiles.sql   # 🔥 unifica agents → profiles (uuid)
 ```
 
 ---
@@ -218,8 +224,9 @@ multi-agente/
 1. **Auth not enforced**: si no hay token, el frontend NO redirige a `/login` —
    usa el admin key. Esto fue intencional para no bloquear pruebas. Para
    producción real hay que activar el redirect en `lib/auth.tsx`.
-2. **`ME_ID` hardcoded**: en `inbox/page.tsx` hay `const ME_ID = "u-gbaza"`.
-   Cuando se complete la integración con `useAuth()`, debe leer del user real.
+2. ~~**`ME_ID` hardcoded**~~: ✅ RESUELTO. `inbox/page.tsx` lee
+   `useAuth().user?.id`. Cubierto también en `rail.tsx`, `conversation-detail.tsx`,
+   `conversation-list.tsx`, `composer.tsx` y `settings/page.tsx`.
 3. **Send WhatsApp con adjuntos**: hoy manda la URL R2 como mensaje aparte de
    texto. Meta Cloud API soporta media nativo (audio/image/document) — debería
    refactorizarse para usar esos endpoints específicos.

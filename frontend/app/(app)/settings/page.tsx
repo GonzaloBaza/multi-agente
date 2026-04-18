@@ -1,41 +1,99 @@
 "use client";
 
+/**
+ * Settings — gestión del equipo (CRUD de usuarios humanos).
+ *
+ * Antes esta página llamaba POST/DELETE /api/inbox/agents que YA NO existen
+ * (eliminados en migration 004 — la tabla `agents` se unificó con `profiles`).
+ * Ahora usa /auth/users que crea el usuario en Supabase Auth + el profile en
+ * una sola operación, con role y queues configurables.
+ *
+ * Requisitos: el usuario logueado tiene que ser admin.
+ * Color e iniciales del avatar se derivan en el backend (ver list_agents()
+ * en memory/conversation_meta.py) — no se piden al usuario.
+ */
+
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Trash2, Loader2 } from "lucide-react";
+import { Plus, Trash2, Loader2, AlertCircle, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
-import { useAgents } from "@/lib/api/inbox";
+import { useAuth } from "@/lib/auth";
 
-const PALETTES = [
-  "from-pink-500 to-fuchsia-600",
-  "from-blue-500 to-indigo-600",
-  "from-emerald-500 to-teal-600",
-  "from-amber-500 to-orange-600",
-  "from-purple-500 to-pink-600",
-  "from-cyan-500 to-blue-600",
-];
+const ROLES = [
+  { value: "agente",     label: "Agente" },
+  { value: "supervisor", label: "Supervisor" },
+  { value: "admin",      label: "Admin" },
+] as const;
+
+type Profile = {
+  id: string;
+  email: string;
+  name: string | null;
+  role: "admin" | "supervisor" | "agente";
+  queues: string[];
+  created_at?: string;
+};
+
+const EMPTY_DRAFT = {
+  email: "",
+  password: "",
+  name: "",
+  role: "agente" as Profile["role"],
+  queues: [] as string[],
+};
 
 export default function SettingsPage() {
   const qc = useQueryClient();
-  const agentsQ = useAgents();
+  const { user: me } = useAuth();
+
+  // GET /auth/users — solo admin/supervisor pueden listar
+  const usersQ = useQuery<Profile[]>({
+    queryKey: ["auth", "users"],
+    queryFn: () => api.get("/auth/users"),
+    staleTime: 30_000,
+  });
+  const queuesQ = useQuery<string[]>({
+    queryKey: ["auth", "queues"],
+    queryFn: () => api.get("/auth/queues"),
+    staleTime: 5 * 60_000,
+  });
+
   const [showForm, setShowForm] = useState(false);
-  const [draft, setDraft] = useState({ id: "", name: "", email: "", initials: "", color: PALETTES[0] });
+  const [draft, setDraft] = useState(EMPTY_DRAFT);
+  const [error, setError] = useState<string | null>(null);
 
   const create = useMutation({
-    mutationFn: () => api.post("/inbox/agents", draft),
+    mutationFn: () => api.post("/auth/users", draft),
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["auth", "users"] });
+      // El nuevo user también aparece en el dropdown del inbox (lee de profiles)
       qc.invalidateQueries({ queryKey: ["inbox", "agents"] });
       setShowForm(false);
-      setDraft({ id: "", name: "", email: "", initials: "", color: PALETTES[0] });
+      setDraft(EMPTY_DRAFT);
+      setError(null);
     },
+    onError: (e: Error) => setError(e.message || "Error al crear usuario"),
   });
 
   const remove = useMutation({
-    mutationFn: (id: string) => api.delete(`/inbox/agents/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["inbox", "agents"] }),
+    mutationFn: (id: string) => api.delete(`/auth/users/${id}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["auth", "users"] });
+      qc.invalidateQueries({ queryKey: ["inbox", "agents"] });
+    },
   });
+
+  const isAdmin = me?.role === "admin";
+  const canCreate = isAdmin && draft.email && draft.password && draft.name;
+
+  const toggleQueue = (q: string) => {
+    setDraft((d) => ({
+      ...d,
+      queues: d.queues.includes(q) ? d.queues.filter((x) => x !== q) : [...d.queues, q],
+    }));
+  };
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -44,54 +102,114 @@ export default function SettingsPage() {
         <p className="text-xs text-fg-dim mt-0.5">Equipo, integraciones y preferencias</p>
       </div>
 
-      <div className="flex-1 overflow-y-auto scroll-thin p-6 space-y-6 max-w-2xl">
-        {/* Agentes */}
+      <div className="flex-1 overflow-y-auto scroll-thin p-6 space-y-6 max-w-3xl">
+        {/* === Equipo === */}
         <section>
           <div className="flex items-center justify-between mb-3">
             <div>
-              <h2 className="text-sm font-semibold">Equipo (agentes humanos)</h2>
-              <p className="text-[11px] text-fg-dim">Personas que pueden tomar conversaciones del inbox</p>
+              <h2 className="text-sm font-semibold flex items-center gap-2">
+                Equipo (usuarios del workspace)
+                {!isAdmin && (
+                  <span className="text-[10px] font-normal text-fg-dim flex items-center gap-1">
+                    <Shield className="w-3 h-3" /> solo lectura — necesitás role admin para CRUD
+                  </span>
+                )}
+              </h2>
+              <p className="text-[11px] text-fg-dim">
+                Personas que pueden tomar conversaciones del inbox. Crear un usuario lo agrega a Supabase Auth + profile y aparece automáticamente en el dropdown de "Asignar a".
+              </p>
             </div>
-            <Button size="sm" onClick={() => setShowForm(true)}>
-              <Plus className="w-3.5 h-3.5" /> Nuevo agente
-            </Button>
+            {isAdmin && (
+              <Button size="sm" onClick={() => { setShowForm(true); setError(null); }}>
+                <Plus className="w-3.5 h-3.5" /> Nuevo usuario
+              </Button>
+            )}
           </div>
 
-          {showForm && (
+          {showForm && isAdmin && (
             <div className="bg-card border border-border rounded-lg p-4 mb-3 space-y-3">
+              {error && (
+                <div className="bg-danger/10 border border-danger/30 rounded px-3 py-2 text-[11px] text-danger flex items-start gap-2">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                  <span className="break-all">{error}</span>
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-[10px] text-fg-muted uppercase">ID (sin espacios)</label>
-                  <Input value={draft.id} onChange={(e) => setDraft({ ...draft, id: e.target.value.replace(/\s/g, "-") })} placeholder="u-jrios" />
-                </div>
-                <div>
                   <label className="text-[10px] text-fg-muted uppercase">Nombre completo</label>
-                  <Input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="Julián Ríos" />
+                  <Input
+                    value={draft.name}
+                    onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+                    placeholder="Nombre Apellido"
+                  />
                 </div>
                 <div>
                   <label className="text-[10px] text-fg-muted uppercase">Email</label>
-                  <Input type="email" value={draft.email} onChange={(e) => setDraft({ ...draft, email: e.target.value })} placeholder="jrios@msklatam.com" />
+                  <Input
+                    type="email"
+                    value={draft.email}
+                    onChange={(e) => setDraft({ ...draft, email: e.target.value })}
+                    placeholder="agente@msklatam.com"
+                  />
                 </div>
                 <div>
-                  <label className="text-[10px] text-fg-muted uppercase">Iniciales</label>
-                  <Input value={draft.initials} onChange={(e) => setDraft({ ...draft, initials: e.target.value.toUpperCase().slice(0, 2) })} placeholder="JR" maxLength={2} />
+                  <label className="text-[10px] text-fg-muted uppercase">Password inicial</label>
+                  <Input
+                    type="password"
+                    value={draft.password}
+                    onChange={(e) => setDraft({ ...draft, password: e.target.value })}
+                    placeholder="mínimo 8 caracteres"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] text-fg-muted uppercase">Rol</label>
+                  <select
+                    value={draft.role}
+                    onChange={(e) => setDraft({ ...draft, role: e.target.value as Profile["role"] })}
+                    className="w-full h-8 px-2 bg-bg border border-border rounded text-sm focus:outline-none focus:ring-1 focus:ring-accent"
+                  >
+                    {ROLES.map((r) => (
+                      <option key={r.value} value={r.value}>{r.label}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
               <div>
-                <label className="text-[10px] text-fg-muted uppercase mb-1.5 block">Color del avatar</label>
-                <div className="flex gap-1.5">
-                  {PALETTES.map((p) => (
-                    <button
-                      key={p}
-                      onClick={() => setDraft({ ...draft, color: p })}
-                      className={`w-7 h-7 rounded-full bg-gradient-to-br ${p} ${draft.color === p ? "ring-2 ring-fg" : ""}`}
-                    />
-                  ))}
+                <label className="text-[10px] text-fg-muted uppercase mb-1.5 block">
+                  Colas asignadas
+                  {draft.queues.length > 0 && (
+                    <span className="text-fg-dim normal-case ml-2">({draft.queues.length} seleccionadas)</span>
+                  )}
+                </label>
+                <div className="flex flex-wrap gap-1">
+                  {(queuesQ.data ?? []).map((q) => {
+                    const sel = draft.queues.includes(q);
+                    return (
+                      <button
+                        key={q}
+                        type="button"
+                        onClick={() => toggleQueue(q)}
+                        className={`text-[11px] px-2 py-0.5 rounded border transition-colors ${
+                          sel
+                            ? "bg-accent/15 border-accent text-accent"
+                            : "bg-bg border-border text-fg-muted hover:text-fg"
+                        }`}
+                      >
+                        {q}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
               <div className="flex justify-end gap-2 pt-2 border-t border-border">
-                <Button variant="ghost" size="sm" onClick={() => setShowForm(false)}>Cancelar</Button>
-                <Button size="sm" onClick={() => create.mutate()} disabled={create.isPending || !draft.id || !draft.name}>
+                <Button variant="ghost" size="sm" onClick={() => { setShowForm(false); setError(null); }}>
+                  Cancelar
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => create.mutate()}
+                  disabled={create.isPending || !canCreate}
+                >
                   {create.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : "Crear"}
                 </Button>
               </div>
@@ -99,29 +217,61 @@ export default function SettingsPage() {
           )}
 
           <div className="space-y-1.5">
-            {agentsQ.data?.map((a) => (
-              <div key={a.id} className="bg-card border border-border rounded-lg p-3 flex items-center gap-3">
-                <div className={`w-9 h-9 rounded-full bg-gradient-to-br ${a.color || "from-pink-500 to-fuchsia-600"} text-white text-xs font-bold flex items-center justify-center`}>
-                  {a.initials || a.name[0]}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium">{a.name}</div>
-                  <div className="text-[11px] text-fg-dim truncate">{(a as any).email || a.id}</div>
-                </div>
-                <Button
-                  variant="ghost" size="icon-sm"
-                  onClick={() => remove.mutate(a.id)}
-                  disabled={remove.isPending}
-                  title="Desactivar agente"
-                >
-                  <Trash2 className="w-3.5 h-3.5 text-danger" />
-                </Button>
+            {usersQ.isLoading && (
+              <div className="text-xs text-fg-dim">Cargando equipo…</div>
+            )}
+            {usersQ.error && (
+              <div className="text-xs text-danger">
+                No se pudo cargar el equipo. {isAdmin ? "" : "Necesitás iniciar sesión como admin."}
               </div>
-            ))}
+            )}
+            {usersQ.data?.map((u) => {
+              const isMe = me?.id === u.id;
+              return (
+                <div key={u.id} className="bg-card border border-border rounded-lg p-3 flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-full bg-gradient-to-br from-pink-500 to-fuchsia-600 text-white text-xs font-bold flex items-center justify-center">
+                    {(u.name || u.email).slice(0, 2).toUpperCase()}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium flex items-center gap-2">
+                      {u.name || u.email}
+                      {isMe && <span className="text-[10px] text-accent">(vos)</span>}
+                      <span className={`text-[9px] px-1.5 py-0.5 rounded ${
+                        u.role === "admin" ? "bg-danger/15 text-danger"
+                        : u.role === "supervisor" ? "bg-warn/15 text-warn"
+                        : "bg-info/15 text-info"
+                      }`}>
+                        {u.role}
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-fg-dim truncate">
+                      {u.email}
+                      {u.queues?.length > 0 && (
+                        <span className="ml-2">· {u.queues.length} cola{u.queues.length === 1 ? "" : "s"}</span>
+                      )}
+                    </div>
+                  </div>
+                  {isAdmin && !isMe && (
+                    <Button
+                      variant="ghost" size="icon-sm"
+                      onClick={() => {
+                        if (confirm(`Borrar a ${u.name || u.email}? Las conversaciones que tenga asignadas quedarán libres.`)) {
+                          remove.mutate(u.id);
+                        }
+                      }}
+                      disabled={remove.isPending}
+                      title="Borrar usuario"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 text-danger" />
+                    </Button>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </section>
 
-        {/* Info del workspace */}
+        {/* === Info del workspace === */}
         <section>
           <h2 className="text-sm font-semibold mb-3">Workspace</h2>
           <div className="bg-card border border-border rounded-lg p-4 text-xs space-y-2">

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   Inbox,
   BookOpen,
@@ -11,8 +11,10 @@ import {
   BarChart3,
   Settings,
   Bell,
+  LogOut,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, initials } from "@/lib/utils";
+import { useAuth } from "@/lib/auth";
 
 type RailLink = {
   href: string;
@@ -22,7 +24,7 @@ type RailLink = {
 };
 
 const NAV: RailLink[] = [
-  { href: "/inbox",     label: "Inbox",                icon: Inbox,    badge: 12 },
+  { href: "/inbox",     label: "Inbox",                icon: Inbox },
   { href: "/courses",   label: "Catálogo de cursos",   icon: BookOpen },
   { href: "/agents",    label: "Agentes IA",           icon: Bot },
   { href: "/prompts",   label: "Editor de prompts",    icon: FileCode },
@@ -32,6 +34,14 @@ const NAV: RailLink[] = [
 
 export function Rail() {
   const pathname = usePathname();
+  const router = useRouter();
+  const { user, logout } = useAuth();
+  // Iniciales y label dinámicos del usuario logueado.
+  // Sin sesión (modo dev con admin key) cae a un placeholder neutro.
+  const avatarInitials = user?.name ? initials(user.name) : "·";
+  const tooltip = user
+    ? `${user.name} · ${user.email}${user.role ? ` (${user.role})` : ""} · click para cerrar sesión`
+    : "Sin sesión · click para iniciar sesión";
 
   return (
     <aside className="w-14 bg-panel border-r border-border flex flex-col items-center py-2 shrink-0">
@@ -92,12 +102,20 @@ export function Rail() {
           <Bell className="w-[18px] h-[18px]" />
           <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-danger ring-2 ring-panel" />
         </button>
-        <div
-          className="rail-tooltip-wrap w-9 h-9 rounded-full bg-gradient-to-br from-pink-500 to-fuchsia-600 text-white text-xs font-bold flex items-center justify-center cursor-pointer ring-2 ring-success/40"
-          data-tooltip="Gonzalo Baza · gonzalobaza@msklatam.com"
+        <button
+          type="button"
+          onClick={() => (user ? logout() : router.push("/login"))}
+          className={cn(
+            "rail-tooltip-wrap w-9 h-9 rounded-full text-white text-xs font-bold flex items-center justify-center cursor-pointer transition-opacity hover:opacity-80",
+            user
+              ? "bg-gradient-to-br from-pink-500 to-fuchsia-600 ring-2 ring-success/40"
+              : "bg-fg-muted ring-2 ring-border"
+          )}
+          data-tooltip={tooltip}
+          aria-label={tooltip}
         >
-          G
-        </div>
+          {user ? avatarInitials : <LogOut className="w-3.5 h-3.5" />}
+        </button>
       </div>
 
       <style jsx global>{`

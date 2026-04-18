@@ -387,17 +387,26 @@ created_at      timestamptz
 ⚠️ El campo `agent` está en `metadata->>'agent'`, NO como columna directa.
 Bug que ya nos comimos antes — `select agent from messages` rompe.
 
-### Tabla `agents` (nueva, migración 002)
+### Tabla `agents` — ❌ ELIMINADA en migración 004
+
+La tabla `agents` (creada en migración 002 con id `text` tipo `'u-gbaza'`) **se
+eliminó** en `migrations/004_drop_agents_use_profiles.sql`. Ahora la fuente de
+verdad del equipo es `public.profiles` (uuid id, integrado con Supabase Auth):
 
 ```sql
-id          text primary key   -- 'u-gbaza', 'u-mtottil', ...
+-- public.profiles (Supabase Auth + custom)
+id          uuid primary key references auth.users(id)
+email       text unique
 name        text
-email       text
-initials    text
-color       text                -- 'from-pink-500 to-fuchsia-600' (Tailwind)
-active      boolean
+role        text  -- 'admin' | 'supervisor' | 'agente'
+queues      text[] default '{}'  -- colas asignadas
 created_at  timestamptz
 ```
+
+`memory.conversation_meta.list_agents()` lee de `profiles` filtrando por
+`role in ('admin','supervisor','agente')` y deriva `initials`/`color` en runtime
+(no se persisten). El CRUD del equipo vive en `/auth/users` (no en `/inbox/agents`,
+que fue removido).
 
 ### Tabla `conversation_meta` (nueva, migración 002)
 
@@ -406,7 +415,7 @@ created_at  timestamptz
 
 ```sql
 conversation_id    uuid pk references conversations(id)
-assigned_agent_id  text references agents(id)
+assigned_agent_id  uuid references profiles(id) on delete set null
 assigned_at        timestamptz
 status             text default 'open'
                    -- 'open' | 'pending' | 'resolved'
@@ -521,7 +530,8 @@ POSTs:
 - `/llm/correct-spelling` — `{text}` → `{corrected}`
 - `/upload` — multipart `file` → `{url, filename, size, mime}`
 - `/courses/{country}/{slug}/pitch-hook` (PUT) — `{pitch_hook}`
-- `/agents` (POST/DELETE) — CRUD del equipo
+- ~~`/agents` (POST/DELETE)~~ — **REMOVIDOS** (migración 004). El CRUD del
+  equipo ahora vive en `POST /auth/users` y `DELETE /auth/users/{id}`.
 
 ### Otros routers que existen y NO toqué
 
@@ -627,8 +637,9 @@ Utility:
 - **No leídas** — TODO (hoy = todas)
 - **Mías** — `assigned_agent_id == ME_ID`
 
-⚠️ `ME_ID = "u-gbaza"` está **hardcoded** en `inbox/page.tsx`. TODO leer de
-`useAuth().user.id`.
+✅ `ME_ID` ahora se lee de `useAuth().user?.id` en `inbox/page.tsx` (FIX
+post-migración 004 — antes estaba hardcoded a `"u-gbaza"` text). Si no hay
+sesión cae a `""` y "Mías" no matchea nada.
 
 Dropdown "Filtros avanzados" colapsibles:
 - Vistas (5 sub-vistas)
@@ -815,9 +826,10 @@ Si cambian las CSP de WordPress o purgan Cloudflare, el script puede desaparecer
 
 ### Crítico / a fixear pronto
 
-1. **`ME_ID` hardcoded** (`frontend/app/(app)/inbox/page.tsx`). Hoy hace que
-   el filtro "Mías" siempre filtre a Gonzalo, y el `assigned_agent_id` cuando
-   tomás control. Fix: leer `useAuth().user.id`.
+1. ~~**`ME_ID` hardcoded**~~ ✅ **RESUELTO** (migración 004 + audit 2026-04).
+   Ahora `inbox/page.tsx`, `conversation-detail.tsx`, `conversation-list.tsx`
+   y `rail.tsx` usan `useAuth().user?.id`. La lista del equipo viene de
+   `useAgents()` que lee `profiles` (no del mock TEAM, que fue eliminado).
 
 2. **Cron snooze sin Redis lock** (`utils/inbox_jobs.py`). Si hay 2+ workers,
    corre N veces. Copiar patrón de `autonomous_scheduler` en `main.py:117`.
@@ -1122,6 +1134,13 @@ con `cat docker-compose.yml` en el server antes de ejecutar `down/up`.
   - Commit `e4eddf7` — actualización handoff.
   - Commit `c32d165` — fix nginx widget.js (widget desaparecido en
     msklatam.tech) + persistir nginx config en `deploy/`.
+  - Migración **004** — drop `agents`, unificación con `profiles`.
+    `assigned_agent_id` pasa de `text` a `uuid`. Endpoints `/inbox/agents`
+    POST/DELETE eliminados (CRUD ahora en `/auth/users`). 3 conversaciones
+    remapeadas de `'u-gbaza'` (text) a uuid de profile vía email-match.
+    Audit completo: `rail.tsx`, `settings/page.tsx`, `conversation-detail.tsx`,
+    `conversation-list.tsx`, `inbox/page.tsx`, `composer.tsx` actualizados
+    para usar `useAuth()` + `useAgents()` reales (mocks `ME`/`TEAM` borrados).
 
 ---
 
@@ -1129,8 +1148,8 @@ con `cat docker-compose.yml` en el server antes de ejecutar `down/up`.
 
 Si Gonzalo no especifica, los siguientes pasos lógicos en orden de impacto:
 
-1. **Multi-usuario real** — leer ME_ID de auth, esconder login fallback en
-   prod. (1-2h)
+1. ~~**Multi-usuario real**~~ ✅ DONE (migración 004 + audit). Pendiente
+   solo: esconder fallback admin-key en prod (`lib/auth.tsx`).
 2. **Lifecycle auto del bot** — meter `cm.set_lifecycle_auto(...)` al final
    del runner. Reglas: nuevo si <3 mensajes, hot si pidió pago, customer si
    tiene compra reciente, cold si no responde +7d. (3-4h)
