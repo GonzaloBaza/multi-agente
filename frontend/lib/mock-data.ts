@@ -92,12 +92,20 @@ export type ConversationListItem = {
   queue: Queue;
 };
 
+export type MessageAttachment = {
+  url: string;
+  filename?: string;
+  content_type?: string;
+  size?: number;
+};
+
 export type Message = {
   id: string;
-  role: "user" | "bot" | "human" | "system";
+  role: "user" | "bot" | "human" | "system" | "assistant";
   content: string;
   at: string;
   agent?: string;
+  attachments?: MessageAttachment[];
   toolCall?: {
     name: string;
     args: string;

@@ -11,6 +11,7 @@ import {
   type InboxView,
   type ConversationListItem,
 } from "@/lib/mock-data";
+import { useInboxSSE } from "@/lib/api/sse";
 import {
   useConversations,
   useMessages,
@@ -40,6 +41,9 @@ export default function InboxPage() {
   const [country, setCountry] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [bulkSelected, setBulkSelected] = useState<Set<string>>(new Set());
+
+  // ── SSE: refetch en tiempo real cuando llegan eventos del backend ────
+  useInboxSSE(selectedId || null);
 
   // ── Queries ────────────────────────────────────────────────────────────
   const convsQ = useConversations({ view, lifecycle, channel, queue, country, search });

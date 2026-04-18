@@ -241,7 +241,12 @@ export function useMessages(conversationId: string | null) {
     queryKey: ["inbox", "messages", conversationId],
     queryFn: async () => {
       if (!conversationId) return [] as Message[];
-      const rows = await api.get<{ id: string; role: string; content: string; agent: string | null; at: string }[]>(
+      const rows = await api.get<{
+        id: string; role: string; content: string;
+        agent: string | null;
+        attachments?: { url: string; filename?: string; content_type?: string; size?: number }[];
+        at: string;
+      }[]>(
         `/inbox/conversations/${conversationId}/messages`
       );
       return rows.map((m) => ({
@@ -250,6 +255,7 @@ export function useMessages(conversationId: string | null) {
         content: m.content,
         at: new Date(m.at).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" }),
         agent: m.agent || undefined,
+        attachments: m.attachments || [],
       }));
     },
     enabled: !!conversationId,
@@ -368,23 +374,62 @@ export function useCorrectSpelling() {
   });
 }
 
+export type UploadedAttachment = {
+  url: string;
+  filename?: string;
+  content_type?: string;
+  size?: number;
+};
+
 export function useSendMessage() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ conversationId, text, agentId, agentName }: {
+    mutationFn: ({ conversationId, text, agentId, agentName, attachments }: {
       conversationId: string;
       text: string;
       agentId?: string;
       agentName?: string;
+      attachments?: UploadedAttachment[];
     }) =>
       api.post<{ ok: boolean; delivered: boolean; channel: string }>(
         `/inbox/conversations/${conversationId}/send`,
-        { text, agent_id: agentId, agent_name: agentName ?? "Agente" }
+        {
+          text,
+          agent_id: agentId,
+          agent_name: agentName ?? "Agente",
+          attachments: attachments ?? [],
+        }
       ),
     onSuccess: (_, vars) => {
-      // refetch mensajes + lista de convs (para que se vea el último mensaje)
       qc.invalidateQueries({ queryKey: ["inbox", "messages", vars.conversationId] });
       qc.invalidateQueries({ queryKey: ["inbox", "conversations"] });
     },
   });
+}
+
+/**
+ * Sube un archivo a R2 vía /api/inbox/upload. Devuelve la URL pública.
+ * Se usa antes de useSendMessage para preparar los attachments.
+ */
+export async function uploadFile(file: File): Promise<UploadedAttachment> {
+  const fd = new FormData();
+  fd.append("file", file);
+
+  const adminKey = process.env.NEXT_PUBLIC_ADMIN_KEY || "change-this-secret";
+  const res = await fetch(`/api/inbox/upload`, {
+    method: "POST",
+    headers: { "x-admin-key": adminKey },
+    body: fd,
+  });
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    throw new Error(`upload HTTP ${res.status}: ${txt}`);
+  }
+  const data = await res.json();
+  return {
+    url: data.url,
+    filename: data.filename,
+    content_type: data.content_type,
+    size: data.size,
+  };
 }

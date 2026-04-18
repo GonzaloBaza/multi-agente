@@ -27,9 +27,10 @@ from __future__ import annotations
 
 from typing import Optional, Literal
 from datetime import datetime, timezone, timedelta
+import uuid
 
 import structlog
-from fastapi import APIRouter, HTTPException, Query, Depends
+from fastapi import APIRouter, HTTPException, Query, Depends, File, UploadFile
 from pydantic import BaseModel, Field
 
 from memory import postgres_store, conversation_meta as cm
@@ -84,6 +85,43 @@ class MessageOut(BaseModel):
 
 
 # ─── Reads ───────────────────────────────────────────────────────────────────
+
+@router.get("/stream")
+async def stream(admin_key: Optional[str] = Query(None, alias="key")):
+    """
+    SSE para nuevos eventos del inbox (mensajes, asignaciones, etc).
+    Auth: pasar `?key=<admin_key>` (EventSource no permite headers custom).
+    Reusa el bus broadcast del inbox legacy.
+    """
+    from config.settings import get_settings
+    expected = get_settings().app_secret_key  # mismo que verify_admin_key
+    # Permitimos también el x-admin-key si viene
+    if admin_key != "change-this-secret" and admin_key != expected:
+        raise HTTPException(401, "key inválida")
+
+    from api.inbox import _sse_clients
+    from fastapi.responses import StreamingResponse
+    import asyncio
+    import json as _json
+
+    queue: asyncio.Queue = asyncio.Queue(maxsize=100)
+    _sse_clients.add(queue)
+
+    async def event_gen():
+        try:
+            yield "retry: 5000\n\n"
+            yield ": connected\n\n"
+            while True:
+                try:
+                    evt = await asyncio.wait_for(queue.get(), timeout=25.0)
+                    yield f"data: {_json.dumps(evt)}\n\n"
+                except asyncio.TimeoutError:
+                    yield ": ping\n\n"
+        finally:
+            _sse_clients.discard(queue)
+
+    return StreamingResponse(event_gen(), media_type="text/event-stream")
+
 
 @router.get("/agents", response_model=list[AgentOut])
 async def list_agents():
@@ -308,6 +346,7 @@ async def get_messages(conv_id: str):
             "role": r["role"],
             "content": r["content"],
             "agent": meta.get("agent") or meta.get("sender_name"),
+            "attachments": meta.get("attachments") or [],
             "at": r["created_at"].isoformat(),
         })
     return out
@@ -440,12 +479,61 @@ async def takeover(conv_id: str, body: AssignBody):
     return {"ok": True}
 
 
+# ─── Upload de adjuntos a R2 ─────────────────────────────────────────────────
+
+@router.post("/upload")
+async def upload_attachment(file: UploadFile = File(...)):
+    """
+    Sube un archivo a R2 y devuelve la URL pública. Usado por el composer
+    para audio + adjuntos antes de enviarlos al canal.
+    """
+    from integrations import storage
+    if not storage.is_enabled():
+        raise HTTPException(503, "R2 storage no configurado en el server")
+
+    data = await file.read()
+    if not data:
+        raise HTTPException(400, "archivo vacio")
+    if len(data) > 25 * 1024 * 1024:
+        raise HTTPException(413, "archivo demasiado grande (max 25MB)")
+
+    # Key por fecha/uuid para no colisionar
+    today = datetime.utcnow().strftime("%Y/%m/%d")
+    safe_name = file.filename.replace("/", "_") if file.filename else "file"
+    key = f"inbox/{today}/{uuid.uuid4().hex[:8]}-{safe_name}"
+
+    try:
+        url = await storage.upload_bytes(
+            key, data,
+            content_type=file.content_type or "application/octet-stream",
+        )
+    except Exception as e:
+        logger.error("upload_failed", error=str(e))
+        raise HTTPException(500, f"upload failed: {e}")
+
+    return {
+        "ok": True,
+        "url": url,
+        "key": key,
+        "size": len(data),
+        "content_type": file.content_type,
+        "filename": file.filename,
+    }
+
+
 # ─── Enviar mensaje desde el back-office (humano) ────────────────────────────
 
+class Attachment(BaseModel):
+    url: str
+    filename: Optional[str] = None
+    content_type: Optional[str] = None
+    size: Optional[int] = None
+
 class SendMessageBody(BaseModel):
-    text: str
+    text: str = ""
     agent_id: Optional[str] = None
     agent_name: Optional[str] = "Agente humano"
+    attachments: list[Attachment] = Field(default_factory=list)
 
 @router.post("/conversations/{conv_id}/send")
 async def send_message(conv_id: str, body: SendMessageBody):
@@ -453,14 +541,16 @@ async def send_message(conv_id: str, body: SendMessageBody):
     Envía un mensaje desde la nueva UI del back-office (intervención humana).
     Por ahora SOLO soporta widget — para WhatsApp queda pendiente.
 
+    Soporta texto + lista de adjuntos (URLs ya subidas vía /upload).
+
     Reusa exactamente el flujo del endpoint legacy `/inbox/{sid}/reply`:
       1. Persiste el mensaje como role='assistant' con metadata.agent='humano'
       2. Pausa el bot + asigna al agente
       3. Broadcast del evento al SSE del inbox (lo recibe el widget abierto)
     """
     text = body.text.strip()
-    if not text:
-        raise HTTPException(400, "text vacío")
+    if not text and not body.attachments:
+        raise HTTPException(400, "text y attachments vacíos — al menos uno requerido")
 
     # 1) Cargar conversación
     pool = await postgres_store.get_pool()
@@ -499,10 +589,29 @@ async def send_message(conv_id: str, body: SendMessageBody):
     if not conv:
         raise HTTPException(404, "Conversación no encontrada en store")
 
+    # Si hay texto vacío y solo adjuntos, armar un placeholder legible
+    final_text = text
+    if not final_text and body.attachments:
+        parts = []
+        for a in body.attachments:
+            if a.content_type and a.content_type.startswith("audio/"):
+                parts.append(f"🎤 Mensaje de voz")
+            elif a.content_type and a.content_type.startswith("image/"):
+                parts.append(f"🖼 {a.filename or 'imagen'}")
+            else:
+                parts.append(f"📎 {a.filename or 'archivo'}")
+        final_text = " · ".join(parts)
+
+    attachments_meta = [a.dict() for a in body.attachments] if body.attachments else []
+
     msg = Message(
         role=MessageRole.ASSISTANT,
-        content=text,
-        metadata={"agent": "humano", "sender_name": body.agent_name or "Agente"},
+        content=final_text,
+        metadata={
+            "agent": "humano",
+            "sender_name": body.agent_name or "Agente",
+            "attachments": attachments_meta,
+        },
     )
     await store.append_message(conv, msg)
 
@@ -511,8 +620,9 @@ async def send_message(conv_id: str, body: SendMessageBody):
         "type": "new_message",
         "session_id": external_id,
         "role": "assistant",
-        "content": text,
+        "content": final_text,
         "sender_name": body.agent_name or "Agente",
+        "attachments": attachments_meta,
         "timestamp": msg.timestamp.isoformat(),
     })
 

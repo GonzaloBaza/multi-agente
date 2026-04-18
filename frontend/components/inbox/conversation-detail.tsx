@@ -1,7 +1,7 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import {
-  Code2,
   PanelRightClose,
   UserPlus,
   AlarmClock,
@@ -22,6 +22,7 @@ import {
   DropdownSeparator,
 } from "@/components/ui/dropdown";
 import { Composer } from "./composer";
+import { MessageBubble } from "./message-bubble";
 import { TEAM, ME } from "@/lib/mock-data";
 import type { ContactDetail, ConversationListItem, LifecycleStage, Message } from "@/lib/mock-data";
 
@@ -56,6 +57,11 @@ export function ConversationDetail({
   onToggleBot,
   onClassify,
 }: Props) {
+  // Auto-scroll al último mensaje cuando llega uno nuevo o se cambia de conv
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [messages.length, conversation?.id]);
 
   if (!contact || !conversation) {
     return (
@@ -224,6 +230,7 @@ export function ConversationDetail({
             <MessageBubble key={m.id} message={m} contactInitials={contact.name[0]} />
           ))
         )}
+        <div ref={messagesEndRef} />
       </div>
 
       {/* Composer (componente extraído) */}
@@ -239,46 +246,5 @@ export function ConversationDetail({
   );
 }
 
-function MessageBubble({ message, contactInitials }: { message: Message; contactInitials: string }) {
-  if (message.role === "user") {
-    return (
-      <div className="flex gap-3 justify-end">
-        <div className="max-w-xl">
-          <div className="text-[10px] text-fg-dim mb-1 text-right">Usuario · {message.at}</div>
-          <div className="bg-accent/15 border border-accent/30 rounded-lg px-4 py-2.5 text-sm">
-            {message.content}
-          </div>
-        </div>
-        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-pink-500 to-fuchsia-600 text-white text-xs font-bold flex items-center justify-center shrink-0">
-          {contactInitials}
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex gap-3">
-      <div className="w-8 h-8 rounded-full bg-accent/20 text-accent text-xs font-bold flex items-center justify-center shrink-0">
-        🤖
-      </div>
-      <div className="max-w-xl space-y-2">
-        <div className="text-[10px] text-fg-dim">Bot · {message.agent} · {message.at}</div>
-        {message.toolCall && (
-          <div className="bg-info/10 border border-info/30 rounded-lg px-3 py-2 text-xs flex items-center gap-2">
-            <Code2 className="w-3.5 h-3.5 text-info shrink-0" />
-            <span className="font-mono text-info truncate">
-              {message.toolCall.name}({message.toolCall.args})
-            </span>
-            <span className="ml-auto text-[10px] text-success shrink-0">
-              {message.toolCall.status === "ok" ? "200 OK" : "ERR"}
-              {message.toolCall.duration && ` · ${message.toolCall.duration}`}
-            </span>
-          </div>
-        )}
-        <div className="bg-card rounded-lg px-4 py-2.5 text-sm whitespace-pre-line">
-          {message.content}
-        </div>
-      </div>
-    </div>
-  );
-}
+// MessageBubble exportado a su propio archivo (./message-bubble.tsx)
+// con soporte de markdown + audio player + adjuntos.

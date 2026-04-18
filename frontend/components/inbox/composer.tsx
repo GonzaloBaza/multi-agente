@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dropdown, DropdownItem, DropdownLabel } from "@/components/ui/dropdown";
-import { useCorrectSpelling, useSendMessage } from "@/lib/api/inbox";
+import { useCorrectSpelling, useSendMessage, uploadFile, type UploadedAttachment } from "@/lib/api/inbox";
 import type { Channel } from "@/lib/mock-data";
 
 // Picker pesado, lazy load (no entra al bundle inicial)
@@ -164,6 +164,7 @@ export function Composer({
   // ── Enviar ────────────────────────────────────────────────────────────
   const sendMut = useSendMessage();
   const [sendError, setSendError] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<string | null>(null);
 
   const canSend = !!conversationId && channel === "widget";
   const sendDisabledReason = !conversationId
@@ -180,40 +181,27 @@ export function Composer({
     }
     setSendError(null);
 
-    // Si no hay texto pero sí adjuntos, generar un placeholder descriptivo.
-    // (El upload real de adjuntos al canal aún no está implementado — los
-    //  archivos se descartan después de "enviar". Mostramos warning honesto.)
-    let textToSend = draft.trim();
-    if (!textToSend && attachments.length > 0) {
-      const audios = attachments.filter((f) => f.type.startsWith("audio/"));
-      const others = attachments.filter((f) => !f.type.startsWith("audio/"));
-      const parts: string[] = [];
-      for (const a of audios) {
-        const sizeKb = Math.round(a.size / 1024);
-        parts.push(`🎤 Mensaje de voz (${sizeKb}KB)`);
-      }
-      for (const f of others) {
-        parts.push(`📎 ${f.name}`);
-      }
-      textToSend = parts.join("  ·  ");
-    }
-
     try {
+      // 1) Subir adjuntos a R2
+      let uploaded: UploadedAttachment[] = [];
+      if (attachments.length > 0) {
+        setUploadProgress("Subiendo adjuntos...");
+        uploaded = await Promise.all(attachments.map((f) => uploadFile(f)));
+      }
+
+      // 2) Enviar mensaje (texto + URLs de adjuntos)
+      setUploadProgress("Enviando...");
       await sendMut.mutateAsync({
         conversationId: conversationId!,
-        text: textToSend,
+        text: draft.trim(),
         agentId, agentName,
+        attachments: uploaded,
       });
       setDraft("");
       setAttachments([]);
-      // Aviso honesto: el archivo en sí NO se subió al canal todavía.
-      if (attachments.length > 0) {
-        setSendError(
-          "⚠ Texto enviado, pero los adjuntos aún no se suben al canal del usuario " +
-          "(falta integrar storage). Solo queda el placeholder en el historial."
-        );
-      }
+      setUploadProgress(null);
     } catch (err) {
+      setUploadProgress(null);
       setSendError((err as Error).message || "Error desconocido al enviar");
     }
   };
@@ -404,11 +392,13 @@ export function Composer({
                 {attachments.length > 0 && ` · ${attachments.length} adj`}
               </span>
               <Button
-                disabled={(!draft.trim() && attachments.length === 0) || correcting || sendMut.isPending || !canSend}
+                disabled={(!draft.trim() && attachments.length === 0) || correcting || sendMut.isPending || !canSend || !!uploadProgress}
                 onClick={handleSend}
                 title={!canSend ? sendDisabledReason : undefined}
               >
-                {sendMut.isPending ? (
+                {uploadProgress ? (
+                  <><Loader2 className="w-3.5 h-3.5 animate-spin" /> {uploadProgress}</>
+                ) : sendMut.isPending ? (
                   <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Enviando...</>
                 ) : "Enviar"}
               </Button>
