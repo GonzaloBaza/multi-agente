@@ -302,7 +302,7 @@ async def _send_hsm_task(
             await store.append_message(conv, msg)
 
             # Broadcast SSE
-            from api.inbox import broadcast_event
+            from utils.realtime import broadcast_event
             broadcast_event({
                 "type": "new_message",
                 "session_id": phone,

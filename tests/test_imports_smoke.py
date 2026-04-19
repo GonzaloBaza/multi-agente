@@ -22,7 +22,6 @@ IMPORTS = [
     "config.settings",
     # API routers
     "api.auth",
-    "api.inbox",
     "api.inbox_api",
     "api.admin",
     "api.webhooks",
@@ -32,15 +31,18 @@ IMPORTS = [
     "memory.conversation_store",
     "memory.conversation_meta",
     "memory.postgres_store",
+    "memory.assignment",
     # Agentes
     "agents.classifier",
     "agents.router",
     # Utils
     "utils.audit",
+    "utils.bot_state",
     "utils.circuit_breaker",
-    "utils.inbox_jobs",
-    "utils.scheduler",
     "utils.conv_events",
+    "utils.inbox_jobs",
+    "utils.realtime",
+    "utils.scheduler",
     # Integraciones críticas
     "integrations.supabase_client",
     # Entry point

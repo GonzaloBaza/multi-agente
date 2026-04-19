@@ -46,7 +46,7 @@ async def process_twilio_message(form_data: dict) -> None:
         user_msg = Message(role=MessageRole.USER, content=text, metadata={"name": name})
         await store.append_message(conversation, user_msg)
         try:
-            from api.inbox import broadcast_event
+            from utils.realtime import broadcast_event
             broadcast_event({
                 "type": "new_message",
                 "session_id": phone,
@@ -110,7 +110,7 @@ async def process_twilio_message(form_data: dict) -> None:
 
     # Notificar inbox via SSE
     try:
-        from api.inbox import broadcast_event
+        from utils.realtime import broadcast_event
         broadcast_event({
             "type": "new_message",
             "session_id": phone,

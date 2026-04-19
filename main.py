@@ -97,7 +97,7 @@ async def lifespan(app: FastAPI):
 
     # Iniciar listener de Redis Pub/Sub para SSE cross-worker
     import asyncio
-    from api.inbox import start_pubsub_listener
+    from utils.realtime import start_pubsub_listener
     pubsub_task = asyncio.create_task(start_pubsub_listener())
     logger.info("pubsub_listener_started")
 
@@ -132,11 +132,18 @@ async def lifespan(app: FastAPI):
 def create_app() -> FastAPI:
     settings = get_settings()
 
+    # Docs + OpenAPI schema bajo /api/* para que nginx los rutee a FastAPI
+    # (el regex solo permite /api/ para el admin panel). El schema es la
+    # fuente de los tipos TS que se autogeneran en el frontend via
+    # openapi-typescript (script `codegen:types` en frontend/package.json).
+    # Swagger UI queda habilitado también en prod porque ya está detrás del
+    # login de Supabase y solo expone endpoints que requieren token.
     app = FastAPI(
-        title="Multi-Agente Cursos Médicos",
-        description="Sistema multi-agente: Ventas (RAG) · Cobranzas · Post-venta",
+        title="MSK Multi-Agente",
+        description="Backend del bot multi-agente y la consola humana.",
         version="1.0.0",
-        docs_url="/docs" if not settings.is_production else None,
+        openapi_url="/api/openapi.json",
+        docs_url="/api/docs",
         redoc_url=None,
         lifespan=lifespan,
     )
@@ -193,12 +200,10 @@ def create_app() -> FastAPI:
     app.include_router(webhooks_router)         # /webhook/* (Meta, MP, Rebill, Zoho)
     app.include_router(widget_router)           # /widget/* (chat embebible)
 
-    # Legacy — api/inbox.py contiene helpers internos (broadcast_event,
-    # start_pubsub_listener, auto_assign_round_robin, _bot_key) que muchos
-    # módulos importan directamente. Sus endpoints HTTP `/inbox/*` no los
-    # exponemos: el frontend nuevo consume /api/inbox/* (inbox_api.py) y no
-    # hay otros clientes. Por eso NO se registra el router — las utilidades
-    # siguen accesibles vía import Python.
+    # El router legacy `api/inbox.py` se eliminó. Los helpers que vivían
+    # ahí (broadcast_event, start_pubsub_listener, auto_assign_round_robin,
+    # bot_disabled keys) están en `utils/realtime.py`, `utils/bot_state.py`
+    # y `memory/assignment.py`.
 
     # Servir los archivos estáticos del widget
     static_dir = Path(__file__).parent / "widget" / "static"

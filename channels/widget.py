@@ -563,7 +563,7 @@ def _build_context_block(lines: list[str]) -> str:
 
 async def _broadcast(event: dict) -> None:
     try:
-        from api.inbox import broadcast_event
+        from utils.realtime import broadcast_event
         broadcast_event(event)
     except Exception:
         pass
@@ -1186,7 +1186,7 @@ async def process_widget_message(
                 }
                 _prefix = _agent_map.get(agent_used, "ventas")
                 queue_val = f"{_prefix}_{(country or 'XX').upper()}"
-            from api.inbox import auto_assign_round_robin
+            from memory.assignment import auto_assign_round_robin
             await auto_assign_round_robin(session_id, queue=queue_val)
         except Exception:
             pass

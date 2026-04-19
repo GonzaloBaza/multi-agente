@@ -116,7 +116,7 @@ async def stream(
     if not authed:
         raise HTTPException(401, "no autenticado")
 
-    from api.inbox import _sse_clients
+    from utils.realtime import _sse_clients
     from fastapi.responses import StreamingResponse
     import asyncio
     import json as _json
@@ -923,7 +923,7 @@ async def send_message(conv_id: str, body: SendMessageBody):
     from memory.conversation_store import get_conversation_store
     from models.message import Message, MessageRole
     from config.constants import Channel as Ch
-    from api.inbox import broadcast_event
+    from utils.realtime import broadcast_event
     import time as _time
 
     store = await get_conversation_store()
@@ -1096,7 +1096,7 @@ async def get_metrics():
     import datetime as _dt
     import json as _json
     from memory.conversation_store import get_conversation_store
-    from api.inbox import _bot_key  # reusamos el helper legacy
+    from utils.bot_state import bot_disabled_key as _bot_key
 
     store = await get_conversation_store()
     r = store._redis

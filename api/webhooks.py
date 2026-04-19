@@ -98,7 +98,7 @@ async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
 async def _handle_wa_status(statuses: list):
     """Procesa status updates de Meta (sent/delivered/read/failed)."""
     try:
-        from api.inbox import broadcast_event
+        from utils.realtime import broadcast_event
         from memory.conversation_store import get_conversation_store
         store = await get_conversation_store()
 

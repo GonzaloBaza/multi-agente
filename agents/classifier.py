@@ -78,7 +78,7 @@ async def classify_conversation(messages: list, session_id: str) -> str | None:
 
         # Broadcast SSE para que el inbox se actualice en tiempo real
         try:
-            from api.inbox import broadcast_event
+            from utils.realtime import broadcast_event
             broadcast_event({"type": "label_updated", "session_id": session_id, "label": label})
         except Exception:
             pass

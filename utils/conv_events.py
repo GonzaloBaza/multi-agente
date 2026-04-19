@@ -38,7 +38,7 @@ async def log_event(session_id: str, event_type: str, data: dict):
 
         # Broadcast SSE para que el inbox se actualice en tiempo real
         try:
-            from api.inbox import broadcast_event
+            from utils.realtime import broadcast_event
             broadcast_event({
                 "type": "conv_event",
                 "session_id": session_id,

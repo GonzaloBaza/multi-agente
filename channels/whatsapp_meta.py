@@ -191,7 +191,7 @@ async def process_whatsapp_message(payload: dict) -> None:
         user_msg = Message(role=MessageRole.USER, content=text, metadata=msg_metadata)
         await store.append_message(conversation, user_msg)
         try:
-            from api.inbox import broadcast_event
+            from utils.realtime import broadcast_event
             import datetime
             broadcast_event({
                 "type": "new_message",
@@ -261,7 +261,7 @@ async def process_whatsapp_message(payload: dict) -> None:
 
     # Notificar inbox via SSE
     try:
-        from api.inbox import broadcast_event
+        from utils.realtime import broadcast_event
         import datetime
         broadcast_event({
             "type": "new_message",
@@ -299,7 +299,7 @@ async def process_whatsapp_message(payload: dict) -> None:
         await store.save(conversation)
         # Auto-assign via round-robin
         try:
-            from api.inbox import auto_assign_round_robin
+            from memory.assignment import auto_assign_round_robin
             await auto_assign_round_robin(phone)
         except Exception:
             pass
