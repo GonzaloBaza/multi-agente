@@ -2,9 +2,11 @@
 MercadoPago — generación de Preference (checkout link de pago único).
 Para suscripciones usar Rebill.
 """
+
 import httpx
-from config.settings import get_settings
 import structlog
+
+from config.settings import get_settings
 
 logger = structlog.get_logger(__name__)
 

@@ -7,10 +7,11 @@ cada una decide con IA si mandar un HSM template de follow-up y cuál.
 run_auto_retry_cycle: diariamente, busca convs cerradas como "descartado"
 hace >20 días y las reactiva (marca para que el próximo retargeting las incluya).
 """
+
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import structlog
 
@@ -34,7 +35,6 @@ async def run_retargeting_cycle() -> None:
     """Entry point llamado por APScheduler cada hora."""
     try:
         from memory.conversation_store import get_conversation_store
-        from memory import postgres_store
 
         store = await get_conversation_store()
         r = store._redis
@@ -64,7 +64,7 @@ async def run_retargeting_cycle() -> None:
 
         # Stats
         stats = {
-            "last_run": datetime.now(timezone.utc).isoformat(),
+            "last_run": datetime.now(UTC).isoformat(),
             "candidates": len(candidates),
             "sent": sent,
             "skipped": skipped,
@@ -81,21 +81,23 @@ async def _find_candidates() -> list[tuple[str, str, int]]:
     en alguna ventana de retargeting y matchean criterio.
     """
     from memory.conversation_store import get_conversation_store
+
     store = await get_conversation_store()
     r = store._redis
 
     # Scan todas las keys conv:*
     results: list[tuple[str, str, int]] = []
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     async for raw_key in r.scan_iter(match="conv:*", count=200):
         key = raw_key.decode() if isinstance(raw_key, bytes) else raw_key
-        conv_id = key.replace("conv:", "", 1)
+        key.replace("conv:", "", 1)
         try:
             raw = await r.get(key)
             if not raw:
                 continue
             from models.conversation import Conversation
+
             conv = Conversation.model_validate_json(raw)
         except Exception:
             continue
@@ -126,7 +128,7 @@ async def _find_candidates() -> list[tuple[str, str, int]]:
 
         ts = last_user_msg.timestamp
         if ts.tzinfo is None:
-            ts = ts.replace(tzinfo=timezone.utc)
+            ts = ts.replace(tzinfo=UTC)
         days_inactive = (now - ts).days
 
         # ¿Cae en alguna ventana de retargeting?
@@ -146,12 +148,12 @@ async def _find_candidates() -> list[tuple[str, str, int]]:
 
 async def _process_lead(phone: str, label: str, days_inactive: int) -> bool:
     """Decide con IA qué template mandar a este lead y lo envía. Retorna True si actuó."""
-    from memory.conversation_store import get_conversation_store
-    from integrations.whatsapp_meta import WhatsAppMetaClient
-    from integrations.zoho import leads as zoho_leads
-    from config.constants import Channel
     from openai import AsyncOpenAI
+
+    from config.constants import Channel
     from config.settings import get_settings
+    from integrations.whatsapp_meta import WhatsAppMetaClient
+    from memory.conversation_store import get_conversation_store
 
     store = await get_conversation_store()
     conv = await store.get_by_external(Channel.WHATSAPP, phone)
@@ -204,8 +206,7 @@ async def _process_lead(phone: str, label: str, days_inactive: int) -> bool:
     )
 
     user_prompt = (
-        f"Transcript (últimos mensajes):\n{transcript}\n\n"
-        f"Plantillas HSM disponibles:\n{template_list}"
+        f"Transcript (últimos mensajes):\n{transcript}\n\nPlantillas HSM disponibles:\n{template_list}"
     )
 
     try:
@@ -245,7 +246,13 @@ async def _process_lead(phone: str, label: str, days_inactive: int) -> bool:
     wa = WhatsAppMetaClient()
     try:
         await wa.send_template(phone, template_name, language_code="es_AR")
-        logger.info("retargeting_sent", phone=phone, template=template_name, day=days_inactive, reason=decision.get("reason"))
+        logger.info(
+            "retargeting_sent",
+            phone=phone,
+            template=template_name,
+            day=days_inactive,
+            reason=decision.get("reason"),
+        )
         # Marca como enviado (evitar re-envío el mismo día)
         await store._redis.setex(f"retarget_sent:{phone}:day{days_inactive}", 86400 * 3, template_name)
         return True
@@ -266,6 +273,7 @@ async def _get_hsm_templates(store) -> list[dict]:
     # Fetch de Meta
     try:
         from integrations.whatsapp_meta import WhatsAppMetaClient
+
         wa = WhatsAppMetaClient()
         templates = await wa.get_templates() or []
         if templates:
@@ -278,6 +286,7 @@ async def _get_hsm_templates(store) -> list[dict]:
 
 # ── Auto-retry descartados ──────────────────────────────────────────────────
 
+
 async def run_auto_retry_cycle() -> None:
     """
     Cada día a las 10am:
@@ -286,10 +295,11 @@ async def run_auto_retry_cycle() -> None:
     """
     try:
         from memory import postgres_store
+
         if not postgres_store.is_enabled():
             return
 
-        cutoff = datetime.now(timezone.utc) - timedelta(days=20)
+        cutoff = datetime.now(UTC) - timedelta(days=20)
         pool = await postgres_store.get_pool()
         async with pool.acquire() as conn:
             rows = await conn.fetch(
@@ -307,8 +317,8 @@ async def run_auto_retry_cycle() -> None:
             )
 
         reactivated = 0
+        from config.constants import ConversationStatus
         from memory.conversation_store import get_conversation_store
-        from config.constants import Channel, ConversationStatus
 
         store = await get_conversation_store()
         for r in rows:
@@ -319,7 +329,7 @@ async def run_auto_retry_cycle() -> None:
                 conv.status = ConversationStatus.ACTIVE
                 cn = conv.context.get("closing_note") or {}
                 cn["retry_attempted"] = "true"
-                cn["retry_at"] = datetime.now(timezone.utc).isoformat()
+                cn["retry_at"] = datetime.now(UTC).isoformat()
                 conv.context["closing_note"] = cn
                 await store.save(conv)
                 reactivated += 1

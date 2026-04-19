@@ -2,9 +2,11 @@
 Notificaciones al equipo humano vía Slack y email.
 Se disparan en handoffs o escalaciones.
 """
+
 import httpx
-from config.settings import get_settings
 import structlog
+
+from config.settings import get_settings
 
 logger = structlog.get_logger(__name__)
 

@@ -1,7 +1,9 @@
 import httpx
-from .auth import ZohoAuth
-from config.settings import get_settings
 import structlog
+
+from config.settings import get_settings
+
+from .auth import ZohoAuth
 
 logger = structlog.get_logger(__name__)
 
@@ -18,24 +20,28 @@ class ZohoSalesOrders:
                payment_provider, pais, notas}
         """
         payload = {
-            "data": [{
-                "Subject": f"Inscripción: {data.get('curso_nombre', 'Curso')}",
-                "Contact_Name": {"id": data["contact_id"]},
-                "Status": "Pendiente de pago",
-                "Grand_Total": data.get("precio", 0),
-                "Currency": data.get("moneda", "ARS"),
-                "Curso_Nombre": data.get("curso_nombre", ""),
-                "Link_de_Pago": data.get("payment_link", ""),
-                "Proveedor_Pago": data.get("payment_provider", ""),
-                "Pais": data.get("pais", "Argentina"),
-                "Notas_Inscripcion": data.get("notas", ""),
-                "Product_Details": [{
-                    "product": {"name": data.get("curso_nombre", "")},
-                    "quantity": 1,
-                    "unit_price": data.get("precio", 0),
-                    "total": data.get("precio", 0),
-                }],
-            }]
+            "data": [
+                {
+                    "Subject": f"Inscripción: {data.get('curso_nombre', 'Curso')}",
+                    "Contact_Name": {"id": data["contact_id"]},
+                    "Status": "Pendiente de pago",
+                    "Grand_Total": data.get("precio", 0),
+                    "Currency": data.get("moneda", "ARS"),
+                    "Curso_Nombre": data.get("curso_nombre", ""),
+                    "Link_de_Pago": data.get("payment_link", ""),
+                    "Proveedor_Pago": data.get("payment_provider", ""),
+                    "Pais": data.get("pais", "Argentina"),
+                    "Notas_Inscripcion": data.get("notas", ""),
+                    "Product_Details": [
+                        {
+                            "product": {"name": data.get("curso_nombre", "")},
+                            "quantity": 1,
+                            "unit_price": data.get("precio", 0),
+                            "total": data.get("precio", 0),
+                        }
+                    ],
+                }
+            ]
         }
         headers = await self._auth.auth_headers()
         async with httpx.AsyncClient() as client:
@@ -54,11 +60,13 @@ class ZohoSalesOrders:
 
     async def update_payment_status(self, order_id: str, status: str, transaction_id: str = "") -> dict:
         payload = {
-            "data": [{
-                "id": order_id,
-                "Status": status,
-                "Transaction_ID": transaction_id,
-            }]
+            "data": [
+                {
+                    "id": order_id,
+                    "Status": status,
+                    "Transaction_ID": transaction_id,
+                }
+            ]
         }
         headers = await self._auth.auth_headers()
         async with httpx.AsyncClient() as client:

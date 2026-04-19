@@ -17,9 +17,12 @@ a widget-config para reflejar qué hace. El endpoint público se mantiene
 porque el widget embebible lo necesita sin auth (está expuesto en
 msklatam.tech, etc).
 """
+
 import json
+
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
+
 from api.auth import require_role
 
 router = APIRouter(prefix="/api/v1/admin/widget-config", tags=["widget-config"])
@@ -39,6 +42,7 @@ class WidgetConfig(BaseModel):
 
 async def _redis():
     from memory.conversation_store import get_conversation_store
+
     store = await get_conversation_store()
     return store._redis
 

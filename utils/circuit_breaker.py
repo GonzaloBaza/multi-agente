@@ -16,17 +16,19 @@ Uso:
         breaker.record_failure()
         raise
 """
+
 import time
+from enum import StrEnum
+
 import structlog
-from enum import Enum
 
 logger = structlog.get_logger(__name__)
 
 
-class CircuitState(str, Enum):
-    CLOSED = "closed"       # Normal — requests pass through
-    OPEN = "open"           # Tripped — requests are blocked
-    HALF_OPEN = "half_open" # Testing — one request allowed
+class CircuitState(StrEnum):
+    CLOSED = "closed"  # Normal — requests pass through
+    OPEN = "open"  # Tripped — requests are blocked
+    HALF_OPEN = "half_open"  # Testing — one request allowed
 
 
 class CircuitBreaker:

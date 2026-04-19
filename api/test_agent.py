@@ -4,14 +4,14 @@ Test AI Agent — sandbox para probar el pipeline multi-agente sin persistir nad
 Útil para QA de prompts, debugging del router, ver qué tools invoca cada agente,
 y medir latencia/tokens consumidos.
 """
+
 from __future__ import annotations
 
 import time
-from typing import Optional
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-import structlog
 
 from api.auth import require_role
 
@@ -24,7 +24,7 @@ class TestMessageRequest(BaseModel):
     history: list[dict] = []  # [{role: "user"|"assistant", content: "..."}]
     country: str = "AR"
     channel: str = "widget"
-    forced_agent: Optional[str] = None  # sales|collections|post_sales|closer|None
+    forced_agent: str | None = None  # sales|collections|post_sales|closer|None
     skip_flow: bool = True  # saltea flow runner en tests
 
 

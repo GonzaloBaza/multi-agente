@@ -2,8 +2,10 @@
 Integración con Twilio WhatsApp Sandbox / Business.
 Envía mensajes de texto y soporta plantillas de Twilio.
 """
+
 import httpx
 import structlog
+
 from config.settings import get_settings
 
 logger = structlog.get_logger(__name__)

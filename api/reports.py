@@ -11,13 +11,13 @@ Endpoints:
   GET /admin/reports/categories?days=7     — counts por categoría de closing_note
   GET /admin/reports/timeline?days=14      — cierres por día (bar chart)
 """
+
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Query
 import structlog
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from api.auth import require_role
 from memory import postgres_store
@@ -27,7 +27,7 @@ router = APIRouter(prefix="/api/v1/admin/reports", tags=["reports"])
 
 
 def _since(days: int) -> datetime:
-    return datetime.now(timezone.utc) - timedelta(days=max(1, days))
+    return datetime.now(UTC) - timedelta(days=max(1, days))
 
 
 @router.get("/overview")
@@ -43,7 +43,8 @@ async def overview(
     pool = await postgres_store.get_pool()
     async with pool.acquire() as conn:
         total = await conn.fetchval(
-            "select count(*) from public.conversations where updated_at >= $1", since,
+            "select count(*) from public.conversations where updated_at >= $1",
+            since,
         )
         closed = await conn.fetchval(
             "select count(*) from public.conversations where status = 'closed' and updated_at >= $1",
@@ -63,7 +64,8 @@ async def overview(
         )
         # Mensajes totales en el rango (nuestro + cliente)
         msgs = await conn.fetchval(
-            "select count(*) from public.messages where created_at >= $1", since,
+            "select count(*) from public.messages where created_at >= $1",
+            since,
         )
         # Conversaciones abiertas ahora (no cerradas)
         open_now = await conn.fetchval(
@@ -118,14 +120,16 @@ async def leaderboard(
     for r in rows:
         closed = r["closed"] or 0
         won = r["won"] or 0
-        data.append({
-            "agent": r["agent"],
-            "closed": closed,
-            "won": won,
-            "lost": r["lost"] or 0,
-            "resolved": r["resolved"] or 0,
-            "conversion_rate": round((won / closed * 100.0) if closed else 0.0, 1),
-        })
+        data.append(
+            {
+                "agent": r["agent"],
+                "closed": closed,
+                "won": won,
+                "lost": r["lost"] or 0,
+                "resolved": r["resolved"] or 0,
+                "conversion_rate": round((won / closed * 100.0) if closed else 0.0, 1),
+            }
+        )
     return {"days": days, "rows": data}
 
 
@@ -184,8 +188,8 @@ async def timeline(
     # Fill gaps (días sin actividad)
     by_day = {r["day"].date().isoformat(): {"closed": r["closed"], "won": r["won"]} for r in rows}
     out = []
-    cur = (datetime.now(timezone.utc) - timedelta(days=days)).date()
-    today = datetime.now(timezone.utc).date()
+    cur = (datetime.now(UTC) - timedelta(days=days)).date()
+    today = datetime.now(UTC).date()
     while cur <= today:
         key = cur.isoformat()
         entry = by_day.get(key, {"closed": 0, "won": 0})

@@ -4,12 +4,15 @@ Endpoint para envío de plantillas de WhatsApp:
   GET  /templates/hsm       → lista plantillas aprobadas de Meta (para inbox)
   POST /templates/send-hsm  → envía plantilla desde el inbox humano
 """
+
 import json
-from fastapi import APIRouter, Request, BackgroundTasks, Depends, HTTPException
-from pydantic import BaseModel
-from api.auth import get_current_user
-from api.admin import verify_admin_key
+
 import structlog
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from pydantic import BaseModel
+
+from api.admin import verify_admin_key
+from api.auth import get_current_user
 
 logger = structlog.get_logger(__name__)
 
@@ -18,27 +21,29 @@ router = APIRouter(prefix="/api/v1/templates", tags=["templates"])
 # Mapeo país → número de WhatsApp que envía (mismo que Botmaker)
 CHANNEL_NUMBERS = {
     "Argentina": "5491152170771",
-    "México":    "5215590586200",
-    "Chile":     "56224875300",
-    "Ecuador":   "593993957801",
-    "Uruguay":   "5491152170771",
-    "Colombia":  "5753161349",
-    "Peru":      "5753161349",  # fallback MP
+    "México": "5215590586200",
+    "Chile": "56224875300",
+    "Ecuador": "593993957801",
+    "Uruguay": "5491152170771",
+    "Colombia": "5753161349",
+    "Peru": "5753161349",  # fallback MP
 }
 
 COUNTRY_ISO = {
     "Argentina": "arg",
-    "México":    "mx",
-    "Chile":     "cl",
-    "Ecuador":   "ec",
-    "Uruguay":   "arg",
-    "Colombia":  "mp",
-    "Peru":      "mp",
+    "México": "mx",
+    "Chile": "cl",
+    "Ecuador": "ec",
+    "Uruguay": "arg",
+    "Colombia": "mp",
+    "Peru": "mp",
 }
 
 
 @router.post("/send")
-async def send_template(request: Request, background_tasks: BackgroundTasks, key: str = Depends(verify_admin_key)):
+async def send_template(
+    request: Request, background_tasks: BackgroundTasks, key: str = Depends(verify_admin_key)
+):
     """
     Recibe datos de Zoho CRM y envía una plantilla de WhatsApp.
     Acepta tanto JSON como form-urlencoded (como enviaba Botmaker/Deluge).
@@ -53,7 +58,7 @@ async def send_template(request: Request, background_tasks: BackgroundTasks, key
         body = dict(form)
 
     phone = body.get("Phone", "")
-    nombre = body.get("Full_Name", "")
+    body.get("Full_Name", "")
     plantilla_base = body.get("plantilla", "bienvenida")
     pais = body.get("Pais", "Argentina")
 
@@ -81,10 +86,7 @@ async def send_template(request: Request, background_tasks: BackgroundTasks, key
         "Certificaciones": body.get("Certificaciones", ""),
     }
 
-    logger.info(
-        "template_send_requested",
-        phone=phone, plantilla=plantilla_name, pais=pais
-    )
+    logger.info("template_send_requested", phone=phone, plantilla=plantilla_name, pais=pais)
 
     background_tasks.add_task(_send_template_task, phone, plantilla_name, template_vars, pais)
     return {"process": "ok", "enviada": True, "plantilla": plantilla_name, "phone": phone}
@@ -93,11 +95,12 @@ async def send_template(request: Request, background_tasks: BackgroundTasks, key
 async def _send_template_task(phone: str, template_name: str, template_vars: dict, pais: str):
     """Envía la plantilla vía Meta Cloud API o Twilio según configuración."""
     from config.settings import get_settings
+
     settings = get_settings()
 
     try:
         if settings.whatsapp_token and settings.whatsapp_phone_number_id:
-            await _send_via_meta(phone, template_name, template_vars)
+            await _send_via_meta(phone, template_name, template_vars, pais)
         elif settings.twilio_account_sid:
             await _send_via_twilio(phone, template_vars)
         else:
@@ -106,9 +109,10 @@ async def _send_template_task(phone: str, template_name: str, template_vars: dic
         logger.error("template_send_error", phone=phone, template=template_name, error=str(e))
 
 
-async def _send_via_meta(phone: str, template_name: str, template_vars: dict):
+async def _send_via_meta(phone: str, template_name: str, template_vars: dict, pais: str):
     """Envía template via Meta Cloud API."""
     from integrations.whatsapp_meta import WhatsAppMetaClient
+
     wa = WhatsAppMetaClient()
 
     # Construir components con los parámetros del template
@@ -117,19 +121,19 @@ async def _send_via_meta(phone: str, template_name: str, template_vars: dict):
     components = []
 
     # Body parameters — depende de la plantilla. Enviamos todas las variables como body params
-    body_params = [
-        {"type": "text", "text": v}
-        for v in template_vars.values()
-        if v and str(v).strip()
-    ]
+    body_params = [{"type": "text", "text": v} for v in template_vars.values() if v and str(v).strip()]
 
     if body_params:
         components.append({"type": "body", "parameters": body_params})
 
     # Detectar idioma por país
     lang_map = {
-        "Argentina": "es_AR", "México": "es_MX", "Chile": "es_CL",
-        "Colombia": "es_CO", "Ecuador": "es_EC", "Uruguay": "es_AR",
+        "Argentina": "es_AR",
+        "México": "es_MX",
+        "Chile": "es_CL",
+        "Colombia": "es_CO",
+        "Ecuador": "es_EC",
+        "Uruguay": "es_AR",
     }
     language = lang_map.get(pais, "es_AR")
 
@@ -148,6 +152,7 @@ async def _send_via_twilio(phone: str, template_vars: dict):
     Enviamos el mensaje de bienvenida como texto plano para testing.
     """
     from integrations.twilio_whatsapp import TwilioWhatsAppClient
+
     twilio = TwilioWhatsAppClient()
 
     nombre = template_vars.get("Nombre_completo", "")
@@ -165,6 +170,7 @@ async def _send_via_twilio(phone: str, template_vars: dict):
 
 # ─── HSM Templates para el Inbox ─────────────────────────────────────────────
 
+
 class HSMRequest(BaseModel):
     session_id: str
     template_name: str
@@ -174,15 +180,15 @@ class HSMRequest(BaseModel):
 
 
 class CreateTemplateRequest(BaseModel):
-    name: str                                # nombre_unico_sin_espacios
-    category: str = "MARKETING"              # MARKETING | UTILITY | AUTHENTICATION
+    name: str  # nombre_unico_sin_espacios
+    category: str = "MARKETING"  # MARKETING | UTILITY | AUTHENTICATION
     language: str = "es_AR"
-    body_text: str                            # Texto del cuerpo con {{1}}, {{2}}...
-    header_text: str = ""                     # Texto del header (opcional)
-    header_type: str = ""                    # IMAGE | VIDEO | DOCUMENT (para media headers)
-    header_handle: str = ""                  # Handle de Meta (retornado por upload-media)
-    footer_text: str = ""                     # Texto del footer (opcional)
-    buttons: list[dict] = []                  # Botones (opcional)
+    body_text: str  # Texto del cuerpo con {{1}}, {{2}}...
+    header_text: str = ""  # Texto del header (opcional)
+    header_type: str = ""  # IMAGE | VIDEO | DOCUMENT (para media headers)
+    header_handle: str = ""  # Handle de Meta (retornado por upload-media)
+    footer_text: str = ""  # Texto del footer (opcional)
+    buttons: list[dict] = []  # Botones (opcional)
 
 
 @router.get("/hsm")
@@ -192,6 +198,7 @@ async def list_hsm_templates(user: dict = Depends(get_current_user)):
     Se cachean en Redis 5 minutos para no saturar la API de Meta.
     """
     from memory.conversation_store import get_conversation_store
+
     store = await get_conversation_store()
 
     # Check cache
@@ -201,6 +208,7 @@ async def list_hsm_templates(user: dict = Depends(get_current_user)):
         return {"templates": json.loads(data)}
 
     from integrations.whatsapp_meta import WhatsAppMetaClient
+
     wa = WhatsAppMetaClient()
     templates = await wa.get_templates()
 
@@ -212,7 +220,9 @@ async def list_hsm_templates(user: dict = Depends(get_current_user)):
 
 
 @router.post("/send-hsm")
-async def send_hsm(req: HSMRequest, background_tasks: BackgroundTasks, user: dict = Depends(get_current_user)):
+async def send_hsm(
+    req: HSMRequest, background_tasks: BackgroundTasks, user: dict = Depends(get_current_user)
+):
     """
     Envía una plantilla HSM a un contacto de WhatsApp desde el inbox.
     Guarda el mensaje en la conversación y notifica via SSE.
@@ -221,8 +231,9 @@ async def send_hsm(req: HSMRequest, background_tasks: BackgroundTasks, user: dic
         raise HTTPException(status_code=400, detail="session_id y template_name requeridos")
 
     # Verificar que la sesión existe
-    from memory.conversation_store import get_conversation_store
     from config.constants import Channel
+    from memory.conversation_store import get_conversation_store
+
     store = await get_conversation_store()
     conv = await store.get_by_external(Channel.WHATSAPP, req.session_id)
     if not conv:
@@ -251,29 +262,32 @@ async def _send_hsm_task(
 ):
     """Envía la plantilla HSM y guarda en la conversación."""
     try:
+        from config.constants import Channel
         from integrations.whatsapp_meta import WhatsAppMetaClient
         from memory.conversation_store import get_conversation_store
         from models.message import Message, MessageRole
-        from config.constants import Channel
-        import datetime
 
         wa = WhatsAppMetaClient()
 
         # Construir components
         components = []
         if header_params:
-            components.append({
-                "type": "header",
-                "parameters": [{"type": "text", "text": p} for p in header_params],
-            })
+            components.append(
+                {
+                    "type": "header",
+                    "parameters": [{"type": "text", "text": p} for p in header_params],
+                }
+            )
         if body_params:
-            components.append({
-                "type": "body",
-                "parameters": [{"type": "text", "text": p} for p in body_params],
-            })
+            components.append(
+                {
+                    "type": "body",
+                    "parameters": [{"type": "text", "text": p} for p in body_params],
+                }
+            )
 
         # Enviar
-        result = await wa.send_template(
+        await wa.send_template(
             to=phone,
             template_name=template_name,
             language=language,
@@ -303,16 +317,19 @@ async def _send_hsm_task(
 
             # Broadcast SSE
             from utils.realtime import broadcast_event
-            broadcast_event({
-                "type": "new_message",
-                "session_id": phone,
-                "role": "assistant",
-                "content": preview,
-                "sender_name": user_name,
-                "timestamp": msg.timestamp.isoformat(),
-                "channel": "whatsapp",
-                "is_template": True,
-            })
+
+            broadcast_event(
+                {
+                    "type": "new_message",
+                    "session_id": phone,
+                    "role": "assistant",
+                    "content": preview,
+                    "sender_name": user_name,
+                    "timestamp": msg.timestamp.isoformat(),
+                    "channel": "whatsapp",
+                    "is_template": True,
+                }
+            )
 
         logger.info("hsm_sent_from_inbox", phone=phone, template=template_name, agent=user_name)
 
@@ -322,15 +339,17 @@ async def _send_hsm_task(
 
 # ─── Gestión de plantillas (CRUD) ────────────────────────────────────────────
 
+
 @router.get("/hsm/all")
 async def list_all_templates(user: dict = Depends(get_current_user)):
     """
     Lista TODAS las plantillas (no solo aprobadas) para la gestión admin.
     Incluye: APPROVED, PENDING, REJECTED.
     """
-    from integrations.whatsapp_meta import WhatsAppMetaClient
-    from config.settings import get_settings
     import httpx
+
+    from config.settings import get_settings
+    from integrations.whatsapp_meta import WhatsAppMetaClient
 
     settings = get_settings()
     waba_id = settings.whatsapp_waba_id
@@ -349,6 +368,7 @@ async def list_all_templates(user: dict = Depends(get_current_user)):
             templates = data.get("data", [])
 
             import re
+
             result = []
             for t in templates:
                 components = t.get("components", [])
@@ -366,20 +386,22 @@ async def list_all_templates(user: dict = Depends(get_current_user)):
                     elif comp["type"] == "BUTTONS":
                         buttons = comp.get("buttons", [])
 
-                body_vars = re.findall(r'\{\{(\d+)\}\}', body_text)
-                result.append({
-                    "id": t.get("id", ""),
-                    "name": t["name"],
-                    "language": t.get("language", ""),
-                    "category": t.get("category", ""),
-                    "status": t.get("status", ""),
-                    "body": body_text,
-                    "header": header_info,
-                    "footer": footer_text,
-                    "buttons": buttons,
-                    "body_var_count": len(body_vars),
-                    "rejected_reason": t.get("rejected_reason", ""),
-                })
+                body_vars = re.findall(r"\{\{(\d+)\}\}", body_text)
+                result.append(
+                    {
+                        "id": t.get("id", ""),
+                        "name": t["name"],
+                        "language": t.get("language", ""),
+                        "category": t.get("category", ""),
+                        "status": t.get("status", ""),
+                        "body": body_text,
+                        "header": header_info,
+                        "footer": footer_text,
+                        "buttons": buttons,
+                        "body_var_count": len(body_vars),
+                        "rejected_reason": t.get("rejected_reason", ""),
+                    }
+                )
             return {"templates": result}
     except Exception as e:
         logger.error("list_all_templates_error", error=str(e))
@@ -392,12 +414,12 @@ async def create_template(req: CreateTemplateRequest, user: dict = Depends(get_c
     Crea una nueva plantilla en Meta Business Manager.
     La plantilla queda en estado PENDING hasta que Meta la apruebe (24-48h).
     """
-    from api.auth import require_role
     # Solo admin puede crear plantillas
     if user.get("role") not in ("admin",):
         raise HTTPException(status_code=403, detail="Solo admin puede crear plantillas")
 
     from integrations.whatsapp_meta import WhatsAppMetaClient
+
     wa = WhatsAppMetaClient()
 
     try:
@@ -415,12 +437,19 @@ async def create_template(req: CreateTemplateRequest, user: dict = Depends(get_c
 
         # Invalidar cache
         from memory.conversation_store import get_conversation_store
+
         store = await get_conversation_store()
         await store._redis.delete("hsm_templates_cache")
 
         from utils.audit import audit_log
-        await audit_log(user.get("id", ""), user.get("name", ""), "template_created", req.name,
-                        {"category": req.category, "language": req.language})
+
+        await audit_log(
+            user.get("id", ""),
+            user.get("name", ""),
+            "template_created",
+            req.name,
+            {"category": req.category, "language": req.language},
+        )
 
         return {"status": "ok", "template_id": result.get("id", ""), "result": result}
 
@@ -429,7 +458,7 @@ async def create_template(req: CreateTemplateRequest, user: dict = Depends(get_c
     except Exception as e:
         error_msg = str(e)
         # Intentar extraer error de Meta
-        if hasattr(e, 'response'):
+        if hasattr(e, "response"):
             try:
                 error_data = e.response.json()
                 error_msg = error_data.get("error", {}).get("message", error_msg)
@@ -453,8 +482,8 @@ async def upload_header_media(request: Request, user: dict = Depends(get_current
     if not file:
         raise HTTPException(status_code=400, detail="Archivo requerido")
 
-    from pathlib import Path
     import uuid as uuid_mod
+    from pathlib import Path
 
     original_name = getattr(file, "filename", "file")
     content_type = getattr(file, "content_type", "application/octet-stream") or "application/octet-stream"
@@ -462,12 +491,17 @@ async def upload_header_media(request: Request, user: dict = Depends(get_current
 
     # Validar tipo de archivo
     allowed_types = {
-        "image/jpeg", "image/png", "image/webp",
-        "video/mp4", "video/3gpp",
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+        "video/mp4",
+        "video/3gpp",
         "application/pdf",
     }
     if content_type not in allowed_types:
-        raise HTTPException(status_code=400, detail=f"Tipo no soportado: {content_type}. Usa JPG, PNG, MP4 o PDF.")
+        raise HTTPException(
+            status_code=400, detail=f"Tipo no soportado: {content_type}. Usa JPG, PNG, MP4 o PDF."
+        )
 
     # Guardar temporalmente
     media_dir = Path(__file__).parent.parent / "media" / "templates"
@@ -485,6 +519,7 @@ async def upload_header_media(request: Request, user: dict = Depends(get_current
 
     try:
         from integrations.whatsapp_meta import WhatsAppMetaClient
+
         wa = WhatsAppMetaClient()
         handle = await wa.upload_media_for_template(str(filepath), content_type)
 
@@ -522,6 +557,7 @@ async def delete_template_endpoint(template_name: str, user: dict = Depends(get_
         raise HTTPException(status_code=403, detail="Solo admin puede eliminar plantillas")
 
     from integrations.whatsapp_meta import WhatsAppMetaClient
+
     wa = WhatsAppMetaClient()
 
     try:
@@ -529,10 +565,12 @@ async def delete_template_endpoint(template_name: str, user: dict = Depends(get_
 
         # Invalidar cache
         from memory.conversation_store import get_conversation_store
+
         store = await get_conversation_store()
         await store._redis.delete("hsm_templates_cache")
 
         from utils.audit import audit_log
+
         await audit_log(user.get("id", ""), user.get("name", ""), "template_deleted", template_name)
 
         return {"status": "ok", "result": result}

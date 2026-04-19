@@ -9,13 +9,14 @@ Admin endpoints para el catálogo de cursos sincronizado desde el WP.
 
 Protegido con la misma API key (`X-Admin-Key`) que /admin/*.
 """
+
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query
 import structlog
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from api.admin import verify_admin_key
-from integrations import msk_courses, courses_cache
+from integrations import courses_cache, msk_courses
 from memory import postgres_store
 
 logger = structlog.get_logger(__name__)
@@ -24,8 +25,23 @@ router = APIRouter(prefix="/api/v1/admin/courses", tags=["admin-courses"])
 
 # Todos los países habilitados para sync
 ENABLED_COUNTRIES: list[str] = [
-    "ar", "mx", "cl", "co", "ec", "pe", "es",
-    "bo", "cr", "gt", "hn", "ni", "pa", "py", "sv", "uy", "ve",
+    "ar",
+    "mx",
+    "cl",
+    "co",
+    "ec",
+    "pe",
+    "es",
+    "bo",
+    "cr",
+    "gt",
+    "hn",
+    "ni",
+    "pa",
+    "py",
+    "sv",
+    "uy",
+    "ve",
 ]
 
 

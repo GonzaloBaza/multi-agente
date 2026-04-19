@@ -6,28 +6,34 @@ Flujo de una sesión:
   2. Selección de menú → routing por botones (sin LLM clasificador)
   3. Mensajes libres  → agentes IA vía supervisor LangGraph
 """
-import json as _json
-import datetime
-import structlog
-from typing import Optional
 
-from models.message import Message, MessageRole
-from memory.conversation_store import get_conversation_store
+import datetime
+import json as _json
+
+import structlog
+
 from agents.router import route_message
-from integrations.notifications import notify_handoff
-from config.constants import AgentType, Channel, ConversationStatus, MAX_HISTORY_MESSAGES
+from agents.routing.widget_flow import (
+    MAIN_BUTTONS,
+    fmt_buttons,
+)
 from agents.routing.widget_flow import (
     init_state as wflow_init,
-    process_step as wflow_step,
-    fmt_buttons,
-    MAIN_BUTTONS,
 )
-from utils.conv_events import log_event, log_action, log_error
+from agents.routing.widget_flow import (
+    process_step as wflow_step,
+)
+from config.constants import MAX_HISTORY_MESSAGES, AgentType, Channel, ConversationStatus
+from integrations.notifications import notify_handoff
+from memory.conversation_store import get_conversation_store
+from models.message import Message, MessageRole
+from utils.conv_events import log_action, log_error, log_event
 
 logger = structlog.get_logger(__name__)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
 
 async def _resolve_course_title(page_slug: str, country: str) -> str:
     """
@@ -39,6 +45,7 @@ async def _resolve_course_title(page_slug: str, country: str) -> str:
         return ""
     try:
         from integrations.courses_cache import get_course
+
         course = await get_course(country, page_slug)
         if course:
             return course.get("title") or ""
@@ -57,6 +64,7 @@ async def _resolve_course_mini_brief(page_slug: str, country: str) -> dict:
         return {}
     try:
         from integrations.courses_cache import get_course_deep
+
         course = await get_course_deep(country, page_slug)
         if not course:
             return {}
@@ -96,6 +104,7 @@ async def _resolve_course_mini_brief(page_slug: str, country: str) -> dict:
 
 # ── Enriquecimiento de contexto ───────────────────────────────────────────────
 
+
 async def _build_user_context(
     user_email: str,
     store,
@@ -131,7 +140,10 @@ async def _build_user_context(
     if log_events:
         _log_event, _log_action, _log_error = log_event, log_action, log_error
     else:
-        async def _noop(*_a, **_k): return None
+
+        async def _noop(*_a, **_k):
+            return None
+
         _log_event = _log_action = _log_error = _noop
     lines: list[str] = []
     signals: dict = {"has_debt": False, "is_student": False, "profile_name": ""}
@@ -141,22 +153,31 @@ async def _build_user_context(
             f"Página actual del usuario: curso «{page_slug}» — "
             "puede estar interesado en este curso específico."
         )
-        await _log_event(session_id, "info", {
-            "action": "page_context",
-            "detail": f"Usuario en página: {page_slug}",
-        })
+        await _log_event(
+            session_id,
+            "info",
+            {
+                "action": "page_context",
+                "detail": f"Usuario en página: {page_slug}",
+            },
+        )
 
     if not user_email:
-        await _log_event(session_id, "info", {
-            "action": "usuario_anonimo",
-            "detail": "Sin email — usuario anónimo, sin búsqueda en CRM",
-        })
+        await _log_event(
+            session_id,
+            "info",
+            {
+                "action": "usuario_anonimo",
+                "detail": "Sin email — usuario anónimo, sin búsqueda en CRM",
+            },
+        )
         return lines, signals
 
     # 1. Perfil Supabase
     sb_profile = None  # conservar para el sync Zoho→Supabase más abajo
     try:
         from integrations.supabase_client import get_customer_profile
+
         sb_profile = await get_customer_profile(user_email)
         if sb_profile:
             name_found = sb_profile.get("name", "")
@@ -176,20 +197,28 @@ async def _build_user_context(
                 lines.append(f"Especialidad: {specialty_found}")
             if sb_profile.get("interests"):
                 lines.append(f"Intereses: {sb_profile['interests']}")
-            await _log_event(session_id, "action", {
-                "action": "supabase_perfil_encontrado",
-                "detail": (
-                    f"Nombre: {name_found or '—'} | "
-                    f"Profesión: {profession_found or '—'} | "
-                    f"Especialidad: {specialty_found or '—'} | "
-                    f"Cursos Supabase: {len(courses_found)}"
-                ),
-            })
+            await _log_event(
+                session_id,
+                "action",
+                {
+                    "action": "supabase_perfil_encontrado",
+                    "detail": (
+                        f"Nombre: {name_found or '—'} | "
+                        f"Profesión: {profession_found or '—'} | "
+                        f"Especialidad: {specialty_found or '—'} | "
+                        f"Cursos Supabase: {len(courses_found)}"
+                    ),
+                },
+            )
         else:
-            await _log_event(session_id, "info", {
-                "action": "supabase_no_encontrado",
-                "detail": f"No hay perfil Supabase para {user_email}",
-            })
+            await _log_event(
+                session_id,
+                "info",
+                {
+                    "action": "supabase_no_encontrado",
+                    "detail": f"No hay perfil Supabase para {user_email}",
+                },
+            )
     except Exception as e:
         logger.debug("supabase_profile_failed", error=str(e))
         await _log_error(session_id, "supabase", str(e)[:150])
@@ -197,10 +226,14 @@ async def _build_user_context(
     # Cursos pasados directamente por el widget (fast path)
     if user_courses and not any("Cursos inscriptos" in l for l in lines):
         lines.append(f"Cursos inscriptos: {user_courses}")
-        await _log_event(session_id, "info", {
-            "action": "cursos_desde_widget",
-            "detail": f"Cursos recibidos del frontend: {user_courses[:120]}",
-        })
+        await _log_event(
+            session_id,
+            "info",
+            {
+                "action": "cursos_desde_widget",
+                "detail": f"Cursos recibidos del frontend: {user_courses[:120]}",
+            },
+        )
 
     # 2. Ficha de cobranzas Zoho — SIEMPRE que tengamos email.
     #    Cache por email (`datos_deudor:{email}`, TTL 2 h) para que:
@@ -220,18 +253,23 @@ async def _build_user_context(
             # Miss → consultar Zoho una vez y cachear. Si no hay registro,
             # guardamos un stub "{}" para evitar N llamadas por turno.
             from integrations.zoho.area_cobranzas import ZohoAreaCobranzas
+
             zoho_adc = ZohoAreaCobranzas()
             ficha_raw = await zoho_adc.search_by_email(user_email) or {}
             await store._redis.setex(ficha_key, 7200, _json.dumps(ficha_raw))
             ficha = ficha_raw
-            await _log_event(session_id, "action", {
-                "action": "zoho_cobranzas_buscado",
-                "detail": (
-                    f"Zoho ADC consultado para {user_email} — "
-                    f"encontrado: {'sí' if ficha.get('cobranzaId') else 'no'} | "
-                    f"TTL 2 h"
-                ),
-            })
+            await _log_event(
+                session_id,
+                "action",
+                {
+                    "action": "zoho_cobranzas_buscado",
+                    "detail": (
+                        f"Zoho ADC consultado para {user_email} — "
+                        f"encontrado: {'sí' if ficha.get('cobranzaId') else 'no'} | "
+                        f"TTL 2 h"
+                    ),
+                },
+            )
 
         if ficha and ficha.get("cobranzaId"):
             saldo = float(ficha.get("saldoPendiente") or 0)
@@ -240,7 +278,7 @@ async def _build_user_context(
             signals["has_debt"] = has_debt
             lines.append(
                 f"Estado financiero: cuotas vencidas={cuotas_venc}, "
-                f"saldo pendiente={ficha.get('moneda','')} {saldo} "
+                f"saldo pendiente={ficha.get('moneda', '')} {saldo} "
                 f"({'CON deuda' if has_debt else 'AL DÍA'})"
             )
             if not signals["profile_name"] and ficha.get("alumno"):
@@ -256,15 +294,21 @@ async def _build_user_context(
         cached_cursadas = await store._redis.get(cursadas_key)
 
         if cached_cursadas is None:
-            await _log_event(session_id, "info", {
-                "action": "zoho_contacts_buscando",
-                "detail": f"Buscando perfil Zoho Contacts para {user_email}…",
-            })
+            await _log_event(
+                session_id,
+                "info",
+                {
+                    "action": "zoho_contacts_buscando",
+                    "detail": f"Buscando perfil Zoho Contacts para {user_email}…",
+                },
+            )
             from integrations.zoho.contacts import ZohoContacts
+
             zc = ZohoContacts()
             contact = await zc.search_by_email_with_full_profile(user_email)
             cursadas_list: list[dict] = []
             if contact:
+
                 def _lst(v):
                     if isinstance(v, list):
                         return ", ".join(str(x) for x in v if x and str(x) != "null")
@@ -286,9 +330,7 @@ async def _build_user_context(
                 # Typo del API de Zoho — "tabaja" sin "r". Probamos el typo primero
                 # y caemos al nombre correcto si algún día lo arreglan.
                 area_trabajo = (
-                    contact.get("rea_donde_tabaja", "")
-                    or contact.get("rea_donde_trabaja", "")
-                    or ""
+                    contact.get("rea_donde_tabaja", "") or contact.get("rea_donde_trabaja", "") or ""
                 )
                 pertenece_colegio = bool(contact.get("Pertenece_a_un_colegio", False))
                 colegio_nombre = _lst(contact.get("Colegio_Sociedad_o_Federaci_n"))
@@ -309,10 +351,7 @@ async def _build_user_context(
                         "(aplicable para certificaciones jurisdiccionales AR si el curso las ofrece)"
                     )
                 elif pertenece_colegio:
-                    lines.append(
-                        "Pertenece a un colegio/sociedad/federación "
-                        "(nombre no especificado)"
-                    )
+                    lines.append("Pertenece a un colegio/sociedad/federación (nombre no especificado)")
                 if esp_interes:
                     lines.append(f"Especialidades de interés: {esp_interes}")
                 if intereses_ad:
@@ -335,9 +374,7 @@ async def _build_user_context(
                     zoho_profile_for_sync["area_trabajo"] = area_trabajo
                 if pertenece_colegio and colegio_nombre:
                     zoho_profile_for_sync["colegio"] = colegio_nombre
-                combined_interests = ", ".join(
-                    [x for x in (esp_interes, intereses_ad, contenido) if x]
-                )
+                combined_interests = ", ".join([x for x in (esp_interes, intereses_ad, contenido) if x])
                 if combined_interests:
                     zoho_profile_for_sync["interests"] = combined_interests
                 # nombre completo (First + Last) si lo tenemos
@@ -358,32 +395,43 @@ async def _build_user_context(
                             return v.strip()
                     return ""
 
-                for item in (contact.get("Formulario_de_cursada") or []):
+                for item in contact.get("Formulario_de_cursada") or []:
                     nombre = _curso_name(item)
                     if nombre:
-                        cursadas_list.append({
-                            "curso": nombre,
-                            "finalizo": item.get("Finalizo"),
-                            "estado_ov": item.get("Estado_de_OV", ""),
-                            "fecha_fin": item.get("Fecha_finalizaci_n") or item.get("Fecha_finalización", ""),
-                            "fecha_enrol": item.get("Enrollamiento", ""),
-                        })
+                        cursadas_list.append(
+                            {
+                                "curso": nombre,
+                                "finalizo": item.get("Finalizo"),
+                                "estado_ov": item.get("Estado_de_OV", ""),
+                                "fecha_fin": item.get("Fecha_finalizaci_n")
+                                or item.get("Fecha_finalización", ""),
+                                "fecha_enrol": item.get("Enrollamiento", ""),
+                            }
+                        )
 
-                await _log_event(session_id, "action", {
-                    "action": "zoho_contacts_encontrado",
-                    "detail": (
-                        f"Profesión: {profesion or '—'} | "
-                        f"Especialidad: {especialidad or '—'} | "
-                        f"Especialidades interés: {esp_interes or '—'} | "
-                        f"Cursadas encontradas: {len(cursadas_list)} | "
-                        f"Guardado en Redis (TTL 24h)"
-                    ),
-                })
+                await _log_event(
+                    session_id,
+                    "action",
+                    {
+                        "action": "zoho_contacts_encontrado",
+                        "detail": (
+                            f"Profesión: {profesion or '—'} | "
+                            f"Especialidad: {especialidad or '—'} | "
+                            f"Especialidades interés: {esp_interes or '—'} | "
+                            f"Cursadas encontradas: {len(cursadas_list)} | "
+                            f"Guardado en Redis (TTL 24h)"
+                        ),
+                    },
+                )
             else:
-                await _log_event(session_id, "info", {
-                    "action": "zoho_contacts_no_encontrado",
-                    "detail": f"No hay contacto Zoho para {user_email} — guardando lista vacía en cache",
-                })
+                await _log_event(
+                    session_id,
+                    "info",
+                    {
+                        "action": "zoho_contacts_no_encontrado",
+                        "detail": f"No hay contacto Zoho para {user_email} — guardando lista vacía en cache",
+                    },
+                )
 
             # Guardar cursadas + perfil completo juntos en la misma entrada de
             # cache. Antes solo cacheabamos `cursadas_list`, lo que provocaba
@@ -417,14 +465,18 @@ async def _build_user_context(
                 if v and not zoho_profile_for_sync.get(k):
                     zoho_profile_for_sync[k] = v
 
-            await _log_event(session_id, "info", {
-                "action": "zoho_contacts_desde_cache",
-                "detail": (
-                    f"Cache Redis activo para {user_email} — "
-                    f"{len(cursadas_list)} cursada(s), "
-                    f"perfil rehidratado con {len(cached_profile)} campo(s) (TTL 24h)"
-                ),
-            })
+            await _log_event(
+                session_id,
+                "info",
+                {
+                    "action": "zoho_contacts_desde_cache",
+                    "detail": (
+                        f"Cache Redis activo para {user_email} — "
+                        f"{len(cursadas_list)} cursada(s), "
+                        f"perfil rehidratado con {len(cached_profile)} campo(s) (TTL 24h)"
+                    ),
+                },
+            )
 
         if cursadas_list:
             todos = [c["curso"] for c in cursadas_list]
@@ -455,7 +507,9 @@ async def _build_user_context(
                     "(aplicable para certificaciones jurisdiccionales AR si el curso las ofrece)"
                 )
             if cp.get("interests") and not any(
-                "Especialidades de interés" in l or "Intereses adicionales" in l or "Contenido de interés" in l
+                "Especialidades de interés" in l
+                or "Intereses adicionales" in l
+                or "Contenido de interés" in l
                 for l in lines
             ):
                 lines.append(f"Intereses: {cp['interests']}")
@@ -485,13 +539,16 @@ async def _build_user_context(
                         updates[k] = v
                 if updates:
                     await update_customer_profile(sb_profile["id"], updates)
-                    await _log_event(session_id, "action", {
-                        "action": "supabase_sincronizado_zoho",
-                        "detail": (
-                            f"Supabase actualizado desde Zoho — "
-                            f"campos: {', '.join(updates.keys())}"
-                        ),
-                    })
+                    await _log_event(
+                        session_id,
+                        "action",
+                        {
+                            "action": "supabase_sincronizado_zoho",
+                            "detail": (
+                                f"Supabase actualizado desde Zoho — campos: {', '.join(updates.keys())}"
+                            ),
+                        },
+                    )
             else:
                 # No existe el customer aún → crearlo con los datos de Zoho
                 name_sync = zoho_profile_for_sync.get("name") or signals.get("profile_name") or ""
@@ -504,18 +561,23 @@ async def _build_user_context(
                 # create_customer_profile no acepta profession/specialty/interests,
                 # así que hacemos un patch adicional si hubo datos extra
                 extras = {
-                    k: v for k, v in zoho_profile_for_sync.items()
+                    k: v
+                    for k, v in zoho_profile_for_sync.items()
                     if k in ("profession", "specialty", "interests") and v
                 }
                 if created and created.get("id") and extras:
                     await update_customer_profile(created["id"], extras)
-                await _log_event(session_id, "action", {
-                    "action": "supabase_creado_desde_zoho",
-                    "detail": (
-                        f"Customer creado en Supabase desde datos Zoho — "
-                        f"{user_email} | campos extra: {', '.join(extras.keys()) or '—'}"
-                    ),
-                })
+                await _log_event(
+                    session_id,
+                    "action",
+                    {
+                        "action": "supabase_creado_desde_zoho",
+                        "detail": (
+                            f"Customer creado en Supabase desde datos Zoho — "
+                            f"{user_email} | campos extra: {', '.join(extras.keys()) or '—'}"
+                        ),
+                    },
+                )
         except Exception as e:
             logger.debug("zoho_to_supabase_sync_failed", error=str(e))
             await _log_error(session_id, "zoho_supabase_sync", str(e)[:150])
@@ -564,6 +626,7 @@ def _build_context_block(lines: list[str]) -> str:
 async def _broadcast(event: dict) -> None:
     try:
         from utils.realtime import broadcast_event
+
         broadcast_event(event)
     except Exception:
         pass
@@ -581,20 +644,19 @@ async def _save_bot_msg(store, conversation, text: str, agent: str = "bot") -> M
 
 # ── Saludo stateless (no crea conversación) ──────────────────────────────────
 
+
 def _load_greeting_prompt() -> str:
     try:
-        from pathlib import Path
         import importlib.util
+        from pathlib import Path
+
         path = Path(__file__).parent.parent / "agents" / "routing" / "greeting_prompt.py"
         spec = importlib.util.spec_from_file_location("greeting_prompt_dyn", path)
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
         return mod.GREETING_SYSTEM_PROMPT
     except Exception:
-        return (
-            "Sos el asistente de MSK Latam. "
-            "Generá un saludo breve y personalizado, sin mencionar cursos."
-        )
+        return "Sos el asistente de MSK Latam. Generá un saludo breve y personalizado, sin mencionar cursos."
 
 
 async def generate_greeting_stateless(
@@ -620,7 +682,11 @@ async def generate_greeting_stateless(
     ephemeral_sid = "greeting-ephemeral"
 
     ctx_lines, _signals = await _build_user_context(
-        user_email, store, ephemeral_sid, user_courses, page_slug,
+        user_email,
+        store,
+        ephemeral_sid,
+        user_courses,
+        page_slug,
         log_events=False,
     )
 
@@ -631,8 +697,10 @@ async def generate_greeting_stateless(
     ctx = "\n".join(ctx_lines) if ctx_lines else ""
 
     try:
+        from langchain_core.messages import HumanMessage as LcHuman
+        from langchain_core.messages import SystemMessage as LcSystem
         from langchain_openai import ChatOpenAI
-        from langchain_core.messages import SystemMessage as LcSystem, HumanMessage as LcHuman
+
         from config.settings import get_settings
 
         system_txt = _load_greeting_prompt()
@@ -664,10 +732,12 @@ async def generate_greeting_stateless(
             temperature=0.4,  # bajado de 0.7: reglas estrictas + temperatura alta = alucina (inventa "curso de Cardiología")
             max_tokens=160,
         )
-        resp = await llm.ainvoke([
-            LcSystem(content=system_txt),
-            LcHuman(content="Generá el saludo."),
-        ])
+        resp = await llm.ainvoke(
+            [
+                LcSystem(content=system_txt),
+                LcHuman(content="Generá el saludo."),
+            ]
+        )
         greeting = resp.content.strip()
     except Exception as e:
         logger.warning("greeting_stateless_failed", error=str(e))
@@ -688,6 +758,7 @@ async def generate_greeting_stateless(
 
 
 # ── Handler principal ─────────────────────────────────────────────────────────
+
 
 async def process_widget_message(
     session_id: str,
@@ -728,10 +799,14 @@ async def process_widget_message(
             await _save_bot_msg(store, conversation, initial_greeting, "bienvenida")
             # Inicializar estado del menú en Redis para que los botones del saludo funcionen
             await wflow_init(store._redis, session_id)
-            await log_event(session_id, "action", {
-                "action": "saludo_persistido",
-                "detail": "Saludo stateless persistido como primer mensaje bot (conv materializada)",
-            })
+            await log_event(
+                session_id,
+                "action",
+                {
+                    "action": "saludo_persistido",
+                    "detail": "Saludo stateless persistido como primer mensaje bot (conv materializada)",
+                },
+            )
         except Exception as e:
             logger.warning("persist_initial_greeting_failed", error=str(e))
 
@@ -740,14 +815,16 @@ async def process_widget_message(
     if bot_disabled:
         user_msg = Message(role=MessageRole.USER, content=message_text)
         await store.append_message(conversation, user_msg)
-        await _broadcast({
-            "type": "new_message",
-            "session_id": session_id,
-            "role": "user",
-            "content": message_text,
-            "sender_name": user_name or "Usuario",
-            "timestamp": datetime.datetime.utcnow().isoformat(),
-        })
+        await _broadcast(
+            {
+                "type": "new_message",
+                "session_id": session_id,
+                "role": "user",
+                "content": message_text,
+                "sender_name": user_name or "Usuario",
+                "timestamp": datetime.datetime.utcnow().isoformat(),
+            }
+        )
         return {
             "response": "",
             "agent_used": "humano",
@@ -775,14 +852,16 @@ async def process_widget_message(
         try:
             user_msg = Message(role=MessageRole.USER, content=message_text)
             await store.append_message(conversation, user_msg)
-            await _broadcast({
-                "type": "new_message",
-                "session_id": session_id,
-                "role": "user",
-                "content": message_text,
-                "sender_name": user_name or "Usuario",
-                "timestamp": datetime.datetime.utcnow().isoformat(),
-            })
+            await _broadcast(
+                {
+                    "type": "new_message",
+                    "session_id": session_id,
+                    "role": "user",
+                    "content": message_text,
+                    "sender_name": user_name or "Usuario",
+                    "timestamp": datetime.datetime.utcnow().isoformat(),
+                }
+            )
         except Exception as _e:
             logger.debug("append_user_msg_on_handoff_failed", error=str(_e))
         return {
@@ -801,14 +880,18 @@ async def process_widget_message(
         conversation.user_profile.email = user_email
         if user_name:
             conversation.user_profile.name = user_name
-        await log_event(session_id, "action", {
-            "action": "email_capturado",
-            "detail": (
-                f"Usuario anónimo se identificó: {user_email}"
-                + (f" ({user_name})" if user_name else "")
-                + " — el próximo turno reconstruye contexto Supabase/Zoho."
-            ),
-        })
+        await log_event(
+            session_id,
+            "action",
+            {
+                "action": "email_capturado",
+                "detail": (
+                    f"Usuario anónimo se identificó: {user_email}"
+                    + (f" ({user_name})" if user_name else "")
+                    + " — el próximo turno reconstruye contexto Supabase/Zoho."
+                ),
+            },
+        )
     elif user_name and not conversation.user_profile.name:
         conversation.user_profile.name = user_name
 
@@ -816,16 +899,20 @@ async def process_widget_message(
     # INIT: saludo personalizado + botones del menú
     # ─────────────────────────────────────────────────────────────────────────
     if message_text == "__widget_init__":
-        await log_event(session_id, "info" if user_email else "error", {
-            "action": "widget_init",
-            "detail": (
-                f"Email frontend: {user_email or '❌ NO RECIBIDO (anónimo)'} | "
-                f"Nombre: {user_name or '—'} | "
-                f"Cursos: {user_courses[:50] if user_courses else '—'} | "
-                f"Página: {page_slug or '—'} | "
-                f"Sesión nueva: {is_new}"
-            ),
-        })
+        await log_event(
+            session_id,
+            "info" if user_email else "error",
+            {
+                "action": "widget_init",
+                "detail": (
+                    f"Email frontend: {user_email or '❌ NO RECIBIDO (anónimo)'} | "
+                    f"Nombre: {user_name or '—'} | "
+                    f"Cursos: {user_courses[:50] if user_courses else '—'} | "
+                    f"Página: {page_slug or '—'} | "
+                    f"Sesión nueva: {is_new}"
+                ),
+            },
+        )
 
         # Enriquecer contexto para personalizar el saludo
         ctx_lines, _signals = await _build_user_context(
@@ -848,15 +935,18 @@ async def process_widget_message(
 
         # Generar saludo con IA
         try:
+            from langchain_core.messages import HumanMessage as LcHuman
+            from langchain_core.messages import SystemMessage as LcSystem
             from langchain_openai import ChatOpenAI
-            from langchain_core.messages import SystemMessage as LcSystem, HumanMessage as LcHuman
+
             from config.settings import get_settings
 
             # Cargar prompt dinámicamente (cambios del panel admin aplicados sin restart)
             def _load_greeting_prompt() -> str:
                 try:
-                    from pathlib import Path
                     import importlib.util
+                    from pathlib import Path
+
                     path = Path(__file__).parent.parent / "agents" / "routing" / "greeting_prompt.py"
                     spec = importlib.util.spec_from_file_location("greeting_prompt_dyn", path)
                     mod = importlib.util.module_from_spec(spec)
@@ -898,10 +988,12 @@ async def process_widget_message(
                 temperature=0.7,
                 max_tokens=160,
             )
-            resp = await llm.ainvoke([
-                LcSystem(content=system_txt),
-                LcHuman(content="Generá el saludo."),
-            ])
+            resp = await llm.ainvoke(
+                [
+                    LcSystem(content=system_txt),
+                    LcHuman(content="Generá el saludo."),
+                ]
+            )
             greeting = resp.content.strip()
         except Exception as e:
             logger.warning("widget_init_greeting_failed", error=str(e))
@@ -915,28 +1007,34 @@ async def process_widget_message(
         # Agregar botones del menú principal
         greeting_with_buttons = fmt_buttons(greeting, MAIN_BUTTONS)
 
-        await log_event(session_id, "action", {
-            "action": "saludo_generado",
-            "detail": (
-                f"{'Personalizado (IA)' if not isinstance(greeting, str) or 'asesor' not in greeting.lower() else 'Fallback'} | "
-                f"Contexto: {len(ctx_lines)} líneas | "
-                f"Botones: {', '.join(MAIN_BUTTONS)}"
-            ),
-        })
+        await log_event(
+            session_id,
+            "action",
+            {
+                "action": "saludo_generado",
+                "detail": (
+                    f"{'Personalizado (IA)' if not isinstance(greeting, str) or 'asesor' not in greeting.lower() else 'Fallback'} | "
+                    f"Contexto: {len(ctx_lines)} líneas | "
+                    f"Botones: {', '.join(MAIN_BUTTONS)}"
+                ),
+            },
+        )
 
         # Inicializar estado del menú en Redis
         await wflow_init(store._redis, session_id)
 
         # Guardar y emitir
         bot_msg = await _save_bot_msg(store, conversation, greeting_with_buttons, "bienvenida")
-        await _broadcast({
-            "type": "new_message",
-            "session_id": session_id,
-            "role": "assistant",
-            "content": greeting_with_buttons,
-            "sender_name": "bienvenida",
-            "timestamp": bot_msg.timestamp.isoformat(),
-        })
+        await _broadcast(
+            {
+                "type": "new_message",
+                "session_id": session_id,
+                "role": "assistant",
+                "content": greeting_with_buttons,
+                "sender_name": "bienvenida",
+                "timestamp": bot_msg.timestamp.isoformat(),
+            }
+        )
         return {
             "response": greeting_with_buttons,
             "agent_used": "bienvenida",
@@ -947,39 +1045,45 @@ async def process_widget_message(
     # ─────────────────────────────────────────────────────────────────────────
     # MENÚ: verificar si estamos en la máquina de estados
     # ─────────────────────────────────────────────────────────────────────────
-    wflow_result = await wflow_step(
-        store._redis, session_id, message_text, user_email
-    )
+    wflow_result = await wflow_step(store._redis, session_id, message_text, user_email)
 
     # Guardar siempre el mensaje del usuario (menú o no)
     user_msg = Message(role=MessageRole.USER, content=message_text)
     await store.append_message(conversation, user_msg)
-    await _broadcast({
-        "type": "new_message",
-        "session_id": session_id,
-        "role": "user",
-        "content": message_text,
-        "sender_name": user_name or "Usuario",
-        "timestamp": user_msg.timestamp.isoformat(),
-    })
+    await _broadcast(
+        {
+            "type": "new_message",
+            "session_id": session_id,
+            "role": "user",
+            "content": message_text,
+            "sender_name": user_name or "Usuario",
+            "timestamp": user_msg.timestamp.isoformat(),
+        }
+    )
 
     # ── Respuesta directa del menú (sin agente IA) ────────────────────────────
     if wflow_result is not None and not wflow_result.get("needs_routing"):
         menu_text = wflow_result["response"]
-        await log_event(session_id, "intent", {
-            "action": "menu_respuesta",
-            "detail": f"Respuesta de menú: «{menu_text[:80]}»",
-            "agent": "menu",
-        })
+        await log_event(
+            session_id,
+            "intent",
+            {
+                "action": "menu_respuesta",
+                "detail": f"Respuesta de menú: «{menu_text[:80]}»",
+                "agent": "menu",
+            },
+        )
         bot_msg = await _save_bot_msg(store, conversation, menu_text, "menu")
-        await _broadcast({
-            "type": "new_message",
-            "session_id": session_id,
-            "role": "assistant",
-            "content": menu_text,
-            "sender_name": "menu",
-            "timestamp": bot_msg.timestamp.isoformat(),
-        })
+        await _broadcast(
+            {
+                "type": "new_message",
+                "session_id": session_id,
+                "role": "assistant",
+                "content": menu_text,
+                "sender_name": "menu",
+                "timestamp": bot_msg.timestamp.isoformat(),
+            }
+        )
         return {
             "response": menu_text,
             "agent_used": "menu",
@@ -988,8 +1092,8 @@ async def process_widget_message(
         }
 
     # ── Si el menú colectó un email anónimo, actualizarlo ────────────────────
-    forced_agent: Optional[str] = None
-    collected_email: Optional[str] = None
+    forced_agent: str | None = None
+    collected_email: str | None = None
     if wflow_result and wflow_result.get("needs_routing"):
         forced_agent = wflow_result.get("forced_agent")
         collected_email = wflow_result.get("collected_email")
@@ -1006,16 +1110,24 @@ async def process_widget_message(
         conversation.user_profile.email = collected_email
         await store.save(conversation)
         logger.info("widget_email_collected", session=session_id, email=collected_email)
-        await log_event(session_id, "action", {
-            "action": "email_capturado",
-            "detail": f"Email ingresado por usuario anónimo: {collected_email} → derivando a {forced_agent}",
-        })
+        await log_event(
+            session_id,
+            "action",
+            {
+                "action": "email_capturado",
+                "detail": f"Email ingresado por usuario anónimo: {collected_email} → derivando a {forced_agent}",
+            },
+        )
     if forced_agent:
-        await log_event(session_id, "intent", {
-            "action": "agente_forzado_por_menu",
-            "detail": f"Agente forzado → {forced_agent}",
-            "agent": forced_agent,
-        })
+        await log_event(
+            session_id,
+            "intent",
+            {
+                "action": "agente_forzado_por_menu",
+                "detail": f"Agente forzado → {forced_agent}",
+                "agent": forced_agent,
+            },
+        )
 
     # ─────────────────────────────────────────────────────────────────────────
     # ENRIQUECIMIENTO de contexto (siempre antes de llamar al agente)
@@ -1043,11 +1155,15 @@ async def process_widget_message(
         await store.save(conversation)
 
     if user_context_lines:
-        await log_event(session_id, "info", {
-            "action": "contexto_usuario_listo",
-            "detail": f"{len(user_context_lines)} líneas de contexto inyectadas al agente:\n" +
-                      "\n".join(f"  • {l}" for l in user_context_lines[:8]),
-        })
+        await log_event(
+            session_id,
+            "info",
+            {
+                "action": "contexto_usuario_listo",
+                "detail": f"{len(user_context_lines)} líneas de contexto inyectadas al agente:\n"
+                + "\n".join(f"  • {l}" for l in user_context_lines[:8]),
+            },
+        )
 
     logger.info(
         "widget_message_received",
@@ -1056,14 +1172,18 @@ async def process_widget_message(
         is_new=is_new,
         forced_agent=forced_agent,
     )
-    await log_event(session_id, "info", {
-        "action": "mensaje_recibido",
-        "detail": (
-            f"«{message_text[:80]}{'…' if len(message_text) > 80 else ''}» | "
-            f"Email: {user_email or '(anónimo)'} | "
-            f"Agente forzado: {forced_agent or 'no (clasificará IA)'}"
-        ),
-    })
+    await log_event(
+        session_id,
+        "info",
+        {
+            "action": "mensaje_recibido",
+            "detail": (
+                f"«{message_text[:80]}{'…' if len(message_text) > 80 else ''}» | "
+                f"Email: {user_email or '(anónimo)'} | "
+                f"Agente forzado: {forced_agent or 'no (clasificará IA)'}"
+            ),
+        },
+    )
 
     # ── Historial para el LLM ─────────────────────────────────────────────────
     history = conversation.get_history_for_llm(MAX_HISTORY_MESSAGES)
@@ -1089,7 +1209,7 @@ async def process_widget_message(
         page_slug=page_slug or "",
         has_debt=bool(user_signals.get("has_debt")),
         is_student=bool(user_signals.get("is_student")),
-        skip_flow=True,         # Drawflow desactivado para widget (usamos widget_flow)
+        skip_flow=True,  # Drawflow desactivado para widget (usamos widget_flow)
         forced_agent=forced_agent,
     )
 
@@ -1098,15 +1218,19 @@ async def process_widget_message(
     handoff_reason = result["handoff_reason"]
     agent_used = result["agent_used"]
 
-    await log_event(session_id, "intent", {
-        "action": "agente_respondio",
-        "detail": (
-            f"Agente: {agent_used} | "
-            f"Derivación humano: {'sí — ' + handoff_reason[:60] if handoff else 'no'} | "
-            f"Respuesta: «{response_text[:100]}{'…' if len(response_text) > 100 else ''}»"
-        ),
-        "agent": agent_used,
-    })
+    await log_event(
+        session_id,
+        "intent",
+        {
+            "action": "agente_respondio",
+            "detail": (
+                f"Agente: {agent_used} | "
+                f"Derivación humano: {'sí — ' + handoff_reason[:60] if handoff else 'no'} | "
+                f"Respuesta: «{response_text[:100]}{'…' if len(response_text) > 100 else ''}»"
+            ),
+            "agent": agent_used,
+        },
+    )
 
     # Nota: antes se anteponía un "notice" cosmético ("🎓 Agente de Cursos",
     # "💳 Área de Cobranzas y Pagos", "👤 Soporte para Alumnos") al primer
@@ -1133,18 +1257,21 @@ async def process_widget_message(
     # ── Guardar respuesta del bot ─────────────────────────────────────────────
     bot_msg = await _save_bot_msg(store, conversation, response_text, agent_used)
 
-    await _broadcast({
-        "type": "new_message",
-        "session_id": session_id,
-        "role": "assistant",
-        "content": response_text,
-        "sender_name": agent_used,
-        "timestamp": bot_msg.timestamp.isoformat(),
-    })
+    await _broadcast(
+        {
+            "type": "new_message",
+            "session_id": session_id,
+            "role": "assistant",
+            "content": response_text,
+            "sender_name": agent_used,
+            "timestamp": bot_msg.timestamp.isoformat(),
+        }
+    )
 
     # ── Auto-clasificar lead ──────────────────────────────────────────────────
     try:
         from agents.classifier import classify_conversation
+
         msgs = [{"role": m.role.value, "content": m.content} for m in conversation.messages[-10:]]
         await classify_conversation(msgs, session_id)
     except Exception:
@@ -1181,12 +1308,15 @@ async def process_widget_message(
             # Fallback: construir la cola desde el agente + país si no está cacheada
             if not queue_val:
                 _agent_map = {
-                    "sales": "ventas", "collections": "cobranzas",
-                    "post_sales": "post_venta", "closer": "ventas",
+                    "sales": "ventas",
+                    "collections": "cobranzas",
+                    "post_sales": "post_venta",
+                    "closer": "ventas",
                 }
                 _prefix = _agent_map.get(agent_used, "ventas")
                 queue_val = f"{_prefix}_{(country or 'XX').upper()}"
             from memory.assignment import auto_assign_round_robin
+
             await auto_assign_round_robin(session_id, queue=queue_val)
         except Exception:
             pass

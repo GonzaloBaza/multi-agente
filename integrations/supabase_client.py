@@ -1,5 +1,7 @@
 """Cliente Supabase - usa sb_secret key format."""
+
 import os
+
 import httpx
 import structlog
 
@@ -8,6 +10,7 @@ logger = structlog.get_logger(__name__)
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SECRET_KEY = os.environ["SUPABASE_SECRET_KEY"]
 
+
 def _headers() -> dict:
     return {
         "apikey": SECRET_KEY,
@@ -15,6 +18,7 @@ def _headers() -> dict:
         "Content-Type": "application/json",
         "Prefer": "return=representation",
     }
+
 
 async def sign_in_with_password(email: str, password: str) -> dict:
     """Autentica email/password via Supabase Auth."""
@@ -28,6 +32,7 @@ async def sign_in_with_password(email: str, password: str) -> dict:
         if resp.status_code != 200:
             raise ValueError(f"Auth failed: {resp.text}")
         return resp.json()
+
 
 async def get_profile(email: str) -> dict | None:
     """Obtiene perfil por email."""
@@ -43,6 +48,7 @@ async def get_profile(email: str) -> dict | None:
             return data[0]
         return None
 
+
 async def list_profiles() -> list:
     async with httpx.AsyncClient() as client:
         resp = await client.get(
@@ -52,6 +58,7 @@ async def list_profiles() -> list:
             timeout=10,
         )
         return resp.json() if isinstance(resp.json(), list) else []
+
 
 async def create_profile(
     email: str, name: str, role: str, queues: list, auth_user_id: str | None = None
@@ -78,6 +85,7 @@ async def create_profile(
         data = resp.json()
         return data[0] if isinstance(data, list) and data else data
 
+
 async def update_profile(profile_id: str, updates: dict) -> dict:
     async with httpx.AsyncClient() as client:
         resp = await client.patch(
@@ -90,6 +98,7 @@ async def update_profile(profile_id: str, updates: dict) -> dict:
         data = resp.json()
         return data[0] if isinstance(data, list) and data else {}
 
+
 async def delete_profile(profile_id: str) -> None:
     async with httpx.AsyncClient() as client:
         await client.delete(
@@ -98,6 +107,7 @@ async def delete_profile(profile_id: str) -> None:
             params={"id": f"eq.{profile_id}"},
             timeout=10,
         )
+
 
 async def send_password_recovery(email: str, redirect_to: str) -> dict:
     """
@@ -121,8 +131,9 @@ async def send_password_recovery(email: str, redirect_to: str) -> dict:
         # Supabase devuelve 200 incluso si el email no existe (anti-enum).
         # Solo logueamos si el código es != 200 — algo raro pasó.
         if resp.status_code != 200:
-            logger.warning("password_recovery_failed",
-                          email=email, status=resp.status_code, body=resp.text[:200])
+            logger.warning(
+                "password_recovery_failed", email=email, status=resp.status_code, body=resp.text[:200]
+            )
         return {"ok": resp.status_code == 200}
 
 
@@ -154,15 +165,21 @@ async def admin_create_auth_user(email: str, password: str, name: str) -> dict:
         resp = await client.post(
             f"{SUPABASE_URL}/auth/v1/admin/users",
             headers=_headers(),
-            json={"email": email, "password": password, "email_confirm": True,
-                  "user_metadata": {"name": name}},
+            json={
+                "email": email,
+                "password": password,
+                "email_confirm": True,
+                "user_metadata": {"name": name},
+            },
             timeout=10,
         )
         return resp.json()
 
+
 # Alias for backward compatibility
 async def admin_create_user(email: str, password: str, name: str) -> dict:
     return await admin_create_auth_user(email, password, name)
+
 
 async def admin_delete_auth_user(user_id: str) -> None:
     async with httpx.AsyncClient() as client:
@@ -172,9 +189,11 @@ async def admin_delete_auth_user(user_id: str) -> None:
             timeout=10,
         )
 
+
 # Alias for backward compatibility
 async def admin_delete_user(user_id: str) -> None:
     await admin_delete_auth_user(user_id)
+
 
 async def get_customer_profile(email: str) -> dict | None:
     """Obtiene perfil de cliente desde tabla customers."""
@@ -192,8 +211,9 @@ async def get_customer_profile(email: str) -> dict | None:
         return None
 
 
-async def create_customer_profile(email: str, name: str, phone: str = None,
-                                   country: str = None, courses: list = None) -> dict:
+async def create_customer_profile(
+    email: str, name: str, phone: str = None, country: str = None, courses: list = None
+) -> dict:
     """Crea perfil de cliente en tabla customers."""
     payload = {
         "email": email,
@@ -256,7 +276,7 @@ async def list_all_customers() -> list:
         while True:
             resp = await client.get(
                 f"{SUPABASE_URL}/rest/v1/customers",
-                headers={**_headers(), "Range": f"{page*page_size}-{(page+1)*page_size - 1}"},
+                headers={**_headers(), "Range": f"{page * page_size}-{(page + 1) * page_size - 1}"},
                 params={"select": "id,email"},
                 timeout=30,
             )

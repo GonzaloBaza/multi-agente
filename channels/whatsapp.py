@@ -2,14 +2,21 @@
 Procesador de mensajes entrantes de WhatsApp vía Botmaker.
 Extrae el texto, detecta el país, gestiona la conversación y envía la respuesta.
 """
-from models.message import Message, MessageRole
-from models.conversation import Conversation
-from memory.conversation_store import get_conversation_store
+
+import structlog
+
 from agents.router import route_message
+from config.constants import (
+    COUNTRY_PHONE_PREFIXES,
+    MAX_HISTORY_MESSAGES,
+    Channel,
+    ConversationStatus,
+    Country,
+)
 from integrations.botmaker import BotmakerClient
 from integrations.notifications import notify_handoff
-from config.constants import Channel, COUNTRY_PHONE_PREFIXES, Country, ConversationStatus, MAX_HISTORY_MESSAGES
-import structlog
+from memory.conversation_store import get_conversation_store
+from models.message import Message, MessageRole
 
 logger = structlog.get_logger(__name__)
 
@@ -33,16 +40,8 @@ async def process_whatsapp_message(payload: dict) -> None:
 
     # Extraer datos del payload de Botmaker
     # Estructura: https://go.botmaker.com/api/docs#webhooks
-    chat_id = (
-        payload.get("chatId")
-        or payload.get("chatPlatformId")
-        or payload.get("id", "")
-    )
-    message_text = (
-        payload.get("text")
-        or payload.get("message", {}).get("text", "")
-        or ""
-    ).strip()
+    chat_id = payload.get("chatId") or payload.get("chatPlatformId") or payload.get("id", "")
+    message_text = (payload.get("text") or payload.get("message", {}).get("text", "") or "").strip()
 
     if not chat_id or not message_text:
         logger.warning("botmaker_empty_message", payload_keys=list(payload.keys()))

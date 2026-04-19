@@ -15,6 +15,7 @@ Sin este middleware, los logs de un request quedan dispersos sin clave
 común para correlacionarlos. Con él, basta filtrar `request_id` en
 Sentry/Grafana/Loki para ver TODO lo que pasó en esa llamada.
 """
+
 from __future__ import annotations
 
 import time
@@ -42,8 +43,10 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
         session_token = request.headers.get("x-session-token")
         if session_token:
             try:
-                from memory.conversation_store import get_conversation_store
                 import json as _json
+
+                from memory.conversation_store import get_conversation_store
+
                 store = await get_conversation_store()
                 raw = await store._redis.get(f"session:{session_token}")
                 if raw:

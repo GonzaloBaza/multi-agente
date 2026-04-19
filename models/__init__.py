@@ -1,9 +1,11 @@
 from .conversation import Conversation, ConversationState
-from .message import Message, MessageRole
 from .course import Course
+from .message import Message, MessageRole
 
 __all__ = [
-    "Conversation", "ConversationState",
-    "Message", "MessageRole",
+    "Conversation",
+    "ConversationState",
+    "Message",
+    "MessageRole",
     "Course",
 ]

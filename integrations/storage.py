@@ -7,15 +7,15 @@ listas para servir al widget, al inbox y a WhatsApp (Meta pull).
 
 Fallback a filesystem local si R2 no está configurado (desarrollo).
 """
+
 from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from typing import Optional
 
 import boto3
-from botocore.config import Config
 import structlog
+from botocore.config import Config
 
 from config.settings import get_settings
 
@@ -43,11 +43,7 @@ def is_enabled() -> bool:
     """True si R2 está configurado (endpoint + credenciales + bucket + public URL)."""
     s = get_settings()
     return bool(
-        s.r2_endpoint
-        and s.r2_access_key_id
-        and s.r2_secret_access_key
-        and s.r2_bucket
-        and s.r2_public_url
+        s.r2_endpoint and s.r2_access_key_id and s.r2_secret_access_key and s.r2_bucket and s.r2_public_url
     )
 
 
@@ -91,7 +87,7 @@ async def delete_object(key: str) -> None:
         logger.warning("r2_delete_failed", key=key, error=str(e))
 
 
-def public_url_for(key: str) -> Optional[str]:
+def public_url_for(key: str) -> str | None:
     """Construye la URL pública para un key, sin subir nada."""
     s = get_settings()
     if not s.r2_public_url:

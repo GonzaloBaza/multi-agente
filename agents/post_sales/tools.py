@@ -3,11 +3,13 @@ Herramientas del agente de post-venta.
 El alta en LMS la gestiona Zoho automáticamente al crear el contrato.
 Aquí solo consultamos estado y gestionamos soporte.
 """
+
+import structlog
 from langchain_core.tools import tool
+
+from integrations.zoho.collections import ZohoCollections
 from integrations.zoho.contacts import ZohoContacts
 from integrations.zoho.sales_orders import ZohoSalesOrders
-from integrations.zoho.collections import ZohoCollections
-import structlog
 
 logger = structlog.get_logger(__name__)
 
@@ -215,9 +217,7 @@ async def send_nps_survey(
             f"¿Te gustaría compartir tu reseña en redes sociales?"
         )
     elif score >= 7:
-        return (
-            f"Gracias por tu puntuación de {score}/10. ¿Hay algo específico que podríamos mejorar para tu próxima experiencia?"
-        )
+        return f"Gracias por tu puntuación de {score}/10. ¿Hay algo específico que podríamos mejorar para tu próxima experiencia?"
     else:
         return (
             f"Gracias por ser honesto con tu puntuación de {score}/10. Lamentamos que la experiencia no haya sido la esperada. "

@@ -4,17 +4,20 @@ API del widget web:
 - GET  /widget/chat/stream → SSE streaming de respuesta
 - GET  /widget/history/{session_id} → historial de conversación
 """
-import uuid
+
 import asyncio
 import json
-from fastapi import APIRouter, Request, HTTPException
+import uuid
+
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from slowapi import Limiter
 from slowapi.util import get_remote_address
-from channels.widget import process_widget_message, generate_greeting_stateless
-from memory.conversation_store import get_conversation_store
+
+from channels.widget import generate_greeting_stateless, process_widget_message
 from config.constants import Channel
+from memory.conversation_store import get_conversation_store
 
 router = APIRouter(prefix="/widget", tags=["widget"])
 widget_limiter = Limiter(key_func=get_remote_address)
@@ -27,8 +30,8 @@ class ChatRequest(BaseModel):
     user_name: str = ""
     user_email: str = ""
     user_courses: str = ""
-    page_slug: str = ""   # slug del curso que está mirando el usuario (si aplica)
-    initial_greeting: str = ""   # saludo stateless a persistir si la conv se crea recién
+    page_slug: str = ""  # slug del curso que está mirando el usuario (si aplica)
+    initial_greeting: str = ""  # saludo stateless a persistir si la conv se crea recién
 
 
 class GreetingRequest(BaseModel):
@@ -109,6 +112,7 @@ async def resume(email: str):
 
     try:
         from memory import postgres_store as pg
+
         if not pg.is_enabled():
             return {"session_id": None, "messages": []}
         pool = await pg.get_pool()
@@ -176,6 +180,7 @@ async def chat_stream(
     SSE streaming — el widget recibe la respuesta palabra por palabra.
     Usar este endpoint para experiencia más fluida en el widget.
     """
+
     async def event_generator():
         # Procesar el mensaje normalmente
         result = await process_widget_message(
@@ -198,13 +203,15 @@ async def chat_stream(
             await asyncio.sleep(0.02)
 
         # Evento final con metadata
-        final = json.dumps({
-            "chunk": "",
-            "done": True,
-            "agent_used": result["agent_used"],
-            "handoff_requested": result["handoff_requested"],
-            "session_id": session_id,
-        })
+        final = json.dumps(
+            {
+                "chunk": "",
+                "done": True,
+                "agent_used": result["agent_used"],
+                "handoff_requested": result["handoff_requested"],
+                "session_id": session_id,
+            }
+        )
         yield f"data: {final}\n\n"
 
     return StreamingResponse(
@@ -226,14 +233,15 @@ async def get_history(session_id: str):
         return {"messages": [], "session_id": session_id}
 
     import re
+
     messages = []
     for m in conversation.messages:
         # Strip PII from content before returning to widget
         content = m.content
         # Redact email addresses
-        content = re.sub(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', '[email]', content)
+        content = re.sub(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", "[email]", content)
         # Redact phone numbers (sequences of 7+ digits, optionally with +, -, spaces, parens)
-        content = re.sub(r'[\+]?[\d\s\-\(\)]{7,}', '[phone]', content)
+        content = re.sub(r"[\+]?[\d\s\-\(\)]{7,}", "[phone]", content)
 
         msg = {
             "role": m.role.value,

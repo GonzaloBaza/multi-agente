@@ -2,12 +2,15 @@
 Integración con Meta WhatsApp Cloud API.
 Envía mensajes de texto, interactivos (botones/listas), templates y multimedia.
 """
-import httpx
+
 import os
 import uuid
-import structlog
-from config.settings import get_settings
 from pathlib import Path
+
+import httpx
+import structlog
+
+from config.settings import get_settings
 
 logger = structlog.get_logger(__name__)
 
@@ -35,7 +38,9 @@ class WhatsAppMetaClient:
         }
         return await self._post(payload)
 
-    async def send_buttons(self, to: str, body: str, buttons: list[str], header: str = "", footer: str = "") -> dict:
+    async def send_buttons(
+        self, to: str, body: str, buttons: list[str], header: str = "", footer: str = ""
+    ) -> dict:
         """
         Envía mensaje con botones de respuesta rápida (máx 3).
         buttons: lista de strings con el texto de cada botón.
@@ -65,7 +70,9 @@ class WhatsAppMetaClient:
         }
         return await self._post(payload)
 
-    async def send_list(self, to: str, body: str, button_label: str, sections: list[dict], header: str = "", footer: str = "") -> dict:
+    async def send_list(
+        self, to: str, body: str, button_label: str, sections: list[dict], header: str = "", footer: str = ""
+    ) -> dict:
         """
         Envía mensaje con lista de opciones (máx 10 items).
 
@@ -100,7 +107,9 @@ class WhatsAppMetaClient:
         }
         return await self._post(payload)
 
-    async def send_template(self, to: str, template_name: str, language: str = "es_AR", components: list = None) -> dict:
+    async def send_template(
+        self, to: str, template_name: str, language: str = "es_AR", components: list = None
+    ) -> dict:
         """
         Envía un template aprobado por Meta (para mensajes proactivos).
         Solo se pueden enviar templates a usuarios que no iniciaron conversación en últimas 24hs.
@@ -159,23 +168,30 @@ class WhatsAppMetaClient:
 
                     # Contar variables {{1}}, {{2}}...
                     import re
-                    body_vars = re.findall(r'\{\{(\d+)\}\}', body_text)
-                    header_vars = re.findall(r'\{\{(\d+)\}\}', header_info.get("text", "") if header_info else "")
 
-                    result.append({
-                        "name": t["name"],
-                        "language": t.get("language", "es_AR"),
-                        "category": t.get("category", ""),
-                        "status": t.get("status", ""),
-                        "body": body_text,
-                        "header": header_info,
-                        "buttons": buttons,
-                        "body_var_count": len(body_vars),
-                        "header_var_count": len(header_vars),
-                    })
+                    body_vars = re.findall(r"\{\{(\d+)\}\}", body_text)
+                    header_vars = re.findall(
+                        r"\{\{(\d+)\}\}", header_info.get("text", "") if header_info else ""
+                    )
+
+                    result.append(
+                        {
+                            "name": t["name"],
+                            "language": t.get("language", "es_AR"),
+                            "category": t.get("category", ""),
+                            "status": t.get("status", ""),
+                            "body": body_text,
+                            "header": header_info,
+                            "buttons": buttons,
+                            "body_var_count": len(body_vars),
+                            "header_var_count": len(header_vars),
+                        }
+                    )
                 return result
             except httpx.HTTPStatusError as e:
-                logger.error("whatsapp_get_templates_error", status=e.response.status_code, body=e.response.text[:300])
+                logger.error(
+                    "whatsapp_get_templates_error", status=e.response.status_code, body=e.response.text[:300]
+                )
                 return []
             except Exception as e:
                 logger.error("whatsapp_get_templates_exception", error=str(e))
@@ -197,11 +213,15 @@ class WhatsAppMetaClient:
         # Step 1: Create upload session
         session_url = f"{GRAPH_URL}/{app_id}/uploads"
         async with httpx.AsyncClient(timeout=30) as client:
-            r = await client.post(session_url, headers={"Authorization": f"Bearer {self._token}"}, data={
-                "file_length": str(file_size),
-                "file_type": mime_type,
-                "file_name": file_name,
-            })
+            r = await client.post(
+                session_url,
+                headers={"Authorization": f"Bearer {self._token}"},
+                data={
+                    "file_length": str(file_size),
+                    "file_type": mime_type,
+                    "file_name": file_name,
+                },
+            )
             r.raise_for_status()
             upload_session_id = r.json().get("id")
 
@@ -258,11 +278,13 @@ class WhatsAppMetaClient:
 
         # Header: texto o media
         if header_type and header_type.upper() in ("IMAGE", "VIDEO", "DOCUMENT") and header_handle:
-            components.append({
-                "type": "HEADER",
-                "format": header_type.upper(),
-                "example": {"header_handle": [header_handle]},
-            })
+            components.append(
+                {
+                    "type": "HEADER",
+                    "format": header_type.upper(),
+                    "example": {"header_handle": [header_handle]},
+                }
+            )
         elif header_text:
             components.append({"type": "HEADER", "format": "TEXT", "text": header_text})
 
@@ -290,7 +312,9 @@ class WhatsAppMetaClient:
                 logger.info("template_created", name=name, id=result.get("id", ""))
                 return result
             except httpx.HTTPStatusError as e:
-                logger.error("template_create_error", status=e.response.status_code, body=e.response.text[:500])
+                logger.error(
+                    "template_create_error", status=e.response.status_code, body=e.response.text[:500]
+                )
                 raise
             except Exception as e:
                 logger.error("template_create_exception", error=str(e))
@@ -316,29 +340,29 @@ class WhatsAppMetaClient:
                 logger.info("template_deleted", name=template_name)
                 return result
             except httpx.HTTPStatusError as e:
-                logger.error("template_delete_error", status=e.response.status_code, body=e.response.text[:300])
+                logger.error(
+                    "template_delete_error", status=e.response.status_code, body=e.response.text[:300]
+                )
                 raise
 
     async def send_typing(self, to: str) -> None:
         """Envía indicador de 'escribiendo...' al usuario en WhatsApp."""
         url = f"{GRAPH_URL}/{self._phone_id}/messages"
-        payload = {
-            "messaging_product": "whatsapp",
-            "recipient_type": "individual",
-            "to": to,
-            "type": "text",
-        }
         # Meta no tiene un endpoint oficial de typing, pero podemos usar mark_as_read
         # que genera actividad visible. La forma real es enviar "typing" via on-premises API.
         # Para Cloud API usamos una acción que muestra actividad:
         try:
             async with httpx.AsyncClient(timeout=5) as client:
-                await client.post(url, json={
-                    "messaging_product": "whatsapp",
-                    "status": "typing",
-                    "recipient_type": "individual",
-                    "to": to,
-                }, headers=self._headers)
+                await client.post(
+                    url,
+                    json={
+                        "messaging_product": "whatsapp",
+                        "status": "typing",
+                        "recipient_type": "individual",
+                        "to": to,
+                    },
+                    headers=self._headers,
+                )
         except Exception:
             pass  # Non-critical, don't fail if typing indicator fails
 
@@ -477,6 +501,7 @@ class WhatsAppMetaClient:
 
     async def _post(self, payload: dict) -> dict:
         from utils.circuit_breaker import meta_breaker
+
         if not meta_breaker.can_execute():
             logger.warning("whatsapp_circuit_open", state=meta_breaker.state.value)
             return {"error": "circuit_open", "message": "WhatsApp API temporarily unavailable"}
@@ -504,13 +529,14 @@ def parse_buttons_tag(text: str) -> tuple[str, list[str]]:
     Retorna (texto_limpio, lista_de_botones).
     """
     import re
-    match = re.search(r'\[BUTTONS:\s*(.+?)\]', text, re.IGNORECASE)
+
+    match = re.search(r"\[BUTTONS:\s*(.+?)\]", text, re.IGNORECASE)
     if not match:
         return text, []
 
     raw = match.group(1)
-    buttons = [b.strip() for b in raw.split('|') if b.strip()]
-    clean_text = text[:match.start()].strip() + text[match.end():].strip()
+    buttons = [b.strip() for b in raw.split("|") if b.strip()]
+    clean_text = text[: match.start()].strip() + text[match.end() :].strip()
     clean_text = clean_text.strip()
     return clean_text, buttons
 
@@ -521,15 +547,18 @@ def parse_list_tag(text: str) -> tuple[str, list[dict]]:
     Retorna (texto_limpio, sections para send_list).
     """
     import re
-    match = re.search(r'\[LIST:\s*(.+?)\]', text, re.IGNORECASE)
+
+    match = re.search(r"\[LIST:\s*(.+?)\]", text, re.IGNORECASE)
     if not match:
         return text, []
 
     raw = match.group(1)
-    items = [i.strip() for i in raw.split('|') if i.strip()]
-    sections = [{
-        "title": "Opciones",
-        "rows": [{"id": f"item_{i}", "title": item[:24]} for i, item in enumerate(items[:10])]
-    }]
-    clean_text = text[:match.start()].strip() + text[match.end():].strip()
+    items = [i.strip() for i in raw.split("|") if i.strip()]
+    sections = [
+        {
+            "title": "Opciones",
+            "rows": [{"id": f"item_{i}", "title": item[:24]} for i, item in enumerate(items[:10])],
+        }
+    ]
+    clean_text = text[: match.start()].strip() + text[match.end() :].strip()
     return clean_text.strip(), sections

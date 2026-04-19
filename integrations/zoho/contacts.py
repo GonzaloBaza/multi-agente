@@ -1,7 +1,9 @@
 import httpx
-from .auth import ZohoAuth
-from config.settings import get_settings
 import structlog
+
+from config.settings import get_settings
+
+from .auth import ZohoAuth
 
 logger = structlog.get_logger(__name__)
 
@@ -13,18 +15,20 @@ class ZohoContacts:
 
     async def create(self, data: dict) -> dict:
         payload = {
-            "data": [{
-                "Last_Name": data.get("last_name", data.get("name", "Sin nombre")),
-                "First_Name": data.get("first_name", ""),
-                "Phone": data.get("phone", ""),
-                "Email": data.get("email", ""),
-                "Mailing_Country": data.get("country", "Argentina"),
-                "Lead_Source": data.get("canal_origen", "WhatsApp"),
-                "Curso_Inscripto": data.get("curso_inscripto", ""),
-                "Estado_Pago": data.get("estado_pago", "Pendiente"),
-                "LMS_User_ID": data.get("lms_user_id", ""),
-                "Canal_Origen": data.get("canal_origen", ""),
-            }]
+            "data": [
+                {
+                    "Last_Name": data.get("last_name", data.get("name", "Sin nombre")),
+                    "First_Name": data.get("first_name", ""),
+                    "Phone": data.get("phone", ""),
+                    "Email": data.get("email", ""),
+                    "Mailing_Country": data.get("country", "Argentina"),
+                    "Lead_Source": data.get("canal_origen", "WhatsApp"),
+                    "Curso_Inscripto": data.get("curso_inscripto", ""),
+                    "Estado_Pago": data.get("estado_pago", "Pendiente"),
+                    "LMS_User_ID": data.get("lms_user_id", ""),
+                    "Canal_Origen": data.get("canal_origen", ""),
+                }
+            ]
         }
         headers = await self._auth.auth_headers()
         async with httpx.AsyncClient() as client:

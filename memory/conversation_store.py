@@ -13,6 +13,7 @@ Flujo:
 Si Postgres está desactivado (DATABASE_URL vacío), el módulo se comporta como
 antes: solo Redis.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -20,11 +21,11 @@ import asyncio
 import redis.asyncio as aioredis
 import structlog
 
+from config.constants import CONVERSATION_TTL, Channel
+from config.settings import get_settings
 from memory import postgres_store
 from models.conversation import Conversation, UserProfile
 from models.message import Message
-from config.settings import get_settings
-from config.constants import CONVERSATION_TTL, Channel
 
 logger = structlog.get_logger(__name__)
 
@@ -98,7 +99,9 @@ class ConversationStore:
                 conv = await postgres_store.get_by_external(channel, external_id)
                 if conv:
                     await self._write_redis(conv)
-                    logger.info("conv_rehydrated_from_pg_by_external", channel=channel.value, external_id=external_id)
+                    logger.info(
+                        "conv_rehydrated_from_pg_by_external", channel=channel.value, external_id=external_id
+                    )
                     return conv
             except Exception as e:
                 logger.warning("postgres_read_failed", error=str(e))
@@ -122,11 +125,9 @@ class ConversationStore:
 
     async def save(self, conversation: Conversation) -> None:
         # Redis primero (bloqueante — si falla, still try Postgres)
-        redis_ok = True
         try:
             await self._write_redis(conversation)
         except Exception as e:
-            redis_ok = False
             logger.warning("redis_write_failed", conversation_id=conversation.id, error=str(e))
 
         # Postgres en background (best effort, no bloquea el request)
@@ -140,20 +141,27 @@ class ConversationStore:
             try:
                 await postgres_store.save_conversation(conversation)
                 if self._pg_consecutive_failures > 0:
-                    logger.info("postgres_write_recovered",
-                                conversation_id=conversation.id,
-                                after_failures=self._pg_consecutive_failures)
+                    logger.info(
+                        "postgres_write_recovered",
+                        conversation_id=conversation.id,
+                        after_failures=self._pg_consecutive_failures,
+                    )
                 ConversationStore._pg_consecutive_failures = 0
                 return
             except Exception as e:
                 ConversationStore._pg_consecutive_failures += 1
                 if attempt < max_retries:
-                    logger.warning("postgres_write_retrying",
-                                   conversation_id=conversation.id,
-                                   error=str(e), attempt=attempt)
+                    logger.warning(
+                        "postgres_write_retrying",
+                        conversation_id=conversation.id,
+                        error=str(e),
+                        attempt=attempt,
+                    )
                     await asyncio.sleep(1.0)
                 else:
-                    level = "critical" if self._pg_consecutive_failures >= self._PG_FAILURE_THRESHOLD else "error"
+                    level = (
+                        "critical" if self._pg_consecutive_failures >= self._PG_FAILURE_THRESHOLD else "error"
+                    )
                     getattr(logger, level)(
                         "postgres_write_failed",
                         conversation_id=conversation.id,

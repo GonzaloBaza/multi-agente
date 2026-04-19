@@ -2,10 +2,11 @@
 Endpoints de administración (protegidos con API key interna):
 - GET  /admin/status   → estado del sistema
 """
-from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Header
-from config.settings import get_settings
+
 import structlog
+from fastapi import APIRouter, Depends, Header, HTTPException
+
+from config.settings import get_settings
 
 logger = structlog.get_logger(__name__)
 
@@ -26,8 +27,8 @@ def verify_admin_key(x_admin_key: str = Header(...)):
 
 
 async def verify_admin_or_session(
-    x_admin_key: Optional[str] = Header(None),
-    x_session_token: Optional[str] = Header(None),
+    x_admin_key: str | None = Header(None),
+    x_session_token: str | None = Header(None),
 ) -> dict:
     """Acepta cualquiera de:
       - `X-Admin-Key: <secret>` → para scripts internos / cron / curl manual.
@@ -50,8 +51,10 @@ async def verify_admin_or_session(
 
     # 2. Session token vía Redis (mismo storage que get_current_user).
     if x_session_token:
-        from memory.conversation_store import get_conversation_store
         import json as _json
+
+        from memory.conversation_store import get_conversation_store
+
         store = await get_conversation_store()
         data = await store._redis.get(f"session:{x_session_token}")
         if not data:
@@ -75,6 +78,7 @@ def require_role_or_admin(*roles: str):
         async def bulk_assign(..., auth: dict = Depends(require_role_or_admin("admin", "supervisor"))):
             ...
     """
+
     async def _check(auth: dict = Depends(verify_admin_or_session)) -> dict:
         # Admin key ≡ rol admin (scripts internos, cron)
         if auth.get("auth") == "admin":
@@ -83,6 +87,7 @@ def require_role_or_admin(*roles: str):
         if user.get("role") not in roles:
             raise HTTPException(status_code=403, detail="Sin permisos para esta acción")
         return auth
+
     return _check
 
 
@@ -90,6 +95,7 @@ def require_role_or_admin(*roles: str):
 async def get_status(key: str = Depends(verify_admin_key)):
     """Estado general del sistema."""
     import redis.asyncio as aioredis
+
     settings = get_settings()
 
     redis_ok = False
@@ -105,6 +111,7 @@ async def get_status(key: str = Depends(verify_admin_key)):
     pg_ok = False
     try:
         from memory import postgres_store
+
         pool = await postgres_store.get_pool()
         async with pool.acquire() as conn:
             await conn.fetchval("SELECT 1")
@@ -114,6 +121,7 @@ async def get_status(key: str = Depends(verify_admin_key)):
 
     # Circuit breakers status
     from utils.circuit_breaker import CircuitBreaker
+
     breakers = CircuitBreaker.get_all_status()
 
     return {
@@ -142,7 +150,7 @@ async def channels_status(auth: dict = Depends(require_role_or_admin("admin", "s
     out = {
         "whatsapp_meta": {
             "configured": _configured(getattr(settings, "whatsapp_token", None))
-                          and _configured(getattr(settings, "whatsapp_phone_number_id", None)),
+            and _configured(getattr(settings, "whatsapp_phone_number_id", None)),
             "phone_number_id": getattr(settings, "whatsapp_phone_number_id", "") or None,
             "waba_id": getattr(settings, "whatsapp_waba_id", "") or None,
         },
@@ -151,7 +159,7 @@ async def channels_status(auth: dict = Depends(require_role_or_admin("admin", "s
         },
         "twilio": {
             "configured": _configured(getattr(settings, "twilio_account_sid", None))
-                          and _configured(getattr(settings, "twilio_auth_token", None)),
+            and _configured(getattr(settings, "twilio_auth_token", None)),
             "account_sid": getattr(settings, "twilio_account_sid", "") or None,
         },
         "widget": {
@@ -177,7 +185,7 @@ async def channels_status(auth: dict = Depends(require_role_or_admin("admin", "s
         },
         "cloudflare_r2": {
             "configured": _configured(getattr(settings, "r2_access_key_id", None))
-                          and _configured(getattr(settings, "r2_bucket", None)),
+            and _configured(getattr(settings, "r2_bucket", None)),
             "bucket": getattr(settings, "r2_bucket", "") or None,
             "public_url": getattr(settings, "r2_public_url", "") or None,
         },

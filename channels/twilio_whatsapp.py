@@ -3,14 +3,17 @@ Canal WhatsApp vía Twilio Sandbox / API.
 Procesa mensajes entrantes y envía respuestas.
 Formato de payload: form-urlencoded (diferente a Meta Cloud API).
 """
+
 import datetime
-from models.message import Message, MessageRole
-from memory.conversation_store import get_conversation_store
-from agents.router import route_message
-from integrations.notifications import notify_handoff
-from integrations.twilio_whatsapp import TwilioWhatsAppClient, parse_twilio_webhook, _split_text
-from config.constants import Channel, ConversationStatus, MAX_HISTORY_MESSAGES
+
 import structlog
+
+from agents.router import route_message
+from config.constants import MAX_HISTORY_MESSAGES, Channel, ConversationStatus
+from integrations.notifications import notify_handoff
+from integrations.twilio_whatsapp import TwilioWhatsAppClient, parse_twilio_webhook
+from memory.conversation_store import get_conversation_store
+from models.message import Message, MessageRole
 
 logger = structlog.get_logger(__name__)
 
@@ -47,15 +50,18 @@ async def process_twilio_message(form_data: dict) -> None:
         await store.append_message(conversation, user_msg)
         try:
             from utils.realtime import broadcast_event
-            broadcast_event({
-                "type": "new_message",
-                "session_id": phone,
-                "role": "user",
-                "content": text,
-                "sender_name": name or phone,
-                "timestamp": datetime.datetime.utcnow().isoformat(),
-                "channel": "whatsapp",
-            })
+
+            broadcast_event(
+                {
+                    "type": "new_message",
+                    "session_id": phone,
+                    "role": "user",
+                    "content": text,
+                    "sender_name": name or phone,
+                    "timestamp": datetime.datetime.utcnow().isoformat(),
+                    "channel": "whatsapp",
+                }
+            )
         except Exception:
             pass
         return
@@ -77,7 +83,9 @@ async def process_twilio_message(form_data: dict) -> None:
 
     # Si ya está handed off
     if conversation.status == ConversationStatus.HANDED_OFF:
-        await twilio.send_text(phone, "Tu consulta fue derivada a un asesor. Te contactaremos a la brevedad. 🙏")
+        await twilio.send_text(
+            phone, "Tu consulta fue derivada a un asesor. Te contactaremos a la brevedad. 🙏"
+        )
         return
 
     # Guardar mensaje del usuario
@@ -111,31 +119,37 @@ async def process_twilio_message(form_data: dict) -> None:
     # Notificar inbox via SSE
     try:
         from utils.realtime import broadcast_event
-        broadcast_event({
-            "type": "new_message",
-            "session_id": phone,
-            "role": "user",
-            "content": text,
-            "sender_name": name or phone,
-            "timestamp": user_msg.timestamp.isoformat(),
-            "channel": "whatsapp",
-        })
-        if response_text:
-            broadcast_event({
+
+        broadcast_event(
+            {
                 "type": "new_message",
                 "session_id": phone,
-                "role": "assistant",
-                "content": response_text,
-                "sender_name": result["agent_used"],
-                "timestamp": bot_msg.timestamp.isoformat(),
+                "role": "user",
+                "content": text,
+                "sender_name": name or phone,
+                "timestamp": user_msg.timestamp.isoformat(),
                 "channel": "whatsapp",
-            })
+            }
+        )
+        if response_text:
+            broadcast_event(
+                {
+                    "type": "new_message",
+                    "session_id": phone,
+                    "role": "assistant",
+                    "content": response_text,
+                    "sender_name": result["agent_used"],
+                    "timestamp": bot_msg.timestamp.isoformat(),
+                    "channel": "whatsapp",
+                }
+            )
     except Exception:
         pass
 
     # Auto-clasificar lead
     try:
         from agents.classifier import classify_conversation
+
         msgs = [{"role": m.role.value, "content": m.content} for m in conversation.messages[-10:]]
         await classify_conversation(msgs, phone)
     except Exception:
@@ -162,8 +176,9 @@ async def process_twilio_message(form_data: dict) -> None:
 def _clean_tags(text: str) -> str:
     """Elimina tags [BUTTONS:...] y [LIST:...] del texto para envío por Twilio."""
     import re
-    text = re.sub(r'\[BUTTONS:\s*.+?\]', '', text, flags=re.IGNORECASE)
-    text = re.sub(r'\[LIST:\s*.+?\]', '', text, flags=re.IGNORECASE)
+
+    text = re.sub(r"\[BUTTONS:\s*.+?\]", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\[LIST:\s*.+?\]", "", text, flags=re.IGNORECASE)
     return text.strip()
 
 

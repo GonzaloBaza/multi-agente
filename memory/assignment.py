@@ -12,6 +12,7 @@ Cuando el inbox nuevo (UI Next.js) asigna explícitamente, usa
 Postgres. Son dos caminos complementarios; `broadcast_event` publica
 desde ambos al mismo canal SSE.
 """
+
 from __future__ import annotations
 
 import structlog
@@ -22,9 +23,7 @@ from utils.realtime import broadcast_event
 logger = structlog.get_logger(__name__)
 
 
-async def auto_assign_round_robin(
-    session_id: str, queue: str = ""
-) -> dict | None:
+async def auto_assign_round_robin(session_id: str, queue: str = "") -> dict | None:
     """Asigna la conversación al agente disponible con menos carga.
 
     Matching:
@@ -56,6 +55,7 @@ async def auto_assign_round_robin(
                 queue = ""
 
         from integrations.supabase_client import list_profiles
+
         profiles = await list_profiles()
 
         # Filtrar agentes disponibles
@@ -72,17 +72,20 @@ async def auto_assign_round_robin(
             agent_queues = p.get("queues") or []
             if queue and agent_queues and queue not in agent_queues:
                 continue
-            available.append({
-                "id": user_id,
-                "name": p.get("name") or p.get("email", ""),
-                "role": role,
-                "has_queue_match": bool(agent_queues and queue in agent_queues),
-            })
+            available.append(
+                {
+                    "id": user_id,
+                    "name": p.get("name") or p.get("email", ""),
+                    "role": role,
+                    "has_queue_match": bool(agent_queues and queue in agent_queues),
+                }
+            )
 
         if not available:
             logger.warning(
                 "auto_assign_no_agents_for_queue",
-                session_id=session_id, queue=queue,
+                session_id=session_id,
+                queue=queue,
             )
             return None
 
@@ -106,13 +109,15 @@ async def auto_assign_round_robin(
         await r.set(f"conv_assigned:{session_id}", chosen["id"], ex=86400 * 30)
         await r.set(f"conv_assigned_name:{session_id}", chosen["name"], ex=86400 * 30)
 
-        broadcast_event({
-            "type": "conv_assigned",
-            "session_id": session_id,
-            "agent_id": chosen["id"],
-            "agent_name": chosen["name"],
-            "queue": queue,
-        })
+        broadcast_event(
+            {
+                "type": "conv_assigned",
+                "session_id": session_id,
+                "agent_id": chosen["id"],
+                "agent_name": chosen["name"],
+                "queue": queue,
+            }
+        )
         logger.info("auto_assigned", session_id=session_id, agent=chosen["name"], queue=queue)
         return chosen
     except Exception as e:

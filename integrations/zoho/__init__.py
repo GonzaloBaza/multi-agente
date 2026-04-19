@@ -1,7 +1,7 @@
 from .auth import ZohoAuth
-from .leads import ZohoLeads
-from .contacts import ZohoContacts
-from .sales_orders import ZohoSalesOrders
 from .collections import ZohoCollections
+from .contacts import ZohoContacts
+from .leads import ZohoLeads
+from .sales_orders import ZohoSalesOrders
 
 __all__ = ["ZohoAuth", "ZohoLeads", "ZohoContacts", "ZohoSalesOrders", "ZohoCollections"]

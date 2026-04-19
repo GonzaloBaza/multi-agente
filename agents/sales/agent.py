@@ -2,22 +2,21 @@
 Agente de Ventas — LangGraph ReAct agent.
 Catálogo completo en system prompt + tools para brief detallado y deep drill-down.
 """
-from typing import Optional
 
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import SystemMessage
-from langgraph.prebuilt import create_react_agent
 import structlog
+from langchain_core.messages import SystemMessage
+from langchain_openai import ChatOpenAI
+from langgraph.prebuilt import create_react_agent
 
-from config.settings import get_settings
+from agents.sales.prompts import build_sales_prompt
 from agents.sales.tools import (
+    create_or_update_lead,
+    create_payment_link,
+    create_sales_order,
     get_course_brief,
     get_course_deep,
-    create_payment_link,
-    create_or_update_lead,
-    create_sales_order,
 )
-from agents.sales.prompts import build_sales_prompt
+from config.settings import get_settings
 
 logger = structlog.get_logger(__name__)
 
@@ -33,12 +32,18 @@ SALES_TOOLS = [
 # Claves canónicas del pitch_by_profile. Deben mantenerse en sync con el
 # generador de hooks (scripts/gen_pitch_hooks.py) y con el CRM (Zoho MSK).
 _PITCH_KEYS = {
-    "medico", "medico_jefe", "residente", "estudiante",
-    "enfermeria", "tecnico_salud", "licenciado_salud", "otros",
+    "medico",
+    "medico_jefe",
+    "residente",
+    "estudiante",
+    "enfermeria",
+    "tecnico_salud",
+    "licenciado_salud",
+    "otros",
 }
 
 
-def _map_crm_profile_to_pitch_key(profession: Optional[str], cargo: Optional[str]) -> str:
+def _map_crm_profile_to_pitch_key(profession: str | None, cargo: str | None) -> str:
     """
     Convierte Profesión + Cargo del CRM MSK a una clave canónica del
     pitch_by_profile. Matching es case-insensitive y tolerante con/sin tildes.
@@ -64,7 +69,13 @@ def _map_crm_profile_to_pitch_key(profession: Optional[str], cargo: Optional[str
     if "personal médico" in p or "personal medico" in p or p == "médico" or p == "medico":
         # Detectar cargo directivo/jefatura
         directive_markers = (
-            "direcci", "gerencia", "coordinaci", "jefat", "supervis", "jefe", "director",
+            "direcci",
+            "gerencia",
+            "coordinaci",
+            "jefat",
+            "supervis",
+            "jefe",
+            "director",
         )
         if any(m in c for m in directive_markers):
             return "medico_jefe"
@@ -82,7 +93,7 @@ async def build_sales_agent(
     country: str = "AR",
     channel: str = "whatsapp",
     page_slug: str = "",
-    user_profile: Optional[dict] = None,
+    user_profile: dict | None = None,
 ):
     """
     Construye el agente de ventas con el sistema prompt y herramientas.
@@ -104,6 +115,7 @@ async def build_sales_agent(
     if page_slug:
         try:
             from integrations import courses_cache
+
             course = await courses_cache.get_course(country.lower(), page_slug)
             if not (course and course.get("brief_md")):
                 logger.info("sales_agent_no_brief_for_slug", country=country, slug=page_slug)
@@ -127,6 +139,7 @@ async def build_sales_agent(
     # --- STEP 4: inyectar catálogo compacto del país ---
     try:
         from memory import postgres_store
+
         catalog = await postgres_store.get_catalog_compact(country)
         if catalog:
             system_prompt += f"\n\n---\n\n{catalog}\n\n"
@@ -143,7 +156,9 @@ async def build_sales_agent(
 
     # --- STEP 5: append brief del curso activo (SIN re-inyectar perfil — ya está en el priority header) ---
     if course:
-        system_prompt += _format_course_context(course, user_profile, has_priority_header=bool(priority_header))
+        system_prompt += _format_course_context(
+            course, user_profile, has_priority_header=bool(priority_header)
+        )
 
     # --- STEP 6: fallback — perfil suelto SOLO si NO hay priority header Y NO hay curso ---
     # (si hay priority_header, el perfil ya está inyectado al INICIO; no lo dupliques al final)
@@ -161,8 +176,8 @@ async def build_sales_agent(
 
 
 def _build_priority_profile_header(
-    user_profile: Optional[dict],
-    course: Optional[dict],
+    user_profile: dict | None,
+    course: dict | None,
 ) -> str:
     """
     Header de MÁXIMA prioridad que se inyecta al INICIO del system prompt.
@@ -222,89 +237,99 @@ def _build_priority_profile_header(
         else:
             cs = str(courses_done)
         lines.append(f"- **Cursos que ya hizo en MSK:** {cs}")
-        lines.extend([
-            "",
-            "## 🚫 REGLA CRÍTICA — CURSOS QUE YA TIENE (PROHIBIDO RECOMENDAR)",
-            "",
-            f"El usuario **YA completó** estos cursos: {cs}.",
-            "",
-            "**PROHIBIDO:**",
-            "  - Recomendarlos como opción",
-            "  - Incluirlos en listados de cursos sugeridos",
-            "  - Mencionarlos como 'te podría interesar'",
-            "  - Sugerir 'profundizar' o 'complementar' con un curso que ya hizo",
-            "",
-            "**Si el usuario está viendo la página de un curso que ya tiene**, no intentes vendérselo de nuevo. ",
-            "Reconocé que ya lo hizo y sugerí algo complementario o de nivel superior.",
-            "",
-            "**Cuando recomiendes cursos del catálogo, filtrá mentalmente** y NO muestres los que ya tiene.",
-        ])
+        lines.extend(
+            [
+                "",
+                "## 🚫 REGLA CRÍTICA — CURSOS QUE YA TIENE (PROHIBIDO RECOMENDAR)",
+                "",
+                f"El usuario **YA completó** estos cursos: {cs}.",
+                "",
+                "**PROHIBIDO:**",
+                "  - Recomendarlos como opción",
+                "  - Incluirlos en listados de cursos sugeridos",
+                "  - Mencionarlos como 'te podría interesar'",
+                "  - Sugerir 'profundizar' o 'complementar' con un curso que ya hizo",
+                "",
+                "**Si el usuario está viendo la página de un curso que ya tiene**, no intentes vendérselo de nuevo. ",
+                "Reconocé que ya lo hizo y sugerí algo complementario o de nivel superior.",
+                "",
+                "**Cuando recomiendes cursos del catálogo, filtrá mentalmente** y NO muestres los que ya tiene.",
+            ]
+        )
 
     # Regla de confianza: lo que dice el usuario pisa los datos del CRM
     if prof or spec:
-        lines.extend([
-            "",
-            "## ⚠️ REGLA — SI EL USUARIO CONTRADICE ESTOS DATOS, CREELE",
-            "",
-            "Los datos de arriba vienen del CRM y pueden estar desactualizados.",
-            "Si el usuario dice algo distinto (ej: el CRM dice 'Cardiología' pero el ",
-            "usuario dice 'soy médico general'), **creele al usuario**. ",
-            "Adaptá tu respuesta a lo que ÉL dice, no a lo que dice el CRM.",
-            "No le corrijas ni le contradigas — ajustá tu pitch a su realidad actual.",
-        ])
+        lines.extend(
+            [
+                "",
+                "## ⚠️ REGLA — SI EL USUARIO CONTRADICE ESTOS DATOS, CREELE",
+                "",
+                "Los datos de arriba vienen del CRM y pueden estar desactualizados.",
+                "Si el usuario dice algo distinto (ej: el CRM dice 'Cardiología' pero el ",
+                "usuario dice 'soy médico general'), **creele al usuario**. ",
+                "Adaptá tu respuesta a lo que ÉL dice, no a lo que dice el CRM.",
+                "No le corrijas ni le contradigas — ajustá tu pitch a su realidad actual.",
+            ]
+        )
 
     # Directiva crítica sobre colegio con aval jurisdiccional
     if colegio:
-        lines.extend([
-            "",
-            "## ⚠️ REGLA CRÍTICA — Colegio con aval jurisdiccional",
-            "",
-            f"El usuario tiene matrícula activa en: **{colegio}**.",
-            "",
-            "Si ese colegio matchea con alguno de los 5 con aval jurisdiccional de MSK:",
-            "  - **COLEMEMI** — Colegio de Médicos de Misiones",
-            "  - **COLMEDCAT** — Colegio de Médicos de Catamarca",
-            "  - **CSMLP** — Consejo Superior Médico de La Pampa",
-            "  - **CMSC** — Consejo Médico de Santa Cruz",
-            "  - **CMSF1** — Colegio de Médicos de Santa Fe 1ra",
-            "",
-            "**ENTONCES, cuando hables del curso o de certificaciones, mencionalo PROACTIVAMENTE "
-            f"con el NOMBRE ESPECÍFICO del colegio del usuario** (ej: 'te suma el aval de COLEMEMI sin costo'). ",
-            "**PROHIBIDO** tirar la lista genérica de los 5 — eso se lee como que ignoraste su matrícula.",
-        ])
+        lines.extend(
+            [
+                "",
+                "## ⚠️ REGLA CRÍTICA — Colegio con aval jurisdiccional",
+                "",
+                f"El usuario tiene matrícula activa en: **{colegio}**.",
+                "",
+                "Si ese colegio matchea con alguno de los 5 con aval jurisdiccional de MSK:",
+                "  - **COLEMEMI** — Colegio de Médicos de Misiones",
+                "  - **COLMEDCAT** — Colegio de Médicos de Catamarca",
+                "  - **CSMLP** — Consejo Superior Médico de La Pampa",
+                "  - **CMSC** — Consejo Médico de Santa Cruz",
+                "  - **CMSF1** — Colegio de Médicos de Santa Fe 1ra",
+                "",
+                "**ENTONCES, cuando hables del curso o de certificaciones, mencionalo PROACTIVAMENTE "
+                "con el NOMBRE ESPECÍFICO del colegio del usuario** (ej: 'te suma el aval de COLEMEMI sin costo'). ",
+                "**PROHIBIDO** tirar la lista genérica de los 5 — eso se lee como que ignoraste su matrícula.",
+            ]
+        )
 
     # Instrucción de personalización si tenemos perfil + curso
     if course and (cargo or prof or spec or area or lugar):
         title = course.get("title") or ""
-        lines.extend([
-            "",
-            "## ⚠️ APERTURA DEL PITCH — OBLIGATORIA",
-            "",
-            f"El usuario está viendo el curso **{title}**. Cuando presentes el curso por primera vez, ",
-            "**la primera oración debe conectar SU perfil con un beneficio concreto del curso**.",
-            "",
-            "**PROHIBIDO** arrancar con:",
-            "  - '¿A quién está dirigido?' (ya sabés quién es)",
-            "  - 'El curso está diseñado para médicos que…' (genérico, no lo personaliza)",
-            "  - Cualquier fórmula que ignore el cargo/lugar/área que tenés arriba",
-            "",
-            "**EN CAMBIO** arrancá con algo como:",
-            f"  - '{name or 'Hola'}, para vos que {(('sos ' + (cargo.lower() if cargo else prof.lower())) if (cargo or prof) else 'trabajás en el área')}"
-            f"{(' de ' + spec.lower()) if spec else ''}"
-            f"{(', en ' + lugar) if lugar else ''}, este curso te sirve especialmente porque…'",
-        ])
+        lines.extend(
+            [
+                "",
+                "## ⚠️ APERTURA DEL PITCH — OBLIGATORIA",
+                "",
+                f"El usuario está viendo el curso **{title}**. Cuando presentes el curso por primera vez, ",
+                "**la primera oración debe conectar SU perfil con un beneficio concreto del curso**.",
+                "",
+                "**PROHIBIDO** arrancar con:",
+                "  - '¿A quién está dirigido?' (ya sabés quién es)",
+                "  - 'El curso está diseñado para médicos que…' (genérico, no lo personaliza)",
+                "  - Cualquier fórmula que ignore el cargo/lugar/área que tenés arriba",
+                "",
+                "**EN CAMBIO** arrancá con algo como:",
+                f"  - '{name or 'Hola'}, para vos que {(('sos ' + (cargo.lower() if cargo else prof.lower())) if (cargo or prof) else 'trabajás en el área')}"
+                f"{(' de ' + spec.lower()) if spec else ''}"
+                f"{(', en ' + lugar) if lugar else ''}, este curso te sirve especialmente porque…'",
+            ]
+        )
 
-    lines.extend([
-        "",
-        "---",
-        "",
-    ])
+    lines.extend(
+        [
+            "",
+            "---",
+            "",
+        ]
+    )
     return "\n".join(lines)
 
 
 def _format_course_context(
     course: dict,
-    user_profile: Optional[dict] = None,
+    user_profile: dict | None = None,
     has_priority_header: bool = False,
 ) -> str:
     """
@@ -406,7 +431,6 @@ ni inventes otros beneficios):
 Si el usuario NO encaja con su perfil CRM (ej: dijo que es médico general pero
 el CRM lo marca como jefe), confiá en lo que el USUARIO dice — no en el CRM.
 """
-
 
     return f"""
 

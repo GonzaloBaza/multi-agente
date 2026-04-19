@@ -9,6 +9,7 @@ Un humano "toma" una conversación → `set(True)` → el webhook entrante deja 
 rutearla al agente IA. El humano "libera" → `set(False)` → el bot vuelve a
 responder.
 """
+
 from __future__ import annotations
 
 from memory.conversation_store import get_conversation_store

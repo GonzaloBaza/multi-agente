@@ -9,26 +9,28 @@ El clasificador decide con un LLM liviano (gpt-4o-mini) qué agente ejecutar.
 Cada agente es un subgrafo compilado que retorna al supervisor.
 Si se detecta handoff_requested, el supervisor termina y el caller realiza el handoff.
 """
+
 import re
-from typing import Literal
+from typing import Annotated, Literal
+
+import structlog
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
-from langgraph.graph import StateGraph, START, END
+from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
-from typing_extensions import TypedDict, Annotated
-from agents.sales.agent import build_sales_agent
+from typing_extensions import TypedDict
+
+from agents.closer.agent import build_closer_agent
 from agents.collections.agent import build_collections_agent
 from agents.post_sales.agent import build_post_sales_agent
-from agents.closer.agent import build_closer_agent
+from agents.sales.agent import build_sales_agent
+from config.constants import HANDOFF_KEYWORDS, AgentType
 from config.settings import get_settings
-from config.constants import AgentType, HANDOFF_KEYWORDS
-import structlog
 
 logger = structlog.get_logger(__name__)
 
 _ROUTER_PROMPT_FALLBACK = (
-    "Clasificá la intención: ventas, cobranzas, post_venta o humano. "
-    "Respondé solo la palabra."
+    "Clasificá la intención: ventas, cobranzas, post_venta o humano. Respondé solo la palabra."
 )
 
 # Prompt cacheado al inicio — mismo patrón que los demás agentes.
@@ -65,16 +67,16 @@ class SupervisorState(TypedDict):
     channel: str
     conversation_id: str
     phone: str
-    email: str          # email del user_profile (widget logueado)
-    user_name: str      # nombre del user_profile
-    page_slug: str      # slug del curso que el usuario está viendo (widget)
-    has_debt: bool      # true si ficha cobranzas cacheada indica deuda vencida
-    is_student: bool    # true si tiene cursadas en Zoho Contacts
+    email: str  # email del user_profile (widget logueado)
+    user_name: str  # nombre del user_profile
+    page_slug: str  # slug del curso que el usuario está viendo (widget)
+    has_debt: bool  # true si ficha cobranzas cacheada indica deuda vencida
+    is_student: bool  # true si tiene cursadas en Zoho Contacts
     handoff_requested: bool
     handoff_reason: str
     link_rebill_enviado: bool
     verificar_pago: bool
-    forced_agent: str   # si está seteado, saltea el clasificador LLM
+    forced_agent: str  # si está seteado, saltea el clasificador LLM
 
 
 def detect_handoff_keywords(text: str) -> bool:
@@ -92,7 +94,9 @@ async def classify_intent(state: SupervisorState) -> dict:
         return {
             "current_agent": forced,
             "handoff_requested": forced == AgentType.HUMAN.value,
-            "handoff_reason": "Derivación forzada por flujo del widget" if forced == AgentType.HUMAN.value else "",
+            "handoff_reason": "Derivación forzada por flujo del widget"
+            if forced == AgentType.HUMAN.value
+            else "",
         }
 
     messages = state["messages"]
@@ -105,7 +109,11 @@ async def classify_intent(state: SupervisorState) -> dict:
     # Detección rápida de handoff por keywords
     if detect_handoff_keywords(last_user_msg):
         logger.info("handoff_keyword_detected")
-        return {"current_agent": AgentType.HUMAN.value, "handoff_requested": True, "handoff_reason": "Usuario solicitó hablar con un asesor humano"}
+        return {
+            "current_agent": AgentType.HUMAN.value,
+            "handoff_requested": True,
+            "handoff_reason": "Usuario solicitó hablar con un asesor humano",
+        }
 
     # LLM classifier con modelo económico
     settings = get_settings()
@@ -124,7 +132,9 @@ async def classify_intent(state: SupervisorState) -> dict:
     current = state.get("current_agent", "")
     agent_hint = ""
     if current and current != AgentType.HUMAN.value:
-        agent_label = {"sales": "ventas", "collections": "cobranzas", "post_sales": "post_venta"}.get(current, "")
+        agent_label = {"sales": "ventas", "collections": "cobranzas", "post_sales": "post_venta"}.get(
+            current, ""
+        )
         if agent_label:
             agent_hint = f"\n\nContexto: la conversación viene siendo atendida por el agente de '{agent_label}'. Mantené ese agente salvo cambio claro de tema."
 
@@ -164,7 +174,7 @@ async def classify_intent(state: SupervisorState) -> dict:
         if phone:
             try:
                 from memory.conversation_store import get_conversation_store
-                import json
+
                 store = await get_conversation_store()
                 retarget_data = await store._redis.get(f"retarget:{phone}")
                 if retarget_data:
@@ -180,8 +190,11 @@ async def classify_intent(state: SupervisorState) -> dict:
     if conversation_id:
         try:
             from utils.conv_events import log_intent
+
             await log_intent(
-                conversation_id, intent, agent,
+                conversation_id,
+                intent,
+                agent,
                 last_user_msg[:80] if last_user_msg else "",
             )
         except Exception:
@@ -196,11 +209,12 @@ async def classify_intent(state: SupervisorState) -> dict:
     if conversation_id:
         try:
             from memory import conversation_meta as cm
+
             queue_map = {
-                AgentType.SALES.value:       "sales",
-                AgentType.CLOSER.value:      "sales",
+                AgentType.SALES.value: "sales",
+                AgentType.CLOSER.value: "sales",
                 AgentType.COLLECTIONS.value: "billing",
-                AgentType.POST_SALES.value:  "post-sales",
+                AgentType.POST_SALES.value: "post-sales",
             }
             queue = queue_map.get(agent)
             if queue:
@@ -217,7 +231,9 @@ async def classify_intent(state: SupervisorState) -> dict:
     }
 
 
-def route_after_classify(state: SupervisorState) -> Literal["ventas", "cobranzas", "post_venta", "closer", "__end__"]:
+def route_after_classify(
+    state: SupervisorState,
+) -> Literal["ventas", "cobranzas", "post_venta", "closer", "__end__"]:
     agent = state.get("current_agent", AgentType.SALES.value)
     if state.get("handoff_requested"):
         return END
@@ -240,8 +256,10 @@ async def run_sales_node(state: SupervisorState) -> dict:
     user_profile: dict | None = None
     if email:
         try:
-            from memory.conversation_store import get_conversation_store
             import json as _json
+
+            from memory.conversation_store import get_conversation_store
+
             store = await get_conversation_store()
             raw = await store._redis.get(f"ventas_profile:{email}")
             if raw:
@@ -283,11 +301,13 @@ async def run_collections_node(state: SupervisorState) -> dict:
     if phone or email:
         try:
             from memory.conversation_store import get_conversation_store
+
             store = await get_conversation_store()
         except Exception:
             store = None
 
     import json
+
     if phone and store is not None:
         try:
             cached = await store._redis.get(f"datos_deudor:{phone}")
@@ -375,8 +395,10 @@ async def run_closer_node(state: SupervisorState) -> dict:
     lead_context = ""
     if phone:
         try:
-            from memory.conversation_store import get_conversation_store
             import json
+
+            from memory.conversation_store import get_conversation_store
+
             store = await get_conversation_store()
 
             context_lines = []
@@ -533,7 +555,11 @@ async def route_message(
         "post_sales": AgentType.POST_SALES.value,
     }
     _effective_forced = _param_forced_agent or _flow_forced_agent
-    _initial_agent = _agent_name_map.get(_effective_forced, AgentType.SALES.value) if _effective_forced else AgentType.SALES.value
+    _initial_agent = (
+        _agent_name_map.get(_effective_forced, AgentType.SALES.value)
+        if _effective_forced
+        else AgentType.SALES.value
+    )
 
     initial_state: SupervisorState = {
         "messages": lc_messages,
@@ -555,6 +581,7 @@ async def route_message(
     }
 
     from utils.circuit_breaker import openai_breaker
+
     if not openai_breaker.can_execute():
         logger.warning("openai_circuit_open")
         return {
@@ -593,8 +620,7 @@ async def route_message(
     # Si es handoff directo (sin pasar por agente), generar mensaje para el usuario
     if not response_text and final_state.get("handoff_requested"):
         response_text = (
-            "Te voy a conectar con un asesor para que pueda ayudarte personalmente. "
-            "Un momento, por favor 🙏"
+            "Te voy a conectar con un asesor para que pueda ayudarte personalmente. Un momento, por favor 🙏"
         )
 
     # ── Cleanup centralizado de tags internos ────────────────────────────────
@@ -623,8 +649,9 @@ async def route_message(
         _queue_prefix = _agent_queue_map.get(agent_used, "ventas")
         queue_val = f"{_queue_prefix}_{_country}"  # e.g., "ventas_AR"
         from memory.conversation_store import get_conversation_store as _gcs
+
         _store = await _gcs()
-        await _store._redis.set(queue_key, queue_val, ex=86400*30)
+        await _store._redis.set(queue_key, queue_val, ex=86400 * 30)
     except Exception as e:
         logger.warning("queue_persist_failed", conversation_id=conversation_id, error=str(e))
 

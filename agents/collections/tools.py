@@ -2,21 +2,24 @@
 Herramientas del agente de cobranzas — replicando lógica del BOT n8n.
 Tools: buscar_alumno_mail_adc, buscar_suscripcion_rebill, generar_insta_link_rebill
 """
-from langchain_core.tools import tool
-from integrations.zoho.area_cobranzas import ZohoAreaCobranzas
-from integrations.payments.rebill import RebillClient
-import structlog
+
 import json
+
+import structlog
+from langchain_core.tools import tool
+
+from integrations.payments.rebill import RebillClient
+from integrations.zoho.area_cobranzas import ZohoAreaCobranzas
 
 logger = structlog.get_logger(__name__)
 
 CHANNEL_MAP = {
     "Argentina": "medicalscientificknowledge-whatsapp-5491139007715",
-    "Colombia":  "medicalscientificknowledge-whatsapp-5753161349",
-    "Mexico":    "medicalscientificknowledge-whatsapp-5215599904940",
-    "Ecuador":   "medicalscientificknowledge-whatsapp-593998158115",
-    "Chile":     "medicalscientificknowledge-whatsapp-56224875300",
-    "Uruguay":   "medicalscientificknowledge-whatsapp-5491152170771",
+    "Colombia": "medicalscientificknowledge-whatsapp-5753161349",
+    "Mexico": "medicalscientificknowledge-whatsapp-5215599904940",
+    "Ecuador": "medicalscientificknowledge-whatsapp-593998158115",
+    "Chile": "medicalscientificknowledge-whatsapp-56224875300",
+    "Uruguay": "medicalscientificknowledge-whatsapp-5491152170771",
 }
 
 
@@ -134,7 +137,7 @@ def _formatear_ficha(ficha: dict) -> str:
         return f"{moneda} {n:,.2f}"
 
     lines = [
-        f"FICHA_ALUMNO_ENCONTRADA:",
+        "FICHA_ALUMNO_ENCONTRADA:",
         f"- Nombre: {ficha.get('alumno')} (País: {pais})",
         f"- Email: {ficha.get('email')}",
         f"- ID Cobranza: {ficha.get('cobranzaId')}",

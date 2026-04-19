@@ -6,6 +6,7 @@ validamos que el ensamblado de routers + middlewares no rompa, sin necesidad
 de Postgres ni Redis reales (Redis ping fallará y devolverá 'degraded', lo
 que es respuesta válida en este contexto).
 """
+
 from __future__ import annotations
 
 from fastapi.testclient import TestClient

@@ -4,12 +4,11 @@ CRUD para public.conversation_meta — toda acción humana sobre conversaciones
 
 La tabla conversations queda intacta; meta es 1:1 opcional (LEFT JOIN).
 """
+
 from __future__ import annotations
 
-import json
-from typing import Optional, Literal
+from typing import Literal
 
-import asyncpg
 import structlog
 
 from memory.postgres_store import get_pool
@@ -23,7 +22,8 @@ Queue = Literal["sales", "billing", "post-sales"]
 
 # ─── Reads ───────────────────────────────────────────────────────────────────
 
-async def get_meta(conversation_id: str) -> Optional[dict]:
+
+async def get_meta(conversation_id: str) -> dict | None:
     """Devuelve la meta de una conversación, o None si no existe."""
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -108,22 +108,25 @@ async def list_agents() -> list[dict]:
     out = []
     for r in rows:
         d = dict(r)
-        out.append({
-            "id": d["id"],
-            "name": d["name"] or d["email"],
-            "email": d["email"],
-            "initials": _derive_initials(d.get("name") or "", d.get("email") or ""),
-            "color": _derive_color(d["id"]),
-            "active": True,
-            "role": d["role"],
-            "queues": d.get("queues") or [],
-        })
+        out.append(
+            {
+                "id": d["id"],
+                "name": d["name"] or d["email"],
+                "email": d["email"],
+                "initials": _derive_initials(d.get("name") or "", d.get("email") or ""),
+                "color": _derive_color(d["id"]),
+                "active": True,
+                "role": d["role"],
+                "queues": d.get("queues") or [],
+            }
+        )
     return out
 
 
 # ─── Writes ──────────────────────────────────────────────────────────────────
 
-async def assign(conversation_id: str, agent_id: Optional[str]) -> None:
+
+async def assign(conversation_id: str, agent_id: str | None) -> None:
     """Asignar (o quitar asignación con agent_id=None) a un agente humano."""
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -140,7 +143,8 @@ async def assign(conversation_id: str, agent_id: Optional[str]) -> None:
                 set assigned_agent_id=$2::uuid, assigned_at=now()
                 where conversation_id=$1
                 """,
-                conversation_id, agent_id,
+                conversation_id,
+                agent_id,
             )
 
 
@@ -150,7 +154,8 @@ async def set_status(conversation_id: str, status: ConvStatus) -> None:
         await conn.execute("select public.ensure_conversation_meta($1::uuid)", conversation_id)
         await conn.execute(
             "update public.conversation_meta set status=$2 where conversation_id=$1",
-            conversation_id, status,
+            conversation_id,
+            status,
         )
 
 
@@ -165,7 +170,8 @@ async def classify(conversation_id: str, lifecycle: LifecycleStage) -> None:
             set lifecycle_override=$2, lifecycle_overridden_at=now()
             where conversation_id=$1
             """,
-            conversation_id, lifecycle,
+            conversation_id,
+            lifecycle,
         )
 
 
@@ -176,7 +182,8 @@ async def set_lifecycle_auto(conversation_id: str, lifecycle: LifecycleStage) ->
         await conn.execute("select public.ensure_conversation_meta($1::uuid)", conversation_id)
         await conn.execute(
             "update public.conversation_meta set lifecycle_auto=$2 where conversation_id=$1",
-            conversation_id, lifecycle,
+            conversation_id,
+            lifecycle,
         )
 
 
@@ -186,7 +193,8 @@ async def set_queue(conversation_id: str, queue: Queue) -> None:
         await conn.execute("select public.ensure_conversation_meta($1::uuid)", conversation_id)
         await conn.execute(
             "update public.conversation_meta set queue=$2 where conversation_id=$1",
-            conversation_id, queue,
+            conversation_id,
+            queue,
         )
 
 
@@ -201,7 +209,8 @@ async def set_bot_paused(conversation_id: str, paused: bool) -> None:
                 bot_paused_at=case when $2 then now() else null end
             where conversation_id=$1
             """,
-            conversation_id, paused,
+            conversation_id,
+            paused,
         )
 
 
@@ -211,7 +220,8 @@ async def set_needs_human(conversation_id: str, needs: bool) -> None:
         await conn.execute("select public.ensure_conversation_meta($1::uuid)", conversation_id)
         await conn.execute(
             "update public.conversation_meta set needs_human=$2 where conversation_id=$1",
-            conversation_id, needs,
+            conversation_id,
+            needs,
         )
 
 
@@ -225,7 +235,8 @@ async def add_tags(conversation_id: str, tags: list[str]) -> None:
             set tags = (select array(select distinct unnest(tags || $2::text[])))
             where conversation_id=$1
             """,
-            conversation_id, tags,
+            conversation_id,
+            tags,
         )
 
 
@@ -234,13 +245,15 @@ async def remove_tag(conversation_id: str, tag: str) -> None:
     async with pool.acquire() as conn:
         await conn.execute(
             "update public.conversation_meta set tags = array_remove(tags, $2) where conversation_id=$1",
-            conversation_id, tag,
+            conversation_id,
+            tag,
         )
 
 
 # ─── Bulk ────────────────────────────────────────────────────────────────────
 
-async def bulk_assign(conversation_ids: list[str], agent_id: Optional[str]) -> int:
+
+async def bulk_assign(conversation_ids: list[str], agent_id: str | None) -> int:
     """Reasignar múltiples conversaciones a un agente. Devuelve filas afectadas."""
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -261,7 +274,8 @@ async def bulk_assign(conversation_ids: list[str], agent_id: Optional[str]) -> i
                 set assigned_agent_id=$2::uuid, assigned_at=now()
                 where conversation_id = any($1::uuid[])
                 """,
-                conversation_ids, agent_id,
+                conversation_ids,
+                agent_id,
             )
     try:
         return int(r.split()[-1])
@@ -278,7 +292,8 @@ async def bulk_set_status(conversation_ids: list[str], status: ConvStatus) -> in
         )
         r = await conn.execute(
             "update public.conversation_meta set status=$2 where conversation_id = any($1::uuid[])",
-            conversation_ids, status,
+            conversation_ids,
+            status,
         )
     try:
         return int(r.split()[-1])

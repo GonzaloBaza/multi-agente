@@ -2,6 +2,7 @@
 Base class para todos los canales de comunicación.
 Define la interfaz común que cada canal debe implementar.
 """
+
 from abc import ABC, abstractmethod
 
 
@@ -47,5 +48,4 @@ class ChannelProcessor(ABC):
 
     @property
     @abstractmethod
-    def channel_name(self) -> str:
-        ...
+    def channel_name(self) -> str: ...

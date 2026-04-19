@@ -9,6 +9,7 @@ Es el centro del filtro server-side por rol — si se rompe, los agentes ven
 conversaciones ajenas. Vale la pena tener cobertura de los casos borde
 (cola inválida, país raro, lista vacía).
 """
+
 from __future__ import annotations
 
 from api.inbox_api import _agent_queue_scope_sql

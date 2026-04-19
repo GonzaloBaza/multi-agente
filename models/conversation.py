@@ -1,14 +1,17 @@
+import uuid
 from datetime import datetime
 from typing import Annotated, Any
-from pydantic import BaseModel, Field
+
 from langgraph.graph.message import add_messages
+from pydantic import BaseModel, Field
+
 from config.constants import AgentType, Channel, ConversationStatus, Country
 from models.message import Message
-import uuid
 
 
 class UserProfile(BaseModel):
     """Datos del contacto identificado."""
+
     zoho_contact_id: str | None = None
     zoho_lead_id: str | None = None
     name: str | None = None
@@ -43,6 +46,7 @@ class Conversation(BaseModel):
 
 class ConversationState(BaseModel):
     """LangGraph state schema — typed dict compatible."""
+
     conversation_id: str
     channel: str
     country: str = "AR"

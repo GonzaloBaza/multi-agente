@@ -1,10 +1,11 @@
 """Auth endpoints y dependencia FastAPI."""
-import uuid
+
 import json
+import uuid
+
 import structlog
-from fastapi import APIRouter, HTTPException, Header, Depends, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel
-from typing import Optional
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
@@ -14,10 +15,26 @@ router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 SESSION_TTL = 28800  # 8 horas
 
 ALL_QUEUES = [
-    "ventas_AR", "ventas_MX", "ventas_CL", "ventas_CO", "ventas_EC", "ventas_MP",
-    "ventas_UY", "ventas_PE",
-    "cobranzas_AR", "cobranzas_MX", "cobranzas_CL", "cobranzas_CO", "cobranzas_EC", "cobranzas_MP",
-    "post_venta_AR", "post_venta_MX", "post_venta_CL", "post_venta_CO", "post_venta_EC", "post_venta_MP",
+    "ventas_AR",
+    "ventas_MX",
+    "ventas_CL",
+    "ventas_CO",
+    "ventas_EC",
+    "ventas_MP",
+    "ventas_UY",
+    "ventas_PE",
+    "cobranzas_AR",
+    "cobranzas_MX",
+    "cobranzas_CL",
+    "cobranzas_CO",
+    "cobranzas_EC",
+    "cobranzas_MP",
+    "post_venta_AR",
+    "post_venta_MX",
+    "post_venta_CL",
+    "post_venta_CO",
+    "post_venta_EC",
+    "post_venta_MP",
 ]
 
 
@@ -35,9 +52,9 @@ class CreateUserRequest(BaseModel):
 
 
 class UpdateUserRequest(BaseModel):
-    name: Optional[str] = None
-    role: Optional[str] = None
-    queues: Optional[list[str]] = None
+    name: str | None = None
+    role: str | None = None
+    queues: list[str] | None = None
 
 
 class ForgotPasswordRequest(BaseModel):
@@ -49,35 +66,40 @@ class ResetPasswordRequest(BaseModel):
     new_password: str
 
 
-async def get_current_user(x_session_token: Optional[str] = Header(None)) -> dict:
+async def get_current_user(x_session_token: str | None = Header(None)) -> dict:
     """Dependencia FastAPI: verifica sesión en Redis."""
     if not x_session_token:
         raise HTTPException(status_code=401, detail="No autenticado")
     from memory.conversation_store import get_conversation_store
+
     store = await get_conversation_store()
     data = await store._redis.get(f"session:{x_session_token}")
     if not data:
         raise HTTPException(status_code=401, detail="Sesión expirada")
     if isinstance(data, bytes):
-        data = data.decode('utf-8')
+        data = data.decode("utf-8")
     return json.loads(data)
 
 
 def require_role(*roles: str):
     """Dependencia que verifica rol."""
+
     async def _check(user: dict = Depends(get_current_user)):
         if user.get("role") not in roles:
             raise HTTPException(status_code=403, detail="Sin permisos")
         return user
+
     return _check
 
 
 auth_limiter = Limiter(key_func=get_remote_address)
 
+
 @router.post("/login")
 @auth_limiter.limit("5/minute")
 async def login(request: Request, req: LoginRequest):
-    from integrations.supabase_client import sign_in_with_password, get_profile
+    from integrations.supabase_client import get_profile, sign_in_with_password
+
     try:
         await sign_in_with_password(req.email, req.password)
         profile = await get_profile(req.email)
@@ -92,6 +114,7 @@ async def login(request: Request, req: LoginRequest):
             "queues": profile.get("queues", []),
         }
         from memory.conversation_store import get_conversation_store
+
         store = await get_conversation_store()
         await store._redis.setex(f"session:{token}", SESSION_TTL, json.dumps(user_info))
         logger.info("user_login", email=req.email, role=user_info["role"])
@@ -116,6 +139,7 @@ async def forgot_password(request: Request, req: ForgotPasswordRequest):
     /reset-password con un access_token en el hash fragment de la URL.
     """
     from integrations.supabase_client import send_password_recovery
+
     # Origin del request → URL de redirect después del mail.
     # Esto permite que dev (localhost) y prod (agentes.msklatam.com) usen el
     # mismo backend sin hardcodear el dominio.
@@ -130,7 +154,10 @@ async def forgot_password(request: Request, req: ForgotPasswordRequest):
         # No exponer el error al user — siempre devolver OK
         logger.warning("forgot_password_error", error=str(e), email=req.email)
     # Mensaje genérico independientemente del resultado
-    return {"ok": True, "message": "Si el email existe, te enviamos instrucciones para restablecer tu contraseña."}
+    return {
+        "ok": True,
+        "message": "Si el email existe, te enviamos instrucciones para restablecer tu contraseña.",
+    }
 
 
 @router.post("/reset-password")
@@ -143,11 +170,14 @@ async def reset_password(request: Request, req: ResetPasswordRequest):
     if len(req.new_password) < 8:
         raise HTTPException(status_code=400, detail="La contraseña debe tener al menos 8 caracteres")
     from integrations.supabase_client import update_user_password_with_token
+
     try:
         await update_user_password_with_token(req.access_token, req.new_password)
-    except ValueError as e:
+    except ValueError:
         # Token expirado o inválido
-        raise HTTPException(status_code=401, detail="El link de recuperación es inválido o ya expiró. Pedí uno nuevo.")
+        raise HTTPException(
+            status_code=401, detail="El link de recuperación es inválido o ya expiró. Pedí uno nuevo."
+        )
     except Exception as e:
         logger.error("reset_password_error", error=str(e))
         raise HTTPException(status_code=500, detail="Error al actualizar la contraseña. Intentá de nuevo.")
@@ -155,9 +185,10 @@ async def reset_password(request: Request, req: ResetPasswordRequest):
 
 
 @router.post("/logout")
-async def logout(x_session_token: Optional[str] = Header(None)):
+async def logout(x_session_token: str | None = Header(None)):
     if x_session_token:
         from memory.conversation_store import get_conversation_store
+
         store = await get_conversation_store()
         await store._redis.delete(f"session:{x_session_token}")
     return {"ok": True}
@@ -176,12 +207,14 @@ async def get_queues():
 @router.get("/users")
 async def list_users(user: dict = Depends(require_role("admin", "supervisor"))):
     from integrations.supabase_client import list_profiles
+
     return await list_profiles()
 
 
 @router.post("/users")
 async def create_user(req: CreateUserRequest, user: dict = Depends(require_role("admin"))):
     from integrations.supabase_client import admin_create_auth_user, create_profile
+
     auth_result = await admin_create_auth_user(req.email, req.password, req.name)
     if "error" in auth_result or auth_result.get("msg"):
         raise HTTPException(status_code=400, detail=str(auth_result))
@@ -189,15 +222,16 @@ async def create_user(req: CreateUserRequest, user: dict = Depends(require_role(
     # Sin esto, Postgres genera un uuid nuevo y los dos quedan desfasados —
     # ese era el bug que arregló la migración 005.
     auth_user_id = auth_result.get("id") or auth_result.get("user", {}).get("id")
-    profile = await create_profile(
-        req.email, req.name, req.role, req.queues, auth_user_id=auth_user_id
-    )
+    profile = await create_profile(req.email, req.name, req.role, req.queues, auth_user_id=auth_user_id)
     return profile
 
 
 @router.patch("/users/{profile_id}")
-async def update_user(profile_id: str, req: UpdateUserRequest, user: dict = Depends(require_role("admin", "supervisor"))):
+async def update_user(
+    profile_id: str, req: UpdateUserRequest, user: dict = Depends(require_role("admin", "supervisor"))
+):
     from integrations.supabase_client import update_profile
+
     updates = {k: v for k, v in req.dict().items() if v is not None}
     # Supervisores solo pueden cambiar colas, no el rol
     if user.get("role") == "supervisor":
@@ -210,6 +244,7 @@ async def update_user(profile_id: str, req: UpdateUserRequest, user: dict = Depe
 @router.delete("/users/{profile_id}")
 async def delete_user(profile_id: str, user: dict = Depends(require_role("admin"))):
     from integrations.supabase_client import delete_profile
+
     await delete_profile(profile_id)
     return {"ok": True}
 
@@ -227,6 +262,7 @@ class AgentStatusRequest(BaseModel):
 async def get_agent_status(user: dict = Depends(get_current_user)):
     """Obtiene el estado de disponibilidad del agente actual."""
     from memory.conversation_store import get_conversation_store
+
     store = await get_conversation_store()
     user_id = user.get("id") or user.get("email", "unknown")
     val = await store._redis.get(f"agent_available:{user_id}")
@@ -240,6 +276,7 @@ async def set_agent_status(req: AgentStatusRequest, user: dict = Depends(get_cur
     if req.status not in VALID_STATUSES:
         raise HTTPException(status_code=400, detail=f"Estado inválido. Opciones: {VALID_STATUSES}")
     from memory.conversation_store import get_conversation_store
+
     store = await get_conversation_store()
     user_id = user.get("id") or user.get("email", "unknown")
     await store._redis.set(f"agent_available:{user_id}", req.status, ex=SESSION_TTL)

@@ -1,7 +1,9 @@
 import httpx
-from .auth import ZohoAuth
-from config.settings import get_settings
 import structlog
+
+from config.settings import get_settings
+
+from .auth import ZohoAuth
 
 logger = structlog.get_logger(__name__)
 
@@ -18,19 +20,21 @@ class ZohoLeads:
                canal_origen, estado_pago, notas}
         """
         payload = {
-            "data": [{
-                "Last_Name": data.get("last_name", data.get("name", "Sin nombre")),
-                "First_Name": data.get("first_name", ""),
-                "Phone": data.get("phone", ""),
-                "Email": data.get("email", ""),
-                "Country": data.get("country", "Argentina"),
-                "Lead_Source": data.get("canal_origen", "WhatsApp"),
-                # Campos personalizados
-                "Curso_de_Interes": data.get("curso_de_interes", ""),
-                "Canal_Origen": data.get("canal_origen", ""),
-                "Estado_Pago": data.get("estado_pago", "Pendiente"),
-                "Notas_Bot": data.get("notas", ""),
-            }]
+            "data": [
+                {
+                    "Last_Name": data.get("last_name", data.get("name", "Sin nombre")),
+                    "First_Name": data.get("first_name", ""),
+                    "Phone": data.get("phone", ""),
+                    "Email": data.get("email", ""),
+                    "Country": data.get("country", "Argentina"),
+                    "Lead_Source": data.get("canal_origen", "WhatsApp"),
+                    # Campos personalizados
+                    "Curso_de_Interes": data.get("curso_de_interes", ""),
+                    "Canal_Origen": data.get("canal_origen", ""),
+                    "Estado_Pago": data.get("estado_pago", "Pendiente"),
+                    "Notas_Bot": data.get("notas", ""),
+                }
+            ]
         }
         headers = await self._auth.auth_headers()
         async with httpx.AsyncClient() as client:

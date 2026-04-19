@@ -3,8 +3,10 @@ Sistema de eventos por conversación — equivalente a "Obtener eventos" de Botm
 Loguea agente usado, acciones tomadas, errores, etc.
 Almacena en Redis como lista JSON, últimos 100 eventos por conversación.
 """
-import json
+
 import datetime
+import json
+
 import structlog
 
 logger = structlog.get_logger(__name__)
@@ -21,6 +23,7 @@ async def log_event(session_id: str, event_type: str, data: dict):
     """
     try:
         from memory.conversation_store import get_conversation_store
+
         store = await get_conversation_store()
 
         event = {
@@ -39,11 +42,14 @@ async def log_event(session_id: str, event_type: str, data: dict):
         # Broadcast SSE para que el inbox se actualice en tiempo real
         try:
             from utils.realtime import broadcast_event
-            broadcast_event({
-                "type": "conv_event",
-                "session_id": session_id,
-                "event": event,
-            })
+
+            broadcast_event(
+                {
+                    "type": "conv_event",
+                    "session_id": session_id,
+                    "event": event,
+                }
+            )
         except Exception:
             pass
 
@@ -55,6 +61,7 @@ async def get_events(session_id: str, limit: int = 50) -> list[dict]:
     """Devuelve los últimos eventos de una conversación."""
     try:
         from memory.conversation_store import get_conversation_store
+
         store = await get_conversation_store()
         raw = await store._redis.lrange(f"conv_events:{session_id}", -limit, -1)
         return [json.loads(r) for r in raw]
@@ -64,23 +71,36 @@ async def get_events(session_id: str, limit: int = 50) -> list[dict]:
 
 # ─── Helpers para tipos comunes ───────────────────────────────────────────────
 
+
 async def log_intent(session_id: str, intent: str, agent: str, message_preview: str = ""):
-    await log_event(session_id, "intent", {
-        "intent": intent,
-        "agent": agent,
-        "msg": message_preview[:80] if message_preview else "",
-    })
+    await log_event(
+        session_id,
+        "intent",
+        {
+            "intent": intent,
+            "agent": agent,
+            "msg": message_preview[:80] if message_preview else "",
+        },
+    )
 
 
 async def log_action(session_id: str, action: str, detail: str = "", success: bool = True):
-    await log_event(session_id, "action" if success else "error", {
-        "action": action,
-        "detail": detail[:200] if detail else "",
-    })
+    await log_event(
+        session_id,
+        "action" if success else "error",
+        {
+            "action": action,
+            "detail": detail[:200] if detail else "",
+        },
+    )
 
 
 async def log_error(session_id: str, source: str, error: str):
-    await log_event(session_id, "error", {
-        "source": source,
-        "error": error[:300] if error else "",
-    })
+    await log_event(
+        session_id,
+        "error",
+        {
+            "source": source,
+            "error": error[:300] if error else "",
+        },
+    )

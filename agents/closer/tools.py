@@ -2,15 +2,17 @@
 Herramientas del Sales Closer — reutiliza las tools de ventas +
 una tool nueva para consultar historial del lead.
 """
+
+import structlog
 from langchain_core.tools import tool
+
 from agents.sales.tools import (
+    create_or_update_lead,
+    create_payment_link,
+    create_sales_order,
     get_course_brief,
     get_course_deep,
-    create_payment_link,
-    create_or_update_lead,
-    create_sales_order,
 )
-import structlog
 
 logger = structlog.get_logger(__name__)
 
@@ -25,9 +27,10 @@ async def check_lead_history(phone: str) -> str:
     Args:
         phone: Número de teléfono del lead (con código de país)
     """
-    from memory.conversation_store import get_conversation_store
-    from config.constants import Channel
     import json
+
+    from config.constants import Channel
+    from memory.conversation_store import get_conversation_store
 
     store = await get_conversation_store()
     lines = []

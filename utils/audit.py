@@ -2,8 +2,10 @@
 Audit logging — registro inmutable de acciones administrativas.
 Almacena en Redis list 'audit:log' con max 10k entradas.
 """
-import json
+
 import datetime
+import json
+
 import structlog
 
 logger = structlog.get_logger(__name__)
@@ -22,6 +24,7 @@ async def audit_log(
 ):
     """Registra una accion administrativa en el audit log."""
     from memory.conversation_store import get_conversation_store
+
     store = await get_conversation_store()
 
     entry = {
@@ -43,6 +46,7 @@ async def audit_log(
 async def get_audit_log(limit: int = 100, offset: int = 0) -> list[dict]:
     """Retorna las ultimas entradas del audit log."""
     from memory.conversation_store import get_conversation_store
+
     store = await get_conversation_store()
 
     raw = await store._redis.lrange(AUDIT_KEY, offset, offset + limit - 1)

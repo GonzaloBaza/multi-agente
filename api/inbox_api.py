@@ -21,19 +21,21 @@ Endpoints:
 
   POST /api/inbox/llm/correct-spelling  {text}
 """
+
 from __future__ import annotations
 
-from typing import Optional, Literal
-from datetime import datetime, timezone, timedelta
 import uuid
+from datetime import datetime
+from typing import Literal
 
 import structlog
-from fastapi import APIRouter, HTTPException, Query, Depends, File, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
 
-from memory import postgres_store, conversation_meta as cm
+from api.admin import require_role_or_admin, verify_admin_or_session  # admin key + session + role gate
 from integrations.zoho.contacts import ZohoContacts
-from api.admin import verify_admin_or_session, require_role_or_admin  # admin key + session + role gate
+from memory import conversation_meta as cm
+from memory import postgres_store
 
 logger = structlog.get_logger(__name__)
 
@@ -42,12 +44,13 @@ router = APIRouter(prefix="/api/v1/inbox", tags=["inbox"], dependencies=[Depends
 
 # ─── Schemas ─────────────────────────────────────────────────────────────────
 
+
 class AgentOut(BaseModel):
     id: str
     name: str
-    email: Optional[str] = None
-    initials: Optional[str] = None
-    color: Optional[str] = None
+    email: str | None = None
+    initials: str | None = None
+    color: str | None = None
 
 
 class ConversationOut(BaseModel):
@@ -62,7 +65,7 @@ class ConversationOut(BaseModel):
     last_timestamp: str = ""
     message_count: int = 0
     # meta
-    assigned_agent_id: Optional[str] = None
+    assigned_agent_id: str | None = None
     status: str = "open"
     lifecycle: str = "new"
     lifecycle_is_manual: bool = False
@@ -78,15 +81,16 @@ class MessageOut(BaseModel):
     role: str
     content: str
     at: str
-    agent: Optional[str] = None
+    agent: str | None = None
 
 
 # ─── Reads ───────────────────────────────────────────────────────────────────
 
+
 @router.get("/stream")
 async def stream(
-    admin_key: Optional[str] = Query(None, alias="key"),
-    session_token: Optional[str] = Query(None, alias="token"),
+    admin_key: str | None = Query(None, alias="key"),
+    session_token: str | None = Query(None, alias="token"),
 ):
     """
     SSE para nuevos eventos del inbox (mensajes, asignaciones, etc).
@@ -96,12 +100,14 @@ async def stream(
     Reusa el bus broadcast del inbox legacy.
     """
     from config.settings import get_settings
+
     expected = get_settings().app_secret_key  # mismo que verify_admin_key
 
     authed = False
     # 1. Token de sesión: misma validación que get_current_user (Redis).
     if session_token:
         from memory.conversation_store import get_conversation_store
+
         store = await get_conversation_store()
         sess = await store._redis.get(f"session:{session_token}")
         if sess:
@@ -116,10 +122,12 @@ async def stream(
     if not authed:
         raise HTTPException(401, "no autenticado")
 
-    from utils.realtime import _sse_clients
-    from fastapi.responses import StreamingResponse
     import asyncio
     import json as _json
+
+    from fastapi.responses import StreamingResponse
+
+    from utils.realtime import _sse_clients
 
     queue: asyncio.Queue = asyncio.Queue(maxsize=100)
     _sse_clients.add(queue)
@@ -132,7 +140,7 @@ async def stream(
                 try:
                     evt = await asyncio.wait_for(queue.get(), timeout=25.0)
                     yield f"data: {_json.dumps(evt)}\n\n"
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     yield ": ping\n\n"
         finally:
             _sse_clients.discard(queue)
@@ -160,13 +168,13 @@ PRIMARY_COUNTRIES = {"AR", "CL", "EC", "MX", "CO"}
 # almacenado en conversation_meta.queue. Los agentes tienen colas tipo
 # "ventas_AR", "cobranzas_MX"... que mapean a (queue, country).
 QUEUE_PREFIX_MAP = {
-    "ventas":     "sales",
-    "cobranzas":  "billing",
+    "ventas": "sales",
+    "cobranzas": "billing",
     "post_venta": "post-sales",
 }
 
 
-def _agent_queue_scope_sql(user_queues: list[str]) -> Optional[str]:
+def _agent_queue_scope_sql(user_queues: list[str]) -> str | None:
     """Arma el fragmento SQL que restringe las conversaciones visibles a un
     agente según sus colas asignadas (de `profiles.queues`).
 
@@ -216,10 +224,18 @@ async def analytics(days: int = 30):
     async with pool.acquire() as conn:
         # Conteos generales — usamos f-string con int(days) para evitar SQL injection
         # y sortear el bug de asyncpg con $1::interval (que espera timedelta, no str)
-        total_convs = await conn.fetchval(f"select count(*) from public.conversations where created_at > now() - interval '{int(days)} days'")
-        total_msgs = await conn.fetchval(f"select count(*) from public.messages where created_at > now() - interval '{int(days)} days'")
-        active_today = await conn.fetchval("select count(*) from public.conversations where updated_at > now() - interval '24 hours'")
-        resolved_count = await conn.fetchval("select count(*) from public.conversation_meta where status = 'resolved'")
+        total_convs = await conn.fetchval(
+            f"select count(*) from public.conversations where created_at > now() - interval '{int(days)} days'"
+        )
+        total_msgs = await conn.fetchval(
+            f"select count(*) from public.messages where created_at > now() - interval '{int(days)} days'"
+        )
+        active_today = await conn.fetchval(
+            "select count(*) from public.conversations where updated_at > now() - interval '24 hours'"
+        )
+        resolved_count = await conn.fetchval(
+            "select count(*) from public.conversation_meta where status = 'resolved'"
+        )
         # Convs por día
         daily = await conn.fetch(f"""
             select date_trunc('day', created_at)::date as day, count(*)::int as cnt
@@ -266,9 +282,9 @@ async def analytics(days: int = 30):
             "resolved": resolved_count or 0,
         },
         "daily": [{"day": str(r["day"]), "count": r["cnt"]} for r in daily],
-        "by_channel":   {r["channel"]: r["cnt"] for r in by_channel},
-        "by_queue":     {r["queue"]: r["cnt"] for r in by_queue},
-        "by_country":   {r["cc"]: r["cnt"] for r in by_country},
+        "by_channel": {r["channel"]: r["cnt"] for r in by_channel},
+        "by_queue": {r["queue"]: r["cnt"] for r in by_queue},
+        "by_country": {r["cc"]: r["cnt"] for r in by_country},
         "by_lifecycle": {r["lc"]: r["cnt"] for r in by_lifecycle},
     }
 
@@ -288,31 +304,38 @@ async def list_courses(country: str = "AR", limit: int = 200):
             order by categoria asc, title asc
             limit $2
             """,
-            country.lower(), limit,
+            country.lower(),
+            limit,
         )
     out = []
     import json as _json
+
     for r in rows:
         pbp = r["pitch_by_profile"]
         if isinstance(pbp, str):
-            try: pbp = _json.loads(pbp)
-            except Exception: pbp = {}
-        out.append({
-            "slug": r["slug"],
-            "title": r["title"],
-            "categoria": r["categoria"],
-            "currency": r["currency"],
-            "max_installments": r["max_installments"],
-            "price_installments": float(r["price_installments"]) if r["price_installments"] else None,
-            "pitch_hook": r["pitch_hook"],
-            "pitch_by_profile": pbp,
-            "has_kb_ai": bool(r["has_kb_ai"]),
-        })
+            try:
+                pbp = _json.loads(pbp)
+            except Exception:
+                pbp = {}
+        out.append(
+            {
+                "slug": r["slug"],
+                "title": r["title"],
+                "categoria": r["categoria"],
+                "currency": r["currency"],
+                "max_installments": r["max_installments"],
+                "price_installments": float(r["price_installments"]) if r["price_installments"] else None,
+                "pitch_hook": r["pitch_hook"],
+                "pitch_by_profile": pbp,
+                "has_kb_ai": bool(r["has_kb_ai"]),
+            }
+        )
     return out
 
 
 class UpdatePitchHookBody(BaseModel):
     pitch_hook: str
+
 
 @router.put("/courses/{country}/{slug}/pitch-hook")
 async def update_pitch_hook(country: str, slug: str, body: UpdatePitchHookBody):
@@ -321,11 +344,14 @@ async def update_pitch_hook(country: str, slug: str, body: UpdatePitchHookBody):
     async with pool.acquire() as conn:
         await conn.execute(
             "update public.courses set pitch_hook=$1 where country=$2 and slug=$3",
-            body.pitch_hook, country.lower(), slug,
+            body.pitch_hook,
+            country.lower(),
+            slug,
         )
     # Invalidar cache Redis del curso
     try:
         from integrations import courses_cache
+
         await courses_cache.invalidate_country(country.lower())
     except Exception:
         pass
@@ -355,11 +381,12 @@ async def queue_stats():
 
     # Inicializar las 3 colas × 6 categorias en cero
     out: dict[str, dict[str, int]] = {
-        q: {c: 0 for c in [*sorted(PRIMARY_COUNTRIES), "MP"]}
-        for q in ("sales", "billing", "post-sales")
+        q: {c: 0 for c in [*sorted(PRIMARY_COUNTRIES), "MP"]} for q in ("sales", "billing", "post-sales")
     }
     for r in rows:
-        q = r["queue"]; c = r["country"]; n = r["cnt"]
+        q = r["queue"]
+        c = r["country"]
+        n = r["cnt"]
         if q not in out:
             continue  # ignora queues no oficiales
         bucket = c if c in PRIMARY_COUNTRIES else "MP"
@@ -371,16 +398,16 @@ async def queue_stats():
 async def list_conversations(
     limit: int = Query(50, le=200),
     offset: int = 0,
-    view:        Optional[str] = None,
-    lifecycle:   Optional[str] = None,
-    channel:     Optional[str] = None,
-    queue:       Optional[str] = None,
-    country:     Optional[str] = None,
-    assigned_to: Optional[str] = None,
-    search:      Optional[str] = None,
-    date_from:   Optional[str] = None,
-    date_to:     Optional[str] = None,
-    auth:        dict = Depends(verify_admin_or_session),
+    view: str | None = None,
+    lifecycle: str | None = None,
+    channel: str | None = None,
+    queue: str | None = None,
+    country: str | None = None,
+    assigned_to: str | None = None,
+    search: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    auth: dict = Depends(verify_admin_or_session),
 ):
     """Lista de conversaciones con todos los filtros del inbox.
 
@@ -406,7 +433,8 @@ async def list_conversations(
         scope_parts = []
         if agent_id:
             scope_parts.append(f"cm.assigned_agent_id = ${idx}::uuid")
-            params.append(agent_id); idx += 1
+            params.append(agent_id)
+            idx += 1
         if queue_scope:
             # Un agente ve las conversaciones de sus colas que estén SIN
             # asignar (libres para tomar). Si ya las asignó otro agente,
@@ -422,41 +450,45 @@ async def list_conversations(
 
     if date_from:
         where_parts.append(f"c.updated_at >= ${idx}::timestamptz")
-        params.append(date_from + "T00:00:00Z"); idx += 1
+        params.append(date_from + "T00:00:00Z")
+        idx += 1
     if date_to:
         where_parts.append(f"c.updated_at <= ${idx}::timestamptz")
-        params.append(date_to + "T23:59:59Z"); idx += 1
+        params.append(date_to + "T23:59:59Z")
+        idx += 1
     if channel:
         where_parts.append(f"c.channel = ${idx}")
-        params.append(channel); idx += 1
+        params.append(channel)
+        idx += 1
     if assigned_to:
         # cm.assigned_agent_id es uuid (FK a profiles.id) — cast explícito necesario
         # porque asyncpg pasa el query param como text y postgres no infiere uuid=text
         where_parts.append(f"cm.assigned_agent_id = ${idx}::uuid")
-        params.append(assigned_to); idx += 1
+        params.append(assigned_to)
+        idx += 1
     if queue:
         where_parts.append(f"cm.queue = ${idx}")
-        params.append(queue); idx += 1
+        params.append(queue)
+        idx += 1
     if country:
         # Filtro especial: "MP" = multi-país (todo país NO primario)
         if country.upper() == "MP":
             primary_list = ",".join(f"'{c}'" for c in sorted(PRIMARY_COUNTRIES))
-            where_parts.append(
-                f"upper(coalesce(c.user_profile->>'country', 'AR')) NOT IN ({primary_list})"
-            )
+            where_parts.append(f"upper(coalesce(c.user_profile->>'country', 'AR')) NOT IN ({primary_list})")
         else:
-            where_parts.append(
-                f"upper(coalesce(c.user_profile->>'country', 'AR')) = upper(${idx})"
-            )
-            params.append(country); idx += 1
+            where_parts.append(f"upper(coalesce(c.user_profile->>'country', 'AR')) = upper(${idx})")
+            params.append(country)
+            idx += 1
     if lifecycle:
         where_parts.append(f"coalesce(cm.lifecycle_override, cm.lifecycle_auto, 'new') = ${idx}")
-        params.append(lifecycle); idx += 1
+        params.append(lifecycle)
+        idx += 1
     if search:
         where_parts.append(
             f"(c.user_profile->>'name' ilike ${idx} OR c.user_profile->>'email' ilike ${idx} OR lm.content ilike ${idx})"
         )
-        params.append(f"%{search}%"); idx += 1
+        params.append(f"%{search}%")
+        idx += 1
 
     # vistas
     if view == "unread":
@@ -476,7 +508,8 @@ async def list_conversations(
 
     where = ("WHERE " + " AND ".join(where_parts)) if where_parts else ""
 
-    params.append(limit); idx += 1
+    params.append(limit)
+    idx += 1
     params.append(offset)
 
     sql = f"""
@@ -518,31 +551,36 @@ async def list_conversations(
         profile = r["user_profile"] or {}
         if isinstance(profile, str):
             import json as _json
+
             try:
                 profile = _json.loads(profile)
             except Exception:
                 profile = {}
         last_msg = (r["last_message"] or "")[:120]
-        out.append(ConversationOut(
-            id=str(r["id"]),
-            session_id=r["external_id"] or "",
-            channel=r["channel"],
-            name=profile.get("name") or "",
-            email=profile.get("email") or "",
-            phone=profile.get("phone") or "",
-            country=profile.get("country") or "AR",
-            last_message=last_msg or "",
-            last_timestamp=(r["last_message_at"] or r["updated_at"]).isoformat() if (r["last_message_at"] or r["updated_at"]) else "",
-            message_count=r["message_count"] or 0,
-            assigned_agent_id=str(r["assigned_agent_id"]) if r["assigned_agent_id"] else None,
-            status=r["status"] or "open",
-            lifecycle=r["lifecycle"] or "new",
-            lifecycle_is_manual=bool(r["lifecycle_is_manual"]),
-            queue=r["queue"] or "sales",
-            bot_paused=bool(r["bot_paused"]),
-            needs_human=bool(r["needs_human"]),
-            tags=list(r["tags"] or []),
-        ))
+        out.append(
+            ConversationOut(
+                id=str(r["id"]),
+                session_id=r["external_id"] or "",
+                channel=r["channel"],
+                name=profile.get("name") or "",
+                email=profile.get("email") or "",
+                phone=profile.get("phone") or "",
+                country=profile.get("country") or "AR",
+                last_message=last_msg or "",
+                last_timestamp=(r["last_message_at"] or r["updated_at"]).isoformat()
+                if (r["last_message_at"] or r["updated_at"])
+                else "",
+                message_count=r["message_count"] or 0,
+                assigned_agent_id=str(r["assigned_agent_id"]) if r["assigned_agent_id"] else None,
+                status=r["status"] or "open",
+                lifecycle=r["lifecycle"] or "new",
+                lifecycle_is_manual=bool(r["lifecycle_is_manual"]),
+                queue=r["queue"] or "sales",
+                bot_paused=bool(r["bot_paused"]),
+                needs_human=bool(r["needs_human"]),
+                tags=list(r["tags"] or []),
+            )
+        )
     return out
 
 
@@ -565,18 +603,21 @@ async def get_messages(conv_id: str):
         meta = r["metadata"] or {}
         if isinstance(meta, str):
             import json as _json
+
             try:
                 meta = _json.loads(meta)
             except Exception:
                 meta = {}
-        out.append({
-            "id": str(r["id"]),
-            "role": r["role"],
-            "content": r["content"],
-            "agent": meta.get("agent") or meta.get("sender_name"),
-            "attachments": meta.get("attachments") or [],
-            "at": r["created_at"].isoformat(),
-        })
+        out.append(
+            {
+                "id": str(r["id"]),
+                "role": r["role"],
+                "content": r["content"],
+                "agent": meta.get("agent") or meta.get("sender_name"),
+                "attachments": meta.get("attachments") or [],
+                "at": r["created_at"].isoformat(),
+            }
+        )
     return out
 
 
@@ -587,8 +628,9 @@ async def get_ai_insights(conv_id: str):
     usando OpenAI gpt-4o-mini con los últimos 20 mensajes como contexto.
     Cacheado en Redis 5 min (no regenerar en cada refresh).
     """
-    from memory.conversation_store import get_conversation_store
     import json as _json
+
+    from memory.conversation_store import get_conversation_store
 
     store = await get_conversation_store()
     cache_key = f"ai_insights:{conv_id}"
@@ -629,18 +671,20 @@ async def get_ai_insights(conv_id: str):
 
     # Reconstruir cronológico
     msgs = list(reversed(rows))
-    transcript = "\n".join(
-        f"[{m['role']}] {m['content'][:300]}" for m in msgs
-    )
+    transcript = "\n".join(f"[{m['role']}] {m['content'][:300]}" for m in msgs)
     profile = conv_row["user_profile"] if conv_row else {}
     if isinstance(profile, str):
-        try: profile = _json.loads(profile)
-        except Exception: profile = {}
+        try:
+            profile = _json.loads(profile)
+        except Exception:
+            profile = {}
 
     profile_str = "\n".join(f"  - {k}: {v}" for k, v in (profile or {}).items() if v) or "  (sin datos)"
 
     from openai import AsyncOpenAI
+
     from config.settings import get_settings
+
     settings = get_settings()
     if not settings.openai_api_key:
         raise HTTPException(500, "OPENAI_API_KEY no configurada")
@@ -662,18 +706,25 @@ Reglas:
 - En español argentino profesional
 - DEVOLVER SOLO EL JSON, sin comillas decorativas ni texto extra."""
 
-    user_msg = f"PERFIL DEL CONTACTO:\n{profile_str}\n\nTRANSCRIPCIÓN (últimos {len(msgs)} mensajes):\n{transcript}"
+    user_msg = (
+        f"PERFIL DEL CONTACTO:\n{profile_str}\n\nTRANSCRIPCIÓN (últimos {len(msgs)} mensajes):\n{transcript}"
+    )
 
     try:
-        resp = await client.chat.completions.create(
-            model="gpt-4o-mini",
-            temperature=0.3,
-            max_tokens=600,
-            response_format={"type": "json_object"},
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": user_msg},
-            ],
+        from utils.llm_retry import call_with_retry
+
+        resp = await call_with_retry(
+            lambda: client.chat.completions.create(
+                model="gpt-4o-mini",
+                temperature=0.3,
+                max_tokens=600,
+                response_format={"type": "json_object"},
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user_msg},
+                ],
+            ),
+            label="ai_insights",
         )
         data = _json.loads(resp.choices[0].message.content)
     except Exception as e:
@@ -719,27 +770,26 @@ async def get_contact(email: str):
     colegio = (profile.get("Colegio_Sociedad_o_Federaci_n") or [None])[0]
 
     return {
-        "zoho_id":     profile.get("id"),
-        "name":        profile.get("Full_Name"),
-        "first_name":  profile.get("First_Name"),
-        "last_name":   profile.get("Last_Name"),
-        "email":       profile.get("Email"),
-        "phone":       profile.get("Phone"),
-        "country":     _country_iso(profile.get("Pais")),
+        "zoho_id": profile.get("id"),
+        "name": profile.get("Full_Name"),
+        "first_name": profile.get("First_Name"),
+        "last_name": profile.get("Last_Name"),
+        "email": profile.get("Email"),
+        "phone": profile.get("Phone"),
+        "country": _country_iso(profile.get("Pais")),
         "country_name": profile.get("Pais"),
         "professional": {
-            "profession":  profile.get("Profesi_n"),
-            "specialty":   profile.get("Especialidad"),
-            "cargo":       profile.get("Cargo"),
-            "workplace":   profile.get("Lugar_de_trabajo"),
-            "work_area":   profile.get("rea_donde_tabaja"),
+            "profession": profile.get("Profesi_n"),
+            "specialty": profile.get("Especialidad"),
+            "cargo": profile.get("Cargo"),
+            "workplace": profile.get("Lugar_de_trabajo"),
+            "work_area": profile.get("rea_donde_tabaja"),
         },
-        "jurisdictional_cert":
-            {"code": _colegio_code(colegio), "name": colegio} if colegio else None,
+        "jurisdictional_cert": {"code": _colegio_code(colegio), "name": colegio} if colegio else None,
         "courses_taken": cursos,
         "scoring": {
             "profile": int(profile.get("Scoring_Perfil") or 0),
-            "sales":   int(profile.get("Scoring_venta") or 0),
+            "sales": int(profile.get("Scoring_venta") or 0),
         },
         # Cobranzas: por ahora derivado del Zoho (más adelante: integration real)
         "cobranzas": _derive_cobranzas(profile),
@@ -748,59 +798,74 @@ async def get_contact(email: str):
 
 # ─── Mutations: por conversación ─────────────────────────────────────────────
 
+
 class AssignBody(BaseModel):
-    agent_id: Optional[str] = None
+    agent_id: str | None = None
+
 
 @router.post("/conversations/{conv_id}/assign")
 async def assign(conv_id: str, body: AssignBody):
     await cm.assign(conv_id, body.agent_id)
     from utils.inbox_jobs import log_action
+
     await log_action("system", "assign", conv_id, {"agent_id": body.agent_id})
     return {"ok": True}
 
 
 @router.get("/audit-log")
-async def get_audit_log(limit: int = 100, conversation_id: Optional[str] = None, actor_id: Optional[str] = None):
+async def get_audit_log(limit: int = 100, conversation_id: str | None = None, actor_id: str | None = None):
     from utils.inbox_jobs import list_audit_log
+
     return await list_audit_log(limit=limit, conversation_id=conversation_id, actor_id=actor_id)
+
 
 class StatusBody(BaseModel):
     status: Literal["open", "pending", "resolved"]
+
 
 @router.post("/conversations/{conv_id}/status")
 async def status(conv_id: str, body: StatusBody):
     await cm.set_status(conv_id, body.status)
     return {"ok": True}
 
+
 class ClassifyBody(BaseModel):
     lifecycle: Literal["new", "hot", "customer", "cold"]
+
 
 @router.post("/conversations/{conv_id}/classify")
 async def classify(conv_id: str, body: ClassifyBody):
     await cm.classify(conv_id, body.lifecycle)
     from utils.inbox_jobs import log_action
+
     await log_action("system", "classify", conv_id, {"lifecycle": body.lifecycle})
     return {"ok": True}
 
+
 class QueueBody(BaseModel):
     queue: Literal["sales", "billing", "post-sales"]
+
 
 @router.post("/conversations/{conv_id}/queue")
 async def queue_set(conv_id: str, body: QueueBody):
     await cm.set_queue(conv_id, body.queue)
     return {"ok": True}
 
+
 class BotBody(BaseModel):
     paused: bool
+
 
 @router.post("/conversations/{conv_id}/bot")
 async def bot_toggle(conv_id: str, body: BotBody):
     await cm.set_bot_paused(conv_id, body.paused)
     return {"ok": True}
 
+
 class TagsBody(BaseModel):
     add: list[str] = Field(default_factory=list)
     remove: list[str] = Field(default_factory=list)
+
 
 @router.post("/conversations/{conv_id}/tags")
 async def tags(conv_id: str, body: TagsBody):
@@ -823,6 +888,7 @@ async def takeover(conv_id: str, body: AssignBody):
 
 # ─── Upload de adjuntos a R2 ─────────────────────────────────────────────────
 
+
 @router.post("/upload")
 async def upload_attachment(file: UploadFile = File(...)):
     """
@@ -830,6 +896,7 @@ async def upload_attachment(file: UploadFile = File(...)):
     para audio + adjuntos antes de enviarlos al canal.
     """
     from integrations import storage
+
     if not storage.is_enabled():
         raise HTTPException(503, "R2 storage no configurado en el server")
 
@@ -846,7 +913,8 @@ async def upload_attachment(file: UploadFile = File(...)):
 
     try:
         url = await storage.upload_bytes(
-            key, data,
+            key,
+            data,
             content_type=file.content_type or "application/octet-stream",
         )
     except Exception as e:
@@ -865,17 +933,20 @@ async def upload_attachment(file: UploadFile = File(...)):
 
 # ─── Enviar mensaje desde el back-office (humano) ────────────────────────────
 
+
 class Attachment(BaseModel):
     url: str
-    filename: Optional[str] = None
-    content_type: Optional[str] = None
-    size: Optional[int] = None
+    filename: str | None = None
+    content_type: str | None = None
+    size: int | None = None
+
 
 class SendMessageBody(BaseModel):
     text: str = ""
-    agent_id: Optional[str] = None
-    agent_name: Optional[str] = "Agente humano"
+    agent_id: str | None = None
+    agent_name: str | None = "Agente humano"
     attachments: list[Attachment] = Field(default_factory=list)
+
 
 @router.post("/conversations/{conv_id}/send")
 async def send_message(conv_id: str, body: SendMessageBody):
@@ -908,10 +979,7 @@ async def send_message(conv_id: str, body: SendMessageBody):
     external_id = row["external_id"]
 
     if channel not in ("widget", "whatsapp"):
-        raise HTTPException(
-            501,
-            f"Canal '{channel}' aún no soportado para envío desde la UI nueva."
-        )
+        raise HTTPException(501, f"Canal '{channel}' aún no soportado para envío desde la UI nueva.")
 
     # 2) Marcar takeover en meta
     await cm.set_bot_paused(conv_id, True)
@@ -920,11 +988,12 @@ async def send_message(conv_id: str, body: SendMessageBody):
     await cm.set_needs_human(conv_id, False)
 
     # 3) Persistir + broadcast usando el mismo flujo que el inbox legacy
+    import time as _time
+
+    from config.constants import Channel as Ch
     from memory.conversation_store import get_conversation_store
     from models.message import Message, MessageRole
-    from config.constants import Channel as Ch
     from utils.realtime import broadcast_event
-    import time as _time
 
     store = await get_conversation_store()
     ch_enum = Ch.WHATSAPP if channel == "whatsapp" else Ch.WIDGET
@@ -938,7 +1007,7 @@ async def send_message(conv_id: str, body: SendMessageBody):
         parts = []
         for a in body.attachments:
             if a.content_type and a.content_type.startswith("audio/"):
-                parts.append(f"🎤 Mensaje de voz")
+                parts.append("🎤 Mensaje de voz")
             elif a.content_type and a.content_type.startswith("image/"):
                 parts.append(f"🖼 {a.filename or 'imagen'}")
             else:
@@ -959,20 +1028,23 @@ async def send_message(conv_id: str, body: SendMessageBody):
     await store.append_message(conv, msg)
 
     # Broadcast al SSE — UI del back-office se entera al toque
-    broadcast_event({
-        "type": "new_message",
-        "session_id": external_id,
-        "role": "assistant",
-        "content": final_text,
-        "sender_name": body.agent_name or "Agente",
-        "attachments": attachments_meta,
-        "timestamp": msg.timestamp.isoformat(),
-    })
+    broadcast_event(
+        {
+            "type": "new_message",
+            "session_id": external_id,
+            "role": "assistant",
+            "content": final_text,
+            "sender_name": body.agent_name or "Agente",
+            "attachments": attachments_meta,
+            "timestamp": msg.timestamp.isoformat(),
+        }
+    )
 
     # Push real al canal del usuario
     if channel == "whatsapp":
         try:
             from integrations.whatsapp_meta import WhatsAppMetaClient
+
             wa = WhatsAppMetaClient()
             phone = (conv.context or {}).get("phone") if conv.context else None
             phone = phone or external_id
@@ -1000,9 +1072,11 @@ async def send_message(conv_id: str, body: SendMessageBody):
 
 # ─── Bulk ────────────────────────────────────────────────────────────────────
 
+
 class BulkAssignBody(BaseModel):
     ids: list[str]
-    agent_id: Optional[str] = None
+    agent_id: str | None = None
+
 
 @router.post("/bulk/assign")
 async def bulk_assign(
@@ -1012,9 +1086,11 @@ async def bulk_assign(
     n = await cm.bulk_assign(body.ids, body.agent_id)
     return {"ok": True, "updated": n}
 
+
 class BulkStatusBody(BaseModel):
     ids: list[str]
     status: Literal["open", "pending", "resolved"]
+
 
 @router.post("/bulk/status")
 async def bulk_status(
@@ -1024,11 +1100,14 @@ async def bulk_status(
     n = await cm.bulk_set_status(body.ids, body.status)
     return {"ok": True, "updated": n}
 
+
 # ─── LLM: Corrección ortográfica ─────────────────────────────────────────────
+
 
 class CorrectBody(BaseModel):
     text: str
     style: Literal["professional", "casual"] = "professional"
+
 
 @router.post("/llm/correct-spelling")
 async def correct_spelling(body: CorrectBody):
@@ -1037,6 +1116,7 @@ async def correct_spelling(body: CorrectBody):
         return {"corrected": body.text, "changed": False}
 
     from openai import AsyncOpenAI
+
     from config.settings import get_settings
 
     settings = get_settings()
@@ -1063,14 +1143,19 @@ async def correct_spelling(body: CorrectBody):
     )
 
     try:
-        resp = await client.chat.completions.create(
-            model="gpt-4o-mini",
-            temperature=0.1,
-            max_tokens=400,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": body.text},
-            ],
+        from utils.llm_retry import call_with_retry
+
+        resp = await call_with_retry(
+            lambda: client.chat.completions.create(
+                model="gpt-4o-mini",
+                temperature=0.1,
+                max_tokens=400,
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": body.text},
+                ],
+            ),
+            label="correct_spelling",
         )
         corrected = resp.choices[0].message.content.strip()
         # Limpiar comillas decorativas si el LLM las puso igual
@@ -1084,6 +1169,7 @@ async def correct_spelling(body: CorrectBody):
 
 # ─── Métricas del sistema ────────────────────────────────────────────────────
 
+
 @router.get("/metrics")
 async def get_metrics():
     """KPIs en vivo consumidos por /dashboard (tab 'En vivo').
@@ -1092,9 +1178,10 @@ async def get_metrics():
     7 días aproximado, tabla de agentes (nombre + estado en Redis), FRT
     promedio por agente, alertas de inactividad en convs con humano.
     """
-    import time as _time
     import datetime as _dt
     import json as _json
+    import time as _time
+
     from memory.conversation_store import get_conversation_store
     from utils.bot_state import bot_disabled_key as _bot_key
 
@@ -1129,20 +1216,23 @@ async def get_metrics():
     agents: list[dict] = []
     try:
         from integrations.supabase_client import list_profiles
+
         profiles = await list_profiles()
         for p in profiles:
             if p.get("role") in ("agente", "supervisor", "admin"):
                 uid = p.get("id") or p.get("email", "")
                 st = await r.get(f"agent_available:{uid}")
                 status = (st.decode() if isinstance(st, bytes) else st) if st else "offline"
-                agents.append({
-                    "name": p.get("name", ""),
-                    "email": p.get("email", ""),
-                    "role": p.get("role", "agente"),
-                    "status": status,
-                    "handled": 0,
-                    "avg_response": "< 2s",
-                })
+                agents.append(
+                    {
+                        "name": p.get("name", ""),
+                        "email": p.get("email", ""),
+                        "role": p.get("role", "agente"),
+                        "status": status,
+                        "handled": 0,
+                        "avg_response": "< 2s",
+                    }
+                )
     except Exception:
         pass
 
@@ -1164,7 +1254,11 @@ async def get_metrics():
     except Exception:
         pass
     frt_summary = [
-        {"agent": agent, "avg_seconds": round(data["sum_seconds"] / data["total"]) if data["total"] else 0, "count": data["total"]}
+        {
+            "agent": agent,
+            "avg_seconds": round(data["sum_seconds"] / data["total"]) if data["total"] else 0,
+            "count": data["total"],
+        }
         for agent, data in frt_data.items()
     ]
 
@@ -1175,7 +1269,7 @@ async def get_metrics():
         if not await r.get(_bot_key(sid)):
             continue
         label_raw = await r.get(f"conv_label:{sid}")
-        label = (label_raw.decode() if isinstance(label_raw, bytes) else (label_raw or ""))
+        label = label_raw.decode() if isinstance(label_raw, bytes) else (label_raw or "")
         last = await r.get(f"last_reply:{sid}")
         if not last:
             continue
@@ -1186,13 +1280,15 @@ async def get_metrics():
         threshold = 300 if label == "caliente" else 900  # 5' hot / 15' resto
         if elapsed > threshold:
             name_raw = await r.get(f"conv_assigned_name:{sid}")
-            name = (name_raw.decode() if isinstance(name_raw, bytes) else (name_raw or ""))
-            inactive_alerts.append({
-                "session_id": sid,
-                "agent": name,
-                "minutes_inactive": round(elapsed / 60),
-                "label": label,
-            })
+            name = name_raw.decode() if isinstance(name_raw, bytes) else (name_raw or "")
+            inactive_alerts.append(
+                {
+                    "session_id": sid,
+                    "agent": name,
+                    "minutes_inactive": round(elapsed / 60),
+                    "label": label,
+                }
+            )
 
     return {
         "today_total": today_total,
@@ -1213,15 +1309,31 @@ async def get_metrics():
 
 
 _COUNTRY_MAP = {
-    "Argentina": "AR", "México": "MX", "Mexico": "MX", "Chile": "CL",
-    "Colombia": "CO", "Perú": "PE", "Peru": "PE", "Uruguay": "UY",
-    "Ecuador": "EC", "España": "ES", "Espana": "ES", "Bolivia": "BO",
-    "Paraguay": "PY", "Venezuela": "VE", "Costa Rica": "CR",
-    "Guatemala": "GT", "Honduras": "HN", "Nicaragua": "NI",
-    "Panamá": "PA", "Panama": "PA", "El Salvador": "SV",
+    "Argentina": "AR",
+    "México": "MX",
+    "Mexico": "MX",
+    "Chile": "CL",
+    "Colombia": "CO",
+    "Perú": "PE",
+    "Peru": "PE",
+    "Uruguay": "UY",
+    "Ecuador": "EC",
+    "España": "ES",
+    "Espana": "ES",
+    "Bolivia": "BO",
+    "Paraguay": "PY",
+    "Venezuela": "VE",
+    "Costa Rica": "CR",
+    "Guatemala": "GT",
+    "Honduras": "HN",
+    "Nicaragua": "NI",
+    "Panamá": "PA",
+    "Panama": "PA",
+    "El Salvador": "SV",
 }
 
-def _country_iso(country: Optional[str]) -> str:
+
+def _country_iso(country: str | None) -> str:
     if not country:
         return "AR"
     return _COUNTRY_MAP.get(country, "AR")
@@ -1235,13 +1347,14 @@ _COLEGIO_MAP = {
     "Colegio de Médicos de Santa Fe 1ra": "CMSF1",
 }
 
-def _colegio_code(colegio: Optional[str]) -> Optional[str]:
+
+def _colegio_code(colegio: str | None) -> str | None:
     if not colegio:
         return None
     return _COLEGIO_MAP.get(colegio)
 
 
-def _derive_cobranzas(profile: dict) -> Optional[dict]:
+def _derive_cobranzas(profile: dict) -> dict | None:
     """
     Deriva info de cobranzas desde el Zoho contact.
     Por ahora simplificado: solo si tiene cursadas con Estado_de_OV.
@@ -1258,20 +1371,20 @@ def _derive_cobranzas(profile: dict) -> Optional[dict]:
     return {
         "status": "ok",
         "currency": "ARS",
-        "overdueAmount":      0,
-        "totalDueAmount":     0,
-        "contractAmount":     0,
-        "installmentValue":   0,
-        "lastPaymentAmount":  0,
-        "totalInstallments":  len(activas),
-        "paidInstallments":   0,
+        "overdueAmount": 0,
+        "totalDueAmount": 0,
+        "contractAmount": 0,
+        "installmentValue": 0,
+        "lastPaymentAmount": 0,
+        "totalInstallments": len(activas),
+        "paidInstallments": 0,
         "overdueInstallments": 0,
         "pendingInstallments": len(activas),
-        "daysOverdue":     0,
-        "contractStatus":  "Activo",
-        "paymentMethod":   "Configurar en Zoho",
-        "nextDue":         None,
-        "paymentLink":     None,
+        "daysOverdue": 0,
+        "contractStatus": "Activo",
+        "paymentMethod": "Configurar en Zoho",
+        "nextDue": None,
+        "paymentLink": None,
         # Nota: completar cuando integremos sales_orders Zoho
         "_pending_integration": True,
     }

@@ -1,4 +1,5 @@
 from functools import lru_cache
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -27,21 +28,21 @@ class Settings(BaseSettings):
     botmaker_client_id: str = ""
     botmaker_secret_id: str = ""
     botmaker_refresh_token: str = ""
-    botmaker_api_key: str = ""          # access-token estático (fallback / dev)
+    botmaker_api_key: str = ""  # access-token estático (fallback / dev)
     botmaker_base_url: str = "https://go.botmaker.com/api/v1.0"
     botmaker_webhook_secret: str = ""
 
     # WhatsApp Meta Cloud API (directo, sin Botmaker)
-    whatsapp_token: str = ""                  # Token de acceso permanente
-    whatsapp_phone_number_id: str = ""        # ID del número en Meta
-    whatsapp_waba_id: str = ""                # WhatsApp Business Account ID (para listar templates)
+    whatsapp_token: str = ""  # Token de acceso permanente
+    whatsapp_phone_number_id: str = ""  # ID del número en Meta
+    whatsapp_waba_id: str = ""  # WhatsApp Business Account ID (para listar templates)
     whatsapp_verify_token: str = ""  # Token de verificación del webhook — must be set explicitly
-    whatsapp_app_secret: str = ""             # App Secret para verificar firmas
-    whatsapp_app_id: str = ""                 # App ID de Meta (para Resumable Upload API)
+    whatsapp_app_secret: str = ""  # App Secret para verificar firmas
+    whatsapp_app_id: str = ""  # App ID de Meta (para Resumable Upload API)
 
     # Twilio WhatsApp Sandbox / API
-    twilio_account_sid: str = ""              # ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-    twilio_auth_token: str = ""               # Token de autenticación
+    twilio_account_sid: str = ""  # ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+    twilio_auth_token: str = ""  # Token de autenticación
     twilio_whatsapp_from: str = "whatsapp:+14155238886"  # Sandbox number
 
     # MercadoPago
@@ -54,10 +55,10 @@ class Settings(BaseSettings):
     rebill_base_url: str = "https://api.rebill.to/v2"
 
     # Business hours
-    business_hours_start: int = 9       # 9:00 AM
-    business_hours_end: int = 18        # 6:00 PM
+    business_hours_start: int = 9  # 9:00 AM
+    business_hours_end: int = 18  # 6:00 PM
     business_timezone: str = "America/Argentina/Buenos_Aires"
-    business_days: str = "0,1,2,3,4"    # Mon-Fri (0=Monday)
+    business_days: str = "0,1,2,3,4"  # Mon-Fri (0=Monday)
     off_hours_message: str = "Gracias por escribirnos. Nuestro horario de atención es de Lunes a Viernes de 9:00 a 18:00 hs (Argentina). Te responderemos a la brevedad."
 
     # App
@@ -71,15 +72,15 @@ class Settings(BaseSettings):
     sentry_traces_sample_rate: float = 0.1  # 10% of requests traced
 
     # Cloudflare R2 (object storage, S3-compatible) — empty disables, falls back to filesystem
-    r2_endpoint: str = ""           # https://<ACCOUNT_ID>.r2.cloudflarestorage.com
+    r2_endpoint: str = ""  # https://<ACCOUNT_ID>.r2.cloudflarestorage.com
     r2_access_key_id: str = ""
     r2_secret_access_key: str = ""
-    r2_bucket: str = ""             # msk-multiagente-media
-    r2_public_url: str = ""         # https://pub-XXXX.r2.dev
+    r2_bucket: str = ""  # msk-multiagente-media
+    r2_public_url: str = ""  # https://pub-XXXX.r2.dev
 
     # Supabase Auth (login de la consola)
     supabase_url: str = ""
-    supabase_secret_key: str = ""          # service_role key
+    supabase_secret_key: str = ""  # service_role key
 
     # Notifications
     slack_webhook_url: str = ""

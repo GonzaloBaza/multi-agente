@@ -20,31 +20,30 @@ Voces disponibles:
 Output formats: mp3, opus, aac, flac, wav
 Para WhatsApp voice notes usamos OGG (convertido desde mp3 con ffmpeg cuando haga falta).
 """
-from __future__ import annotations
 
-import asyncio
-from typing import Optional
+from __future__ import annotations
 
 import structlog
 
 logger = structlog.get_logger(__name__)
 
-DEFAULT_VOICE = "alloy"      # la más neutra en español, mejor default
-DEFAULT_MODEL = "tts-1"      # balance calidad/costo
+DEFAULT_VOICE = "alloy"  # la más neutra en español, mejor default
+DEFAULT_MODEL = "tts-1"  # balance calidad/costo
 
 # Voces con mejor performance en español (de mejor a peor, subjetivo)
 VOICES_ES = [
-    {"id": "alloy",   "label": "Alloy",   "desc": "Neutra, la más limpia en español"},
+    {"id": "alloy", "label": "Alloy", "desc": "Neutra, la más limpia en español"},
     {"id": "shimmer", "label": "Shimmer", "desc": "Femenina cálida"},
-    {"id": "nova",    "label": "Nova",    "desc": "Femenina natural"},
-    {"id": "onyx",    "label": "Onyx",    "desc": "Masculina grave"},
-    {"id": "echo",    "label": "Echo",    "desc": "Masculina suave"},
-    {"id": "fable",   "label": "Fable",   "desc": "Acento británico (evitá español)"},
+    {"id": "nova", "label": "Nova", "desc": "Femenina natural"},
+    {"id": "onyx", "label": "Onyx", "desc": "Masculina grave"},
+    {"id": "echo", "label": "Echo", "desc": "Masculina suave"},
+    {"id": "fable", "label": "Fable", "desc": "Acento británico (evitá español)"},
 ]
 
 
 def is_enabled() -> bool:
     from config.settings import get_settings
+
     return bool(get_settings().openai_api_key)
 
 
@@ -53,13 +52,15 @@ async def synthesize_to_bytes(
     voice: str = DEFAULT_VOICE,
     model: str = DEFAULT_MODEL,
     output_format: str = "mp3",
-) -> Optional[bytes]:
+) -> bytes | None:
     """Genera bytes de audio desde texto. Retorna None si falla."""
     if not text or not text.strip():
         return None
 
     from openai import AsyncOpenAI
+
     from config.settings import get_settings
+
     settings = get_settings()
     client = AsyncOpenAI(api_key=settings.openai_api_key)
 
@@ -86,16 +87,26 @@ async def synthesize_to_r2(
     voice: str = DEFAULT_VOICE,
     model: str = DEFAULT_MODEL,
     output_format: str = "mp3",
-) -> Optional[dict]:
+) -> dict | None:
     """Genera audio y lo sube a R2. Retorna {url, filename, mime, size} o None."""
     import uuid as uuid_mod
+
     audio = await synthesize_to_bytes(text, voice=voice, model=model, output_format=output_format)
     if not audio:
         return None
 
     from integrations import storage
-    ext = {"mp3": ".mp3", "opus": ".ogg", "aac": ".aac", "flac": ".flac", "wav": ".wav"}.get(output_format, ".mp3")
-    mime = {"mp3": "audio/mpeg", "opus": "audio/ogg", "aac": "audio/aac", "flac": "audio/flac", "wav": "audio/wav"}.get(output_format, "audio/mpeg")
+
+    ext = {"mp3": ".mp3", "opus": ".ogg", "aac": ".aac", "flac": ".flac", "wav": ".wav"}.get(
+        output_format, ".mp3"
+    )
+    mime = {
+        "mp3": "audio/mpeg",
+        "opus": "audio/ogg",
+        "aac": "audio/aac",
+        "flac": "audio/flac",
+        "wav": "audio/wav",
+    }.get(output_format, "audio/mpeg")
     filename = f"tts_{uuid_mod.uuid4().hex[:12]}{ext}"
     key = f"tts/{filename}"
 
@@ -103,6 +114,7 @@ async def synthesize_to_r2(
         url = await storage.upload_bytes(key, audio, mime)
     else:
         from pathlib import Path
+
         media_dir = Path(__file__).parent.parent / "media" / "tts"
         media_dir.mkdir(parents=True, exist_ok=True)
         (media_dir / filename).write_bytes(audio)

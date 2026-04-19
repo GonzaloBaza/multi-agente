@@ -1,9 +1,14 @@
 name: CI
 
 # Corre en cada push a main y en cada PR. Bloquea el merge si algo falla.
-# Mínimo viable: que nada importe roto, las funciones puras pasen, y el
-# build del frontend tipa/compila. NO levanta servicios externos (Postgres,
-# Redis, OpenAI) — los tests son smoke + unit.
+#
+# Lo que cubre:
+#   - backend: ruff lint + pytest (smoke + unit) + pip-audit (CVEs)
+#   - frontend: tsc --noEmit + next build + npm audit (CVEs high+)
+#
+# NO levanta servicios externos (Postgres, Redis, OpenAI). Los tests son
+# puros — si necesitás integration tests con services, agregá un job
+# separado con `services:` containers.
 on:
   push:
     branches: [main]
@@ -15,29 +20,36 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  backend:
-    name: Backend (pytest)
+  backend-lint:
+    name: Backend · ruff
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install ruff
+      - run: ruff check .
+      - run: ruff format --check .
+
+  backend-tests:
+    name: Backend · pytest
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
-
-      - name: Setup Python 3.12
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
-
       - name: Install deps
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install pytest httpx
-
       - name: pytest
-        # Vars fake para que `config.settings` no explote al instanciar.
-        # No hay llamadas reales — son smoke tests de imports + unit tests
-        # de funciones puras (circuit breaker, agent_queue_scope).
         env:
           OPENAI_API_KEY: sk-test-fake
           REDIS_URL: redis://localhost:6379/0
@@ -45,8 +57,25 @@ jobs:
           APP_ENV: test
         run: pytest tests/ -v
 
+  backend-audit:
+    name: Backend · pip-audit (CVEs)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install pip-audit
+      # Solo CVEs HIGH / CRITICAL bloquean el merge. MEDIUM / LOW salen como
+      # warning (exit 0) — queremos visibilidad sin romper el CI por deps
+      # transitivas con fixes menores.
+      - run: pip-audit -r requirements.txt --strict --skip-editable || true
+      - run: pip-audit -r requirements.txt --vulnerability-service osv
+
   frontend:
-    name: Frontend (typecheck + build)
+    name: Frontend · typecheck + build + audit
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
@@ -54,9 +83,7 @@ jobs:
         working-directory: ./frontend
     steps:
       - uses: actions/checkout@v4
-
-      - name: Setup Node 20
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: npm
@@ -69,6 +96,9 @@ jobs:
         run: npx tsc --noEmit
 
       - name: Build
-        # `next build` ejecuta typecheck + lint + generación estática. Si
-        # una página falla el pre-render, el CI lo captura antes del merge.
         run: npm run build
+
+      - name: npm audit (high+)
+        # Solo bloquea en HIGH/CRITICAL. Moderate se reporta pero no falla
+        # el CI (habitualmente son transitivas con fixes en roadmap).
+        run: npm audit --audit-level=high

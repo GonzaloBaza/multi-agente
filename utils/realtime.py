@@ -12,10 +12,12 @@ Antes vivía en `api/inbox.py` junto con los endpoints HTTP legacy. Se
 extrajo cuando borramos ese router para no seguir acarreando un archivo
 de 1700 líneas dead-mixed-with-alive.
 """
+
 from __future__ import annotations
 
 import asyncio
 import json
+
 import structlog
 
 logger = structlog.get_logger(__name__)
@@ -57,6 +59,7 @@ async def _redis_publish(event: dict) -> None:
     """Publica al canal Redis. El listener de cada worker hace fan-out local."""
     try:
         from memory.conversation_store import get_conversation_store
+
         store = await get_conversation_store()
         await store._redis.publish(_PUBSUB_CHANNEL, json.dumps(event))
     except Exception as e:
@@ -71,6 +74,7 @@ async def start_pubsub_listener() -> None:
     publicados desde el mismo worker (degradado pero funcional).
     """
     import redis.asyncio as aioredis
+
     from config.settings import get_settings
 
     try:

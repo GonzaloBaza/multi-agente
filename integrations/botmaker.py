@@ -8,13 +8,16 @@ Autenticación OAuth2:
 
 El access-token se renueva automáticamente cuando expira.
 """
+
 import asyncio
-import time
-import hmac
 import hashlib
+import hmac
+import time
+
 import httpx
-from config.settings import get_settings
 import structlog
+
+from config.settings import get_settings
 
 logger = structlog.get_logger(__name__)
 

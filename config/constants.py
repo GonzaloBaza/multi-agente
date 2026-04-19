@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class AgentType(str, Enum):
+class AgentType(StrEnum):
     SALES = "ventas"
     COLLECTIONS = "cobranzas"
     POST_SALES = "post_venta"
@@ -9,7 +9,7 @@ class AgentType(str, Enum):
     HUMAN = "humano"
 
 
-class Country(str, Enum):
+class Country(StrEnum):
     ARGENTINA = "AR"
     MEXICO = "MX"
     COLOMBIA = "CO"
@@ -52,18 +52,19 @@ HANDOFF_KEYWORDS = [
     "asesor",
 ]
 
-class Channel(str, Enum):
+
+class Channel(StrEnum):
     WHATSAPP = "whatsapp"
     WIDGET = "widget"
 
 
-class ConversationStatus(str, Enum):
+class ConversationStatus(StrEnum):
     ACTIVE = "active"
     HANDED_OFF = "handed_off"
     CLOSED = "closed"
 
 
-class PaymentStatus(str, Enum):
+class PaymentStatus(StrEnum):
     PENDING = "pending"
     APPROVED = "approved"
     REJECTED = "rejected"

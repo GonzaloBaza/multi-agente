@@ -1,0 +1,36 @@
+# Pre-commit hooks — corren antes de `git commit` en local.
+# Instalar una vez: `pip install pre-commit && pre-commit install`
+# Después cada commit dispara ruff + eslint + verificación básica de secrets.
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.6
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+        args: [--unsafe]   # permite `!Ref`, `!Sub` de AWS/CloudFormation si aplicara
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=512]
+      - id: detect-private-key
+      - id: mixed-line-ending
+        args: [--fix=lf]
+
+  - repo: https://github.com/pre-commit/mirrors-eslint
+    rev: v9.17.0
+    hooks:
+      - id: eslint
+        files: ^frontend/.*\.(ts|tsx)$
+        additional_dependencies:
+          - eslint@9.17.0
+          - eslint-config-next@15.5.15
+          - typescript@5.7.2

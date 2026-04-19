@@ -8,11 +8,12 @@ Corre tareas autónomas del sistema:
 
 Los jobs persisten en Redis (no se pierden en restart del container).
 """
+
 from __future__ import annotations
 
 import structlog
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.jobstores.redis import RedisJobStore
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
@@ -29,6 +30,7 @@ def _build_jobstore() -> dict:
     # APScheduler Redis jobstore accepts host/port/password/db separately.
     # Parseamos la REDIS_URL (redis://:pass@host:port/db)
     from urllib.parse import urlparse
+
     url = urlparse(settings.redis_url)
     return {
         "default": RedisJobStore(
@@ -59,7 +61,7 @@ async def start_scheduler() -> None:
         return
 
     # Registrar jobs (replace_existing=True para que cada deploy actualice la config)
-    from utils.autonomous_tasks import run_retargeting_cycle, run_auto_retry_cycle
+    from utils.autonomous_tasks import run_auto_retry_cycle, run_retargeting_cycle
 
     s.add_job(
         run_retargeting_cycle,
@@ -99,8 +101,9 @@ async def start_scheduler() -> None:
 
 async def _run_courses_sync() -> None:
     """Wrapper para APScheduler: sincroniza todos los países habilitados."""
-    from integrations import msk_courses
     from api.admin_courses import ENABLED_COUNTRIES
+    from integrations import msk_courses
+
     for c in ENABLED_COUNTRIES:
         try:
             await msk_courses.sync_country(c, prune=True)

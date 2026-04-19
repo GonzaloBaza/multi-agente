@@ -8,11 +8,14 @@ La UI para editarlos vive en el frontend Next.js (/prompts). La ruta vieja
 `GET /admin/prompts` que servía `widget/admin_prompts.html` se eliminó con
 la migración — bookmarks viejos se redirigen en main.py (redirect_prompts_ui).
 """
+
 from pathlib import Path
-from fastapi import APIRouter, HTTPException, Depends
-from pydantic import BaseModel
-from api.auth import require_role
+
 import structlog
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+
+from api.auth import require_role
 
 logger = structlog.get_logger(__name__)
 

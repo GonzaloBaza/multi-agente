@@ -9,14 +9,13 @@ Herramientas del agente de ventas:
 Nota: el catálogo compacto (título + categoría + precio de todos los cursos)
 se inyecta directo en el system prompt — el agente NO necesita buscar.
 """
+
+import structlog
 from langchain_core.tools import tool
-from integrations.payments.mercadopago import MercadoPagoClient
+
 from integrations.payments.rebill import RebillClient
 from integrations.zoho.leads import ZohoLeads
-from integrations.zoho.contacts import ZohoContacts
 from integrations.zoho.sales_orders import ZohoSalesOrders
-from config.settings import get_settings
-import structlog
 
 logger = structlog.get_logger(__name__)
 
@@ -33,6 +32,7 @@ async def get_course_brief(slug: str, country: str = "AR") -> str:
         country: Código de país del usuario (AR, MX, CO, PE, CL, UY, etc.)
     """
     from integrations import courses_cache
+
     course = await courses_cache.get_course(country.lower(), slug)
     if not course:
         return f"No encontré el curso '{slug}' para {country}. Verificá el slug en el catálogo."
@@ -76,6 +76,7 @@ async def get_course_deep(slug: str, country: str = "AR", section: str = "summar
             - 'summary' → resumen corto (default)
     """
     from integrations import courses_cache
+
     course = await courses_cache.get_course_deep(country, slug)
     if not course:
         return f"No encontré el curso '{slug}' para el país {country}. Verificá el slug y el país."
@@ -108,31 +109,34 @@ async def get_course_deep(slug: str, country: str = "AR", section: str = "summar
         team = sections.get("teaching_team") or []
         return _dump_list(
             team,
-            lambda t: f"- {t.get('name', '')}"
-                      + (f" ({t.get('description', '')})" if t.get('description') else "")
-                      + (f" — {t.get('specialty', '')}" if t.get('specialty') else "")
+            lambda t: (
+                f"- {t.get('name', '')}"
+                + (f" ({t.get('description', '')})" if t.get("description") else "")
+                + (f" — {t.get('specialty', '')}" if t.get("specialty") else "")
+            ),
         )
 
     if section == "institutions":
         insts = sections.get("institutions") or []
         return _dump_list(
-            insts,
-            lambda i: f"- **{i.get('title', '')}** — {html_to_text(i.get('description', ''))}"
+            insts, lambda i: f"- **{i.get('title', '')}** — {html_to_text(i.get('description', ''))}"
         )
 
     if section == "certificacion_relacionada":
         certs = raw.get("certificacion_relacionada") or []
         import html as _html
+
         return _dump_list(
             certs,
-            lambda c: f"- {_html.unescape(c.get('title', ''))}"
-                      + (f" ({c.get('currency', '')} {c.get('total_price', '')})" if c.get('total_price') else "")
+            lambda c: (
+                f"- {_html.unescape(c.get('title', ''))}"
+                + (f" ({c.get('currency', '')} {c.get('total_price', '')})" if c.get("total_price") else "")
+            ),
         )
 
     if section == "learning":
         return _dump_list(
-            sections.get("learning") or [],
-            lambda l: f"- {html_to_text(l.get('msk_learning_content', ''))}"
+            sections.get("learning") or [], lambda l: f"- {html_to_text(l.get('msk_learning_content', ''))}"
         )
 
     if section == "habilities":
@@ -142,8 +146,7 @@ async def get_course_deep(slug: str, country: str = "AR", section: str = "summar
 
     if section == "formacion_dirigida":
         return _dump_list(
-            sections.get("formacion_dirigida") or [],
-            lambda d: f"- {html_to_text(d.get('step', ''))}"
+            sections.get("formacion_dirigida") or [], lambda d: f"- {html_to_text(d.get('step', ''))}"
         )
 
     if section == "perfiles_dirigidos":
@@ -268,10 +271,13 @@ async def create_or_update_lead(
     }
 
     if existing:
-        await leads.update(existing["id"], {
-            "Curso_de_Interes": course_name,
-            "Notas_Bot": notes,
-        })
+        await leads.update(
+            existing["id"],
+            {
+                "Curso_de_Interes": course_name,
+                "Notas_Bot": notes,
+            },
+        )
         return f"Lead actualizado en Zoho. ID: {existing['id']}"
     else:
         result = await leads.create(data)
@@ -304,14 +310,16 @@ async def create_sales_order(
         notes: Notas adicionales
     """
     orders = ZohoSalesOrders()
-    result = await orders.create({
-        "contact_id": contact_id,
-        "curso_nombre": course_name,
-        "precio": price,
-        "moneda": currency,
-        "payment_link": payment_link,
-        "payment_provider": payment_provider,
-        "pais": country,
-        "notas": notes,
-    })
+    result = await orders.create(
+        {
+            "contact_id": contact_id,
+            "curso_nombre": course_name,
+            "precio": price,
+            "moneda": currency,
+            "payment_link": payment_link,
+            "payment_provider": payment_provider,
+            "pais": country,
+            "notas": notes,
+        }
+    )
     return f"Orden de venta creada en Zoho. ID: {result['id']}"

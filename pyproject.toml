@@ -1,0 +1,44 @@
+# Config centralizada de herramientas Python (ruff, mypy, pytest, etc).
+# El repo no es un paquete pip — solo se usa como hub de config para las
+# herramientas de dev.
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+# Excluimos cosas que no son nuestras o que no queremos tocar en lint.
+extend-exclude = [
+    "migrations/",
+    "scripts/backfill_*.py",
+    ".venv/",
+    "frontend/",
+]
+
+[tool.ruff.lint]
+# Reglas activadas — conservador para no romper el árbol existente.
+# El objetivo es atrapar BUGS (imports no definidos, variables sin usar,
+# patrones peligrosos), no pelear con el estilo histórico del código.
+#   E, W    pycodestyle básicos
+#   F       pyflakes (imports sin usar, undef names) — bugs reales
+#   I       isort (orden de imports)
+#   B       bugbear (patrones peligrosos)
+#   UP      pyupgrade (sintaxis vieja)
+select = ["E", "W", "F", "I", "B", "UP"]
+ignore = [
+    "E501",  # line too long — no vamos a reformatear 150+ files.
+    "B008",  # function call in default arg — FastAPI Depends() lo usa mucho.
+    "B904",  # raise from None en except — no es bug real, cuestión de estilo.
+    "E402",  # imports no top-level — usamos lazy imports por decisión
+             # (evitar circulares, permitir imports fallables con try/except).
+    "E701",  # multiple statements on one line (if x: y) — compacto y claro.
+    "E702",  # multiple statements on one line (a; b) — igual.
+    "E741",  # ambiguous variable names (l, I, O) — en loops de K/V es claro.
+    "UP007", # `Optional[X]` vs `X | None` — pydantic v2 prefiere Optional.
+    "UP042", # str-enum — los enums actuales son compat con Pydantic v2.
+    "F541",  # f-string sin placeholder — intencional en algunos docstrings.
+    "F841",  # unused variable — válido en unpacking de tuples.
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E402"]  # imports después de path manipulation
+
+# pytest config vive en pytest.ini (histórico) — no duplicar acá.

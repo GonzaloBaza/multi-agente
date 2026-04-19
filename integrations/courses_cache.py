@@ -12,10 +12,10 @@ Invalidación: sync_country borra todas las keys del país (scan + del).
 NOTA: guardamos un subset compacto (sin raw JSONB) para keep Redis pequeño.
 El raw se lee on-demand desde PG via `get_course_deep()`.
 """
+
 from __future__ import annotations
 
 import json
-from typing import Any, Optional
 
 import structlog
 
@@ -62,7 +62,7 @@ def _compact(row: dict) -> dict:
     return d
 
 
-async def get_course(country: str, slug: str) -> Optional[dict]:
+async def get_course(country: str, slug: str) -> dict | None:
     """Lookup caliente: Redis → Postgres → None. Hidrata Redis en miss."""
     country = country.lower()
     try:
@@ -94,7 +94,7 @@ async def get_course(country: str, slug: str) -> Optional[dict]:
     return compact
 
 
-async def get_course_deep(country: str, slug: str) -> Optional[dict]:
+async def get_course_deep(country: str, slug: str) -> dict | None:
     """Lectura profunda (incluye raw JSONB) — siempre desde Postgres."""
     return await postgres_store.get_course(country.lower(), slug)
 

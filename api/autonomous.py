@@ -6,13 +6,13 @@ GET  /admin/autonomous/recent      — últimas acciones del retargeting (qué s
 POST /admin/autonomous/run-now     — fuerza un ciclo de retargeting manualmente
 POST /admin/autonomous/retry-now   — fuerza el ciclo de auto-retry ahora
 """
+
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import json
 
-from fastapi import APIRouter, Depends, HTTPException
 import structlog
+from fastapi import APIRouter, Depends
 
 from api.auth import require_role
 from memory.conversation_store import get_conversation_store
@@ -26,6 +26,7 @@ async def status(user: dict = Depends(require_role("admin", "supervisor"))):
     """Estado actual del scheduler + última run del retargeting."""
     try:
         from utils.scheduler import get_scheduler
+
         s = get_scheduler()
         jobs = [
             {
@@ -43,10 +44,16 @@ async def status(user: dict = Depends(require_role("admin", "supervisor"))):
     store = await get_conversation_store()
     r = store._redis
     stats_raw = await r.get("retargeting:stats")
-    stats = json.loads(stats_raw.decode() if isinstance(stats_raw, bytes) else stats_raw) if stats_raw else None
+    stats = (
+        json.loads(stats_raw.decode() if isinstance(stats_raw, bytes) else stats_raw) if stats_raw else None
+    )
 
     cfg_raw = await r.get("retargeting:config")
-    cfg = json.loads(cfg_raw.decode() if isinstance(cfg_raw, bytes) else cfg_raw) if cfg_raw else {"enabled": True}
+    cfg = (
+        json.loads(cfg_raw.decode() if isinstance(cfg_raw, bytes) else cfg_raw)
+        if cfg_raw
+        else {"enabled": True}
+    )
 
     return {
         "scheduler_running": running,
@@ -70,12 +77,14 @@ async def recent_actions(user: dict = Depends(require_role("admin", "supervisor"
         # formato: retarget_sent:{phone}:day{N}
         phone = parts[1] if len(parts) > 2 else ""
         day = parts[2] if len(parts) > 2 else ""
-        results.append({
-            "phone": phone,
-            "day": day,
-            "action": (value.decode() if isinstance(value, bytes) else value) or "",
-            "ttl_seconds": ttl,
-        })
+        results.append(
+            {
+                "phone": phone,
+                "day": day,
+                "action": (value.decode() if isinstance(value, bytes) else value) or "",
+                "ttl_seconds": ttl,
+            }
+        )
     results.sort(key=lambda x: x["ttl_seconds"] or 0, reverse=True)
     return {"recent": results[:200]}
 
@@ -83,8 +92,10 @@ async def recent_actions(user: dict = Depends(require_role("admin", "supervisor"
 @router.post("/run-now")
 async def run_now(user: dict = Depends(require_role("admin", "supervisor"))):
     """Dispara un ciclo de retargeting manualmente."""
-    from utils.autonomous_tasks import run_retargeting_cycle
     import asyncio
+
+    from utils.autonomous_tasks import run_retargeting_cycle
+
     asyncio.create_task(run_retargeting_cycle())
     return {"ok": True, "message": "Ciclo de retargeting disparado"}
 
@@ -92,8 +103,10 @@ async def run_now(user: dict = Depends(require_role("admin", "supervisor"))):
 @router.post("/retry-now")
 async def retry_now(user: dict = Depends(require_role("admin", "supervisor"))):
     """Dispara el ciclo de auto-retry de descartados manualmente."""
-    from utils.autonomous_tasks import run_auto_retry_cycle
     import asyncio
+
+    from utils.autonomous_tasks import run_auto_retry_cycle
+
     asyncio.create_task(run_auto_retry_cycle())
     return {"ok": True, "message": "Ciclo de auto-retry disparado"}
 

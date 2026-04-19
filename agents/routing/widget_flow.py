@@ -10,9 +10,10 @@ Estados por sesión (Redis):
   "pending_email:<agente>"  → esperando que el usuario ingrese su email
   "done"           → menú terminado, routing normal de acá en adelante
 """
+
 import re
+
 import structlog
-from typing import Optional
 
 logger = structlog.get_logger(__name__)
 
@@ -27,18 +28,19 @@ S_EMAIL = "pending_email"
 S_DONE = "done"
 
 # ── Botones ──────────────────────────────────────────────────────────────────
-MAIN_BUTTONS    = ["Explorar cursos 📖", "Asistencia 📩 💻"]
+MAIN_BUTTONS = ["Explorar cursos 📖", "Asistencia 📩 💻"]
 ASESORIA_BUTTONS = ["Soporte Alumnos 🛠️", "Soporte Cobros 🤝"]
 
 _EMAIL_RE = re.compile(r"[a-zA-Z0-9_.+%-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
 
 # ── Helpers Redis ─────────────────────────────────────────────────────────────
 
+
 def _k(session_id: str) -> str:
     return _KEY.format(sid=session_id)
 
 
-async def _get(redis, session_id: str) -> Optional[str]:
+async def _get(redis, session_id: str) -> str | None:
     raw = await redis.get(_k(session_id))
     if raw is None:
         return None
@@ -51,6 +53,7 @@ async def _set(redis, session_id: str, state: str) -> None:
 
 # ── Utilidades de texto ───────────────────────────────────────────────────────
 
+
 def _alpha(text: str) -> str:
     """Lowercase, solo letras y espacios (sin emojis ni puntuación)."""
     return " ".join(
@@ -60,7 +63,7 @@ def _alpha(text: str) -> str:
     )
 
 
-def _match(user_text: str, buttons: list[str]) -> Optional[str]:
+def _match(user_text: str, buttons: list[str]) -> str | None:
     """
     Compara el texto del usuario con la lista de botones.
     Devuelve el botón que coincide o None.
@@ -86,6 +89,7 @@ def fmt_buttons(text: str, buttons: list[str]) -> str:
 
 # ── API pública ───────────────────────────────────────────────────────────────
 
+
 async def init_state(redis, session_id: str) -> None:
     """
     Llamar cuando llega __widget_init__.
@@ -100,7 +104,7 @@ async def process_step(
     session_id: str,
     user_message: str,
     user_email: str = "",
-) -> Optional[dict]:
+) -> dict | None:
     """
     Avanza la máquina de estados del menú del widget.
 
@@ -150,7 +154,9 @@ async def process_step(
     if state == S_ASESORIA:
         match = _match(user_message, ASESORIA_BUTTONS)
 
-        if match and ("alumno" in _alpha(match) or "soporte" in _alpha(match) and "cobro" not in _alpha(match)):
+        if match and (
+            "alumno" in _alpha(match) or "soporte" in _alpha(match) and "cobro" not in _alpha(match)
+        ):
             next_agent = "post_venta"
         elif match and ("cobro" in _alpha(match) or "cobranza" in _alpha(match) or "pago" in _alpha(match)):
             next_agent = "cobranzas"
@@ -193,8 +199,7 @@ async def process_step(
         # Email inválido → re-preguntar
         return {
             "response": (
-                "No reconocí un correo válido. "
-                "¿Podés escribirlo nuevamente? (ejemplo: nombre@gmail.com) 📧"
+                "No reconocí un correo válido. ¿Podés escribirlo nuevamente? (ejemplo: nombre@gmail.com) 📧"
             ),
             "needs_routing": False,
         }

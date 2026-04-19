@@ -7,21 +7,22 @@ ANTES había también un cron loop (`_cron_loop`, `start_inbox_jobs`) que
 despertaba conversaciones snoozeadas vencidas. Se removió junto con la
 feature de snooze. Ya no hay nada que arrancar al startup desde acá.
 """
+
 from __future__ import annotations
 
 import json
-from typing import Optional
 
 import httpx
 import structlog
 
-from memory.postgres_store import get_pool
 from config.settings import get_settings
+from memory.postgres_store import get_pool
 
 logger = structlog.get_logger(__name__)
 
 
 # ─── Notifs Slack ────────────────────────────────────────────────────────────
+
 
 async def slack_notify(text: str, blocks: list | None = None) -> None:
     """Manda mensaje al webhook Slack del workspace (si está configurado)."""
@@ -47,11 +48,13 @@ async def notify_human_request(conv_id: str, contact_name: str, last_msg: str) -
         {"type": "section", "text": {"type": "mrkdwn", "text": f">{last_msg[:200]}"}},
         {
             "type": "actions",
-            "elements": [{
-                "type": "button",
-                "text": {"type": "plain_text", "text": "Abrir conversación"},
-                "url": f"https://agentes.msklatam.com/inbox?conv={conv_id}",
-            }],
+            "elements": [
+                {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "Abrir conversación"},
+                    "url": f"https://agentes.msklatam.com/inbox?conv={conv_id}",
+                }
+            ],
         },
     ]
     await slack_notify(text, blocks)
@@ -59,11 +62,12 @@ async def notify_human_request(conv_id: str, contact_name: str, last_msg: str) -
 
 # ─── Audit log ───────────────────────────────────────────────────────────────
 
+
 async def log_action(
     actor_id: str,
     action: str,
-    conversation_id: Optional[str] = None,
-    detail: Optional[dict] = None,
+    conversation_id: str | None = None,
+    detail: dict | None = None,
 ) -> None:
     """Persiste una acción humana al audit log."""
     pool = await get_pool()
@@ -75,7 +79,9 @@ async def log_action(
                   (actor_id, action, conversation_id, detail, created_at)
                 values ($1, $2, $3, $4::jsonb, now())
                 """,
-                actor_id, action, conversation_id,
+                actor_id,
+                action,
+                conversation_id,
                 json.dumps(detail or {}),
             )
         except Exception as e:
@@ -84,8 +90,8 @@ async def log_action(
 
 async def list_audit_log(
     limit: int = 100,
-    conversation_id: Optional[str] = None,
-    actor_id: Optional[str] = None,
+    conversation_id: str | None = None,
+    actor_id: str | None = None,
 ) -> list[dict]:
     pool = await get_pool()
     where_parts = []
@@ -93,10 +99,12 @@ async def list_audit_log(
     idx = 1
     if conversation_id:
         where_parts.append(f"conversation_id = ${idx}")
-        params.append(conversation_id); idx += 1
+        params.append(conversation_id)
+        idx += 1
     if actor_id:
         where_parts.append(f"actor_id = ${idx}")
-        params.append(actor_id); idx += 1
+        params.append(actor_id)
+        idx += 1
     where = ("WHERE " + " AND ".join(where_parts)) if where_parts else ""
     params.append(limit)
     sql = f"""
@@ -114,7 +122,9 @@ async def list_audit_log(
             "actor_id": r["actor_id"],
             "action": r["action"],
             "conversation_id": str(r["conversation_id"]) if r["conversation_id"] else None,
-            "detail": r["detail"] if isinstance(r["detail"], dict) else (json.loads(r["detail"]) if r["detail"] else {}),
+            "detail": r["detail"]
+            if isinstance(r["detail"], dict)
+            else (json.loads(r["detail"]) if r["detail"] else {}),
             "created_at": r["created_at"].isoformat(),
         }
         for r in rows

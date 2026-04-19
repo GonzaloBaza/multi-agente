@@ -2,18 +2,19 @@
 Canal WhatsApp directo con Meta Cloud API.
 Procesa mensajes entrantes y envía respuestas con soporte de botones interactivos.
 """
-import json
-from models.message import Message, MessageRole
-from memory.conversation_store import get_conversation_store
+
+import structlog
+
 from agents.router import route_message
+from config.constants import MAX_HISTORY_MESSAGES, Channel, ConversationStatus
 from integrations.notifications import notify_handoff
 from integrations.whatsapp_meta import (
     WhatsAppMetaClient,
     parse_buttons_tag,
     parse_list_tag,
 )
-from config.constants import Channel, ConversationStatus, MAX_HISTORY_MESSAGES
-import structlog
+from memory.conversation_store import get_conversation_store
+from models.message import Message, MessageRole
 
 logger = structlog.get_logger(__name__)
 
@@ -129,10 +130,16 @@ async def process_whatsapp_message(payload: dict) -> None:
     media_local_path = ""
     if media_id:
         ext_map = {
-            "image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp",
-            "audio/ogg": ".ogg", "audio/mpeg": ".mp3", "audio/mp4": ".m4a",
-            "audio/aac": ".aac", "audio/amr": ".amr",
-            "video/mp4": ".mp4", "application/pdf": ".pdf",
+            "image/jpeg": ".jpg",
+            "image/png": ".png",
+            "image/webp": ".webp",
+            "audio/ogg": ".ogg",
+            "audio/mpeg": ".mp3",
+            "audio/mp4": ".m4a",
+            "audio/aac": ".aac",
+            "audio/amr": ".amr",
+            "video/mp4": ".mp4",
+            "application/pdf": ".pdf",
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
         }
@@ -153,6 +160,7 @@ async def process_whatsapp_message(payload: dict) -> None:
     if data.get("msg_type") == "audio" and media_local_path:
         try:
             from integrations import stt
+
             if stt.is_enabled():
                 transcription = await stt.transcribe_file(media_local_path, language="es")
                 if transcription:
@@ -191,19 +199,23 @@ async def process_whatsapp_message(payload: dict) -> None:
         user_msg = Message(role=MessageRole.USER, content=text, metadata=msg_metadata)
         await store.append_message(conversation, user_msg)
         try:
-            from utils.realtime import broadcast_event
             import datetime
-            broadcast_event({
-                "type": "new_message",
-                "session_id": phone,
-                "role": "user",
-                "content": text,
-                "sender_name": name or phone,
-                "timestamp": datetime.datetime.utcnow().isoformat(),
-                "channel": "whatsapp",
-                "media_url": media_local_path or None,
-                "media_type": msg_metadata.get("media_type"),
-            })
+
+            from utils.realtime import broadcast_event
+
+            broadcast_event(
+                {
+                    "type": "new_message",
+                    "session_id": phone,
+                    "role": "user",
+                    "content": text,
+                    "sender_name": name or phone,
+                    "timestamp": datetime.datetime.utcnow().isoformat(),
+                    "channel": "whatsapp",
+                    "media_url": media_local_path or None,
+                    "media_type": msg_metadata.get("media_type"),
+                }
+            )
         except Exception:
             pass
         return
@@ -261,29 +273,35 @@ async def process_whatsapp_message(payload: dict) -> None:
 
     # Notificar inbox via SSE
     try:
-        from utils.realtime import broadcast_event
         import datetime
-        broadcast_event({
-            "type": "new_message",
-            "session_id": phone,
-            "role": "user",
-            "content": text,
-            "sender_name": name or phone,
-            "timestamp": user_msg.timestamp.isoformat(),
-            "channel": "whatsapp",
-            "media_url": media_local_path or None,
-            "media_type": msg_metadata.get("media_type"),
-        })
-        if response_text:
-            broadcast_event({
+
+        from utils.realtime import broadcast_event
+
+        broadcast_event(
+            {
                 "type": "new_message",
                 "session_id": phone,
-                "role": "assistant",
-                "content": response_text,
-                "sender_name": result["agent_used"],
-                "timestamp": bot_msg.timestamp.isoformat(),
+                "role": "user",
+                "content": text,
+                "sender_name": name or phone,
+                "timestamp": user_msg.timestamp.isoformat(),
                 "channel": "whatsapp",
-            })
+                "media_url": media_local_path or None,
+                "media_type": msg_metadata.get("media_type"),
+            }
+        )
+        if response_text:
+            broadcast_event(
+                {
+                    "type": "new_message",
+                    "session_id": phone,
+                    "role": "assistant",
+                    "content": response_text,
+                    "sender_name": result["agent_used"],
+                    "timestamp": bot_msg.timestamp.isoformat(),
+                    "channel": "whatsapp",
+                }
+            )
     except Exception:
         pass
 
@@ -300,6 +318,7 @@ async def process_whatsapp_message(payload: dict) -> None:
         # Auto-assign via round-robin
         try:
             from memory.assignment import auto_assign_round_robin
+
             await auto_assign_round_robin(phone)
         except Exception:
             pass

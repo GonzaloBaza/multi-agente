@@ -11,20 +11,20 @@ caliente (TTL, lookups rápidos, pub/sub). Este módulo se encarga de:
 El dual-write vive en memory/conversation_store.py — acá solo exponemos
 las operaciones atómicas.
 """
+
 from __future__ import annotations
 
 import asyncio
 import json
-from typing import Optional
 from uuid import UUID
 
 import asyncpg
 import structlog
 
+from config.constants import AgentType, Channel, ConversationStatus
 from config.settings import get_settings
 from models.conversation import Conversation, UserProfile
 from models.message import Message, MessageRole
-from config.constants import Channel, AgentType, ConversationStatus
 
 logger = structlog.get_logger(__name__)
 
@@ -214,6 +214,7 @@ def _split_sql(sql: str) -> list[str]:
 
 # ─── Upserts ─────────────────────────────────────────────────────────────────
 
+
 async def upsert_conversation(conv: Conversation) -> None:
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -277,6 +278,7 @@ async def save_conversation(conv: Conversation) -> None:
 
 
 # ─── Reads (fallback cuando Redis no tiene el dato) ──────────────────────────
+
 
 async def get_conversation(conversation_id: str) -> Conversation | None:
     pool = await get_pool()
@@ -350,6 +352,7 @@ def _build_conversation(conv_row, msg_rows) -> Conversation:
 
 # ─── List (para inbox histórico) ─────────────────────────────────────────────
 
+
 async def list_conversations_summary(
     limit: int = 500,
     offset: int = 0,
@@ -417,26 +420,29 @@ async def list_conversations_summary(
         if len(last_msg) > 80:
             last_msg = last_msg[:80] + "…"
 
-        results.append({
-            "id": str(r["id"]),
-            "session_id": r["external_id"],
-            "channel": r["channel"],
-            "name": profile.get("name", ""),
-            "email": profile.get("email", ""),
-            "phone": profile.get("phone", ""),
-            "country": profile.get("country", "AR"),
-            "status": r["status"],
-            "current_agent": r["current_agent"],
-            "message_count": r["message_count"] or 0,
-            "last_message": last_msg,
-            "last_timestamp": r["last_message_at"].isoformat() if r["last_message_at"] else "",
-            "created_at": r["created_at"].isoformat() if r["created_at"] else "",
-            "updated_at": r["updated_at"].isoformat() if r["updated_at"] else "",
-        })
+        results.append(
+            {
+                "id": str(r["id"]),
+                "session_id": r["external_id"],
+                "channel": r["channel"],
+                "name": profile.get("name", ""),
+                "email": profile.get("email", ""),
+                "phone": profile.get("phone", ""),
+                "country": profile.get("country", "AR"),
+                "status": r["status"],
+                "current_agent": r["current_agent"],
+                "message_count": r["message_count"] or 0,
+                "last_message": last_msg,
+                "last_timestamp": r["last_message_at"].isoformat() if r["last_message_at"] else "",
+                "created_at": r["created_at"].isoformat() if r["created_at"] else "",
+                "updated_at": r["updated_at"].isoformat() if r["updated_at"] else "",
+            }
+        )
     return results
 
 
 # ─── Courses ─────────────────────────────────────────────────────────────────
+
 
 async def upsert_course(row: dict) -> None:
     """Upsert de un curso. `row` debe incluir todas las hot columns + raw + brief_md."""
@@ -470,12 +476,20 @@ async def upsert_course(row: dict) -> None:
                 source_updated_at = excluded.source_updated_at,
                 synced_at = now()
             """,
-            row["country"], row["slug"], row.get("product_id"),
-            row["title"], row.get("categoria"), row.get("cedente"),
-            row.get("duration_hours"), row.get("modules_count"),
-            row.get("currency"), row.get("total_price"),
-            row.get("max_installments"), row.get("price_installments"),
-            row.get("brief_md"), json.dumps(row.get("raw", {}), default=str),
+            row["country"],
+            row["slug"],
+            row.get("product_id"),
+            row["title"],
+            row.get("categoria"),
+            row.get("cedente"),
+            row.get("duration_hours"),
+            row.get("modules_count"),
+            row.get("currency"),
+            row.get("total_price"),
+            row.get("max_installments"),
+            row.get("price_installments"),
+            row.get("brief_md"),
+            json.dumps(row.get("raw", {}), default=str),
             row.get("source_updated_at"),
         )
 
@@ -485,7 +499,8 @@ async def get_course(country: str, slug: str) -> dict | None:
     async with pool.acquire() as conn:
         r = await conn.fetchrow(
             "select * from public.courses where country = $1 and slug = $2",
-            country.lower(), slug,
+            country.lower(),
+            slug,
         )
     if not r:
         return None
@@ -508,7 +523,8 @@ async def list_courses(country: str, limit: int = 200) -> list[dict]:
             order by title asc
             limit $2
             """,
-            country.lower(), limit,
+            country.lower(),
+            limit,
         )
     return [dict(r) for r in rows]
 
@@ -536,10 +552,12 @@ async def get_catalog_compact(country: str) -> str:
     # Envolvemos el catálogo en un tag XML propio para que el LLM no mezcle
     # líneas del catálogo con texto cercano (instrucciones, brief, etc.) y
     # para poder referirlo explícitamente ("mirá dentro de <catalogo_AR>").
-    lines = [f"<catalogo_{cc} total_cursos=\"{len(rows)}\">"]
+    lines = [f'<catalogo_{cc} total_cursos="{len(rows)}">']
     lines.append(f"# Catálogo de cursos activos en {cc}")
     lines.append("")
-    lines.append("Columna **qué te deja** = gancho de valor clínico (usalo como pitch de 1 línea cuando listés este curso; si está vacío, referite al título y la categoría solamente — NO inventes).")
+    lines.append(
+        "Columna **qué te deja** = gancho de valor clínico (usalo como pitch de 1 línea cuando listés este curso; si está vacío, referite al título y la categoría solamente — NO inventes)."
+    )
     lines.append("")
     lines.append("| Slug | Título | Categoría | Qué te deja | Precio |")
     lines.append("|---|---|---|---|---|")
@@ -568,7 +586,8 @@ async def delete_missing_courses(country: str, keep_slugs: list[str]) -> int:
     async with pool.acquire() as conn:
         r = await conn.execute(
             "delete from public.courses where country = $1 and slug <> all($2::text[])",
-            country.lower(), keep_slugs,
+            country.lower(),
+            keep_slugs,
         )
     # r es "DELETE n"
     try:

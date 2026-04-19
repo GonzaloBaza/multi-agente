@@ -1,10 +1,11 @@
-from datetime import datetime
-from enum import Enum
-from pydantic import BaseModel, Field
 import uuid
+from datetime import datetime
+from enum import StrEnum
+
+from pydantic import BaseModel, Field
 
 
-class MessageRole(str, Enum):
+class MessageRole(StrEnum):
     USER = "user"
     ASSISTANT = "assistant"
     SYSTEM = "system"

@@ -2,10 +2,13 @@
 Módulo Zoho Area_de_cobranzas — ficha completa del alumno en mora.
 Campos reales del CRM: Dias_de_atraso_cal, Saldo_Vencido_2, etc.
 """
+
 import httpx
-from .auth import ZohoAuth
-from config.settings import get_settings
 import structlog
+
+from config.settings import get_settings
+
+from .auth import ZohoAuth
 
 logger = structlog.get_logger(__name__)
 
@@ -109,5 +112,5 @@ class ZohoAreaCobranzas:
             "fechaPromesaPago": raw.get("Fecha_de_promesa_de_pago", "No registra"),
             "linkFactura": raw.get("Comprobante_Factura", "No disponible"),
             "pagado": int(raw.get("Dias_de_atraso_cal") or 0) == 0
-                     and float(raw.get("Saldo_Vencido_2") or 0) == 0,
+            and float(raw.get("Saldo_Vencido_2") or 0) == 0,
         }

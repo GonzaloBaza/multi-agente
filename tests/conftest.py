@@ -12,6 +12,7 @@ Lo que SÍ probamos:
   - Que los módulos importen sin crashear (catches deps rotas, syntax errors).
   - Funciones puras (circuit breaker, parsers, etc) en isolation.
 """
+
 from __future__ import annotations
 
 import os

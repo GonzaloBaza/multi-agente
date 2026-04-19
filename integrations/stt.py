@@ -8,11 +8,11 @@ Usage:
     text = await transcribe_file("/tmp/voice.ogg")
     text = await transcribe_bytes(audio_bytes, filename="audio.ogg")
 """
+
 from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from typing import Optional
 
 import structlog
 
@@ -28,6 +28,7 @@ MAX_FILE_SIZE = 25 * 1024 * 1024
 def is_enabled() -> bool:
     """True si OpenAI está configurado (siempre tendríamos key si LLM funciona)."""
     from config.settings import get_settings
+
     return bool(get_settings().openai_api_key)
 
 
@@ -45,7 +46,9 @@ async def transcribe_file(filepath: str | Path, language: str | None = "es") -> 
         return ""
 
     from openai import AsyncOpenAI
+
     from config.settings import get_settings
+
     settings = get_settings()
     client = AsyncOpenAI(api_key=settings.openai_api_key)
 
@@ -63,7 +66,7 @@ async def transcribe_file(filepath: str | Path, language: str | None = "es") -> 
         text = (resp if isinstance(resp, str) else getattr(resp, "text", "")).strip()
         logger.info("stt_ok", path=str(p), chars=len(text))
         return text
-    except asyncio.TimeoutError:
+    except TimeoutError:
         logger.warning("stt_timeout", path=str(p))
         return ""
     except Exception as e:
@@ -71,9 +74,13 @@ async def transcribe_file(filepath: str | Path, language: str | None = "es") -> 
         return ""
 
 
-async def transcribe_bytes(audio_bytes: bytes, filename: str = "audio.ogg", language: str | None = "es") -> str:
+async def transcribe_bytes(
+    audio_bytes: bytes, filename: str = "audio.ogg", language: str | None = "es"
+) -> str:
     """Transcribe bytes de audio (sin pasar por filesystem). Retorna '' si falla."""
-    import tempfile, os
+    import os
+    import tempfile
+
     suffix = Path(filename).suffix or ".ogg"
     if suffix.lower() not in SUPPORTED_EXTS:
         suffix = ".ogg"
@@ -83,5 +90,7 @@ async def transcribe_bytes(audio_bytes: bytes, filename: str = "audio.ogg", lang
     try:
         return await transcribe_file(tmp_path, language=language)
     finally:
-        try: os.unlink(tmp_path)
-        except Exception: pass
+        try:
+            os.unlink(tmp_path)
+        except Exception:
+            pass

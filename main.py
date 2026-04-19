@@ -3,16 +3,18 @@ Punto de entrada de la aplicación FastAPI.
 Multi-agente para empresa de cursos médicos.
 Canales: WhatsApp (Botmaker) + Widget web embebible.
 """
-import structlog
+
 from contextlib import asynccontextmanager
+from pathlib import Path
+
+import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from pathlib import Path
+from fastapi.staticfiles import StaticFiles
 from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 from config.settings import get_settings
 
@@ -20,9 +22,9 @@ from config.settings import get_settings
 _settings_boot = get_settings()
 if _settings_boot.sentry_dsn:
     import sentry_sdk
+    from sentry_sdk.integrations.asyncio import AsyncioIntegration
     from sentry_sdk.integrations.fastapi import FastApiIntegration
     from sentry_sdk.integrations.starlette import StarletteIntegration
-    from sentry_sdk.integrations.asyncio import AsyncioIntegration
 
     sentry_sdk.init(
         dsn=_settings_boot.sentry_dsn,
@@ -36,20 +38,20 @@ if _settings_boot.sentry_dsn:
         ],
     )
 
+from api.admin import router as admin_router
+from api.admin_courses import router as admin_courses_router
+from api.admin_prompts import router as admin_prompts_router
+from api.auth import router as auth_router
 from api.autonomous import router as autonomous_router
+from api.customer_auth import router as customer_auth_router
+from api.inbox_api import router as inbox_api_router
+from api.redis_admin import router as redis_admin_router
 from api.reports import router as reports_router
+from api.templates import router as templates_router
 from api.test_agent import router as test_agent_router
 from api.webhooks import router as webhooks_router
 from api.widget import router as widget_router
-from api.admin import router as admin_router
-from api.admin_courses import router as admin_courses_router
-from api.inbox_api import router as inbox_api_router
-from api.templates import router as templates_router
-from api.admin_prompts import router as admin_prompts_router
 from api.widget_config import router as widget_config_router
-from api.auth import router as auth_router
-from api.redis_admin import router as redis_admin_router
-from api.customer_auth import router as customer_auth_router
 
 # Rate limiter global
 limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])
@@ -80,6 +82,7 @@ async def lifespan(app: FastAPI):
     )
     # Pre-warming: inicializar el store de Redis
     from memory.conversation_store import get_conversation_store
+
     try:
         await get_conversation_store()
         logger.info("redis_connected")
@@ -88,6 +91,7 @@ async def lifespan(app: FastAPI):
 
     # Postgres: pool + schema idempotente
     from memory import postgres_store
+
     if postgres_store.is_enabled():
         try:
             await postgres_store.ensure_schema()
@@ -97,7 +101,9 @@ async def lifespan(app: FastAPI):
 
     # Iniciar listener de Redis Pub/Sub para SSE cross-worker
     import asyncio
+
     from utils.realtime import start_pubsub_listener
+
     pubsub_task = asyncio.create_task(start_pubsub_listener())
     logger.info("pubsub_listener_started")
 
@@ -105,10 +111,12 @@ async def lifespan(app: FastAPI):
     # Solo 1 worker debe correr el scheduler — usamos lock en Redis.
     try:
         from memory.conversation_store import get_conversation_store
+
         store = await get_conversation_store()
         got_lock = await store._redis.set("scheduler:lock", "1", ex=3600, nx=True)
         if got_lock:
             from utils.scheduler import start_scheduler
+
             await start_scheduler()
             logger.info("autonomous_scheduler_active")
         else:
@@ -126,7 +134,7 @@ async def lifespan(app: FastAPI):
     pubsub_task.cancel()
     try:
         await asyncio.wait_for(pubsub_task, timeout=2.0)
-    except (asyncio.CancelledError, asyncio.TimeoutError):
+    except (TimeoutError, asyncio.CancelledError):
         pass
 
     # 2. Cerrar SSE clients conectados (vacía sus colas → event_gen sale
@@ -134,6 +142,7 @@ async def lifespan(app: FastAPI):
     # abiertos mantienen el worker vivo bloqueando shutdown.
     try:
         from utils.realtime import _sse_clients
+
         for q in list(_sse_clients):
             try:
                 q.put_nowait({"type": "server_shutdown"})
@@ -146,6 +155,7 @@ async def lifespan(app: FastAPI):
     # 3. Shutdown del scheduler — APScheduler tiene su propio stop path.
     try:
         from utils.scheduler import shutdown_scheduler
+
         await shutdown_scheduler()
     except Exception:
         pass
@@ -153,6 +163,7 @@ async def lifespan(app: FastAPI):
     # 4. Cerrar pool Postgres si estaba abierto.
     try:
         from memory import postgres_store
+
         if postgres_store.is_enabled():
             await postgres_store.close_pool()
     except Exception:
@@ -209,10 +220,26 @@ def create_app() -> FastAPI:
 
     app.add_middleware(SecurityHeadersMiddleware)
 
+    # Body size limit — protege contra DoS por upload gigante. Uvicorn no
+    # limita por default. Endpoints de media aceptan hasta 25MB, el resto
+    # 1MB (cabe cualquier JSON de negocio).
+    from utils.body_limit import BodySizeLimitMiddleware
+
+    app.add_middleware(
+        BodySizeLimitMiddleware,
+        max_bytes=1_000_000,
+        upload_paths=(
+            "/api/v1/inbox/upload",
+            "/api/v1/templates/hsm/upload-media",
+        ),
+        upload_max_bytes=25_000_000,
+    )
+
     # Request context (structlog contextvars + request_id + duration log).
-    # Se agrega DESPUÉS de security headers para que los logs vean la
+    # Se agrega DESPUÉS de security/body-limit para que los logs vean la
     # ruta final. Starlette ejecuta middlewares en orden inverso al add.
     from utils.request_context import RequestContextMiddleware
+
     app.add_middleware(RequestContextMiddleware)
 
     # Rate limiting
@@ -223,22 +250,22 @@ def create_app() -> FastAPI:
     # frontend/lib/api.ts). Los públicos (widget embebible, webhooks,
     # customer LMS) viven fuera del namespace /api/ por compat con
     # consumidores externos.
-    app.include_router(auth_router)             # /api/auth/*
-    app.include_router(inbox_api_router)        # /api/inbox/*
-    app.include_router(admin_router)            # /api/admin/{status,channels-status}
-    app.include_router(admin_courses_router)    # /api/admin/courses/*
-    app.include_router(admin_prompts_router)    # /api/admin/prompts/*
-    app.include_router(widget_config_router)    # /api/admin/widget-config/*
-    app.include_router(redis_admin_router)      # /api/admin/redis/*
-    app.include_router(reports_router)          # /api/admin/reports/*
-    app.include_router(test_agent_router)       # /api/admin/test-agent
-    app.include_router(autonomous_router)       # /api/admin/autonomous/*
-    app.include_router(templates_router)        # /api/templates/*
+    app.include_router(auth_router)  # /api/auth/*
+    app.include_router(inbox_api_router)  # /api/inbox/*
+    app.include_router(admin_router)  # /api/admin/{status,channels-status}
+    app.include_router(admin_courses_router)  # /api/admin/courses/*
+    app.include_router(admin_prompts_router)  # /api/admin/prompts/*
+    app.include_router(widget_config_router)  # /api/admin/widget-config/*
+    app.include_router(redis_admin_router)  # /api/admin/redis/*
+    app.include_router(reports_router)  # /api/admin/reports/*
+    app.include_router(test_agent_router)  # /api/admin/test-agent
+    app.include_router(autonomous_router)  # /api/admin/autonomous/*
+    app.include_router(templates_router)  # /api/templates/*
 
     # Públicos — fuera del namespace /api/ (consumidores externos).
-    app.include_router(customer_auth_router)    # /customer/* (LMS)
-    app.include_router(webhooks_router)         # /webhook/* (Meta, MP, Rebill, Zoho)
-    app.include_router(widget_router)           # /widget/* (chat embebible)
+    app.include_router(customer_auth_router)  # /customer/* (LMS)
+    app.include_router(webhooks_router)  # /webhook/* (Meta, MP, Rebill, Zoho)
+    app.include_router(widget_router)  # /widget/* (chat embebible)
 
     # El router legacy `api/inbox.py` se eliminó. Los helpers que vivían
     # ahí (broadcast_event, start_pubsub_listener, auto_assign_round_robin,
@@ -252,6 +279,7 @@ def create_app() -> FastAPI:
 
     # Servir archivos multimedia — StaticFiles soporta HEAD + Range requests
     import mimetypes
+
     mimetypes.add_type("audio/webm", ".webm")
     mimetypes.add_type("audio/ogg", ".ogg")
     mimetypes.add_type("audio/opus", ".opus")
@@ -280,6 +308,7 @@ def create_app() -> FastAPI:
         Opcionales (degradan pero no tumban): OpenAI, Pinecone, Zoho.
         """
         import asyncio
+
         import redis.asyncio as aioredis
         from fastapi.responses import JSONResponse
 
@@ -299,6 +328,7 @@ def create_app() -> FastAPI:
         # Postgres (crítico — conversaciones, profiles, audit)
         try:
             from memory import postgres_store
+
             if postgres_store.is_enabled():
                 pool = await postgres_store.get_pool()
                 async with pool.acquire() as conn:
@@ -334,4 +364,5 @@ app = create_app()
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

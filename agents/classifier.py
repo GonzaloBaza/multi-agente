@@ -2,20 +2,22 @@
 Clasificador automático de conversaciones.
 Corre después de cada respuesta del agente IA y asigna una etiqueta al lead.
 """
-from openai import AsyncOpenAI
-from config.settings import get_settings
+
 import structlog
+from openai import AsyncOpenAI
+
+from config.settings import get_settings
 
 logger = structlog.get_logger(__name__)
 
 LABELS = {
-    "caliente":       "Muy interesado, pregunta por precio, fechas, formas de pago o quiere inscribirse",
-    "tibio":          "Interesado pero con dudas, pide más información o no se decide",
-    "frio":           "Respuestas breves, pasivo, sin preguntas, solo mira",
-    "convertido":     "Ya realizó el pago o confirmó la inscripción",
+    "caliente": "Muy interesado, pregunta por precio, fechas, formas de pago o quiere inscribirse",
+    "tibio": "Interesado pero con dudas, pide más información o no se decide",
+    "frio": "Respuestas breves, pasivo, sin preguntas, solo mira",
+    "convertido": "Ya realizó el pago o confirmó la inscripción",
     "esperando_pago": "Recibió el link de pago pero aún no pagó",
-    "seguimiento":    "Pidió que lo contacten después, dejó sus datos para seguimiento",
-    "no_interesa":    "Dijo explícitamente que no le interesa o pidió que no lo contacten",
+    "seguimiento": "Pidió que lo contacten después, dejó sus datos para seguimiento",
+    "no_interesa": "Dijo explícitamente que no le interesa o pidió que no lo contacten",
 }
 
 SYSTEM_PROMPT = """Sos un clasificador de leads para una empresa de cursos médicos.
@@ -48,7 +50,7 @@ async def classify_conversation(messages: list, session_id: str) -> str | None:
     convo_text = "\n".join(
         f"{'Usuario' if m.get('role') == 'user' else 'Agente'}: {m.get('content', '')[:200]}"
         for m in recent
-        if m.get('content')
+        if m.get("content")
     )
 
     try:
@@ -73,12 +75,14 @@ async def classify_conversation(messages: list, session_id: str) -> str | None:
 
         # Guardar en Redis
         from memory.conversation_store import get_conversation_store
+
         store = await get_conversation_store()
         await store._redis.set(f"conv_label:{session_id}", label)
 
         # Broadcast SSE para que el inbox se actualice en tiempo real
         try:
             from utils.realtime import broadcast_event
+
             broadcast_event({"type": "label_updated", "session_id": session_id, "label": label})
         except Exception:
             pass

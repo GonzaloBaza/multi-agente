@@ -2,9 +2,11 @@
 Rebill — payment links con cuotas para LATAM.
 API v3: https://docs.rebill.com/api/reference/payment-links
 """
+
 import httpx
-from config.settings import get_settings
 import structlog
+
+from config.settings import get_settings
 
 logger = structlog.get_logger(__name__)
 

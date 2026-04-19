@@ -6,21 +6,24 @@ Webhooks externos:
 - POST /webhook/verificar-pago-inmediato → verifica pago Zoho y responde via Botmaker
 - POST /webhook/monitorear-pago → loop async 15min/90min post-link-rebill
 """
+
 import asyncio
 import hashlib
 import hmac
 import json
-from fastapi import APIRouter, Request, HTTPException, BackgroundTasks
+
+import structlog
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from fastapi.responses import Response
-from integrations.botmaker import BotmakerClient
-from integrations.zoho.sales_orders import ZohoSalesOrders
-from integrations.zoho.area_cobranzas import ZohoAreaCobranzas
-from integrations.notifications import notify_payment_confirmed
+
+from channels.twilio_whatsapp import process_twilio_message as process_wa_twilio
 from channels.whatsapp import process_whatsapp_message
 from channels.whatsapp_meta import process_whatsapp_message as process_wa_meta
-from channels.twilio_whatsapp import process_twilio_message as process_wa_twilio
 from config.settings import get_settings
-import structlog
+from integrations.botmaker import BotmakerClient
+from integrations.notifications import notify_payment_confirmed
+from integrations.zoho.area_cobranzas import ZohoAreaCobranzas
+from integrations.zoho.sales_orders import ZohoSalesOrders
 
 logger = structlog.get_logger(__name__)
 
@@ -28,6 +31,7 @@ router = APIRouter(prefix="/webhook", tags=["webhooks"])
 
 
 # ─── Meta WhatsApp Cloud API ──────────────────────────────────────────────────
+
 
 @router.get("/whatsapp")
 async def whatsapp_verify(request: Request):
@@ -63,11 +67,14 @@ async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
         if not signature:
             logger.warning("whatsapp_meta_missing_signature")
             raise HTTPException(status_code=401, detail="Missing signature")
-        expected = "sha256=" + hmac.new(
-            settings.whatsapp_app_secret.encode(),
-            body,
-            hashlib.sha256,
-        ).hexdigest()
+        expected = (
+            "sha256="
+            + hmac.new(
+                settings.whatsapp_app_secret.encode(),
+                body,
+                hashlib.sha256,
+            ).hexdigest()
+        )
         if not hmac.compare_digest(signature, expected):
             logger.warning("whatsapp_meta_invalid_signature")
             raise HTTPException(status_code=401, detail="Invalid signature")
@@ -77,29 +84,47 @@ async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="Invalid JSON")
 
-    # Responder 200 inmediatamente — Meta requiere respuesta en < 5s
-    # Detectar si es un mensaje o un status update
+    # Idempotency: Meta re-envía webhooks si no respondemos 200 rápido.
+    # Usamos message_id (único por mensaje) / statuses[0].id como clave.
+    from utils.idempotency import idempotency_guard
+
+    event_id = ""
     try:
         entry = payload.get("entry", [{}])[0]
         changes = entry.get("changes", [{}])[0]
         value = changes.get("value", {})
-
-        if "statuses" in value:
-            # Es un delivery status update (sent/delivered/read/failed)
-            background_tasks.add_task(_handle_wa_status, value["statuses"])
-        elif "messages" in value:
-            background_tasks.add_task(process_wa_meta, payload)
+        if "messages" in value and value["messages"]:
+            event_id = value["messages"][0].get("id", "")
+        elif "statuses" in value and value["statuses"]:
+            st = value["statuses"][0]
+            # status id es único por (message_id, status_type) — combinamos.
+            event_id = f"{st.get('id', '')}:{st.get('status', '')}"
     except Exception:
-        background_tasks.add_task(process_wa_meta, payload)
+        pass
 
+    async with idempotency_guard("wa_meta", event_id) as first_time:
+        if not first_time:
+            return {"status": "duplicate_ignored"}
+        # Responder 200 inmediatamente — Meta requiere respuesta en < 5s
+        try:
+            entry = payload.get("entry", [{}])[0]
+            changes = entry.get("changes", [{}])[0]
+            value = changes.get("value", {})
+            if "statuses" in value:
+                background_tasks.add_task(_handle_wa_status, value["statuses"])
+            elif "messages" in value:
+                background_tasks.add_task(process_wa_meta, payload)
+        except Exception:
+            background_tasks.add_task(process_wa_meta, payload)
     return {"status": "ok"}
 
 
 async def _handle_wa_status(statuses: list):
     """Procesa status updates de Meta (sent/delivered/read/failed)."""
     try:
-        from utils.realtime import broadcast_event
         from memory.conversation_store import get_conversation_store
+        from utils.realtime import broadcast_event
+
         store = await get_conversation_store()
 
         for status in statuses:
@@ -116,17 +141,19 @@ async def _handle_wa_status(statuses: list):
                 await store._redis.setex(
                     f"wa_status:{msg_id}",
                     86400,  # 24h
-                    json.dumps({"status": st, "timestamp": ts, "phone": phone})
+                    json.dumps({"status": st, "timestamp": ts, "phone": phone}),
                 )
 
             # Broadcast al inbox para actualizar UI
-            broadcast_event({
-                "type": "delivery_status",
-                "session_id": phone,
-                "message_id": msg_id,
-                "status": st,
-                "timestamp": ts,
-            })
+            broadcast_event(
+                {
+                    "type": "delivery_status",
+                    "session_id": phone,
+                    "message_id": msg_id,
+                    "status": st,
+                    "timestamp": ts,
+                }
+            )
 
             if st == "failed":
                 errors = status.get("errors", [])
@@ -167,8 +194,14 @@ async def botmaker_webhook(request: Request, background_tasks: BackgroundTasks):
         logger.debug("botmaker_non_text_event", type=msg_type)
         return {"status": "ignored"}
 
-    # Procesar en background para responder 200 rápido a Botmaker
-    background_tasks.add_task(process_whatsapp_message, payload)
+    # Idempotency con message id de Botmaker (si lo manda)
+    from utils.idempotency import idempotency_guard
+
+    event_id = str(payload.get("id") or payload.get("messageId") or "")
+    async with idempotency_guard("botmaker", event_id) as first_time:
+        if not first_time:
+            return {"status": "duplicate_ignored"}
+        background_tasks.add_task(process_whatsapp_message, payload)
     return {"status": "ok"}
 
 
@@ -183,9 +216,7 @@ async def mercadopago_webhook(request: Request, background_tasks: BackgroundTask
     # Verificar firma HMAC
     settings = get_settings()
     if settings.mp_webhook_secret:
-        manifest = (
-            f"id:{params.get('data.id', '')};request-id:{request.headers.get('x-request-id', '')};ts:{params.get('ts', '')};"
-        )
+        manifest = f"id:{params.get('data.id', '')};request-id:{request.headers.get('x-request-id', '')};ts:{params.get('ts', '')};"
         expected = hmac.new(
             settings.mp_webhook_secret.encode(),
             manifest.encode(),
@@ -206,7 +237,14 @@ async def mercadopago_webhook(request: Request, background_tasks: BackgroundTask
     if topic != "payment":
         return {"status": "ignored"}
 
-    background_tasks.add_task(_handle_mp_payment, params.get("id") or payload.get("data", {}).get("id", ""))
+    # Idempotency key: el payment_id de MP es único por pago.
+    from utils.idempotency import idempotency_guard
+
+    payment_id = params.get("id") or payload.get("data", {}).get("id", "")
+    async with idempotency_guard("mercadopago", str(payment_id)) as first_time:
+        if not first_time:
+            return {"status": "duplicate_ignored"}
+        background_tasks.add_task(_handle_mp_payment, payment_id)
     return {"status": "ok"}
 
 
@@ -214,6 +252,7 @@ async def _handle_mp_payment(payment_id: str):
     if not payment_id:
         return
     from integrations.payments.mercadopago import MercadoPagoClient
+
     mp = MercadoPagoClient()
     try:
         payment = await mp.verify_webhook(payment_id)
@@ -271,7 +310,14 @@ async def rebill_webhook(request: Request, background_tasks: BackgroundTasks):
     event_type = payload.get("event", payload.get("type", ""))
     logger.info("rebill_webhook_received", event=event_type)
 
-    background_tasks.add_task(_handle_rebill_event, payload, event_type)
+    # Idempotency — Rebill manda `id` por evento.
+    from utils.idempotency import idempotency_guard
+
+    event_id = str(payload.get("id") or payload.get("event_id") or "")
+    async with idempotency_guard("rebill", event_id) as first_time:
+        if not first_time:
+            return {"status": "duplicate_ignored"}
+        background_tasks.add_task(_handle_rebill_event, payload, event_type)
     return {"status": "ok"}
 
 
@@ -311,6 +357,7 @@ async def _handle_rebill_event(payload: dict, event_type: str):
 
 # ─── Verificación inmediata de pago ──────────────────────────────────────────
 
+
 @router.post("/verificar-pago-inmediato")
 async def verificar_pago_inmediato(request: Request, background_tasks: BackgroundTasks):
     """
@@ -329,6 +376,7 @@ async def verificar_pago_inmediato(request: Request, background_tasks: Backgroun
 async def _verificar_pago_task(phone: str, pais: str):
     try:
         from memory.conversation_store import get_conversation_store
+
         store = await get_conversation_store()
         r = store._redis
 
@@ -364,6 +412,7 @@ async def _verificar_pago_task(phone: str, pais: str):
 
 # ─── Monitoreo de pago async (15min / 90min) ─────────────────────────────────
 
+
 @router.post("/monitorear-pago")
 async def monitorear_pago(request: Request, background_tasks: BackgroundTasks):
     """
@@ -383,6 +432,7 @@ async def monitorear_pago(request: Request, background_tasks: BackgroundTasks):
 async def _monitorear_pago_task(phone: str, pais: str, cobranza_id: str):
     try:
         from memory.conversation_store import get_conversation_store
+
         store = await get_conversation_store()
         r = store._redis
 
@@ -432,6 +482,7 @@ async def _monitorear_pago_task(phone: str, pais: str, cobranza_id: str):
 
 # ─── Twilio WhatsApp ──────────────────────────────────────────────────────────
 
+
 @router.post("/twilio")
 async def twilio_webhook(request: Request, background_tasks: BackgroundTasks):
     """
@@ -458,10 +509,10 @@ async def twilio_webhook(request: Request, background_tasks: BackgroundTasks):
 def _get_channel_id(pais: str) -> str:
     channel_map = {
         "Argentina": "medicalscientificknowledge-whatsapp-5491139007715",
-        "Colombia":  "medicalscientificknowledge-whatsapp-5753161349",
-        "Mexico":    "medicalscientificknowledge-whatsapp-5215599904940",
-        "Ecuador":   "medicalscientificknowledge-whatsapp-593998158115",
-        "Chile":     "medicalscientificknowledge-whatsapp-56224875300",
-        "Uruguay":   "medicalscientificknowledge-whatsapp-5491152170771",
+        "Colombia": "medicalscientificknowledge-whatsapp-5753161349",
+        "Mexico": "medicalscientificknowledge-whatsapp-5215599904940",
+        "Ecuador": "medicalscientificknowledge-whatsapp-593998158115",
+        "Chile": "medicalscientificknowledge-whatsapp-56224875300",
+        "Uruguay": "medicalscientificknowledge-whatsapp-5491152170771",
     }
     return channel_map.get(pais, channel_map["Argentina"])

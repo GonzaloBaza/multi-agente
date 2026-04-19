@@ -16,12 +16,13 @@ perfil profesional.
 
 Testimonios (sections.reviews) se EXCLUYEN intencionalmente del brief.
 """
+
 from __future__ import annotations
 
 import html
 import re
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 import httpx
 import structlog
@@ -33,7 +34,7 @@ logger = structlog.get_logger(__name__)
 
 # ── Mapeo país ISO-2 → lang del WP ──────────────────────────────────────────
 LANG_BY_COUNTRY: dict[str, str] = {
-    "ar": "arg",   # Argentina es el único con código de 3 letras
+    "ar": "arg",  # Argentina es el único con código de 3 letras
     "bo": "bo",
     "cl": "cl",
     "co": "co",
@@ -53,10 +54,22 @@ LANG_BY_COUNTRY: dict[str, str] = {
 }
 
 COUNTRY_LABEL: dict[str, str] = {
-    "ar": "Argentina", "bo": "Bolivia", "cl": "Chile", "co": "Colombia",
-    "cr": "Costa Rica", "ec": "Ecuador", "es": "España", "gt": "Guatemala",
-    "hn": "Honduras", "mx": "México", "ni": "Nicaragua", "pa": "Panamá",
-    "py": "Paraguay", "pe": "Perú", "sv": "El Salvador", "uy": "Uruguay",
+    "ar": "Argentina",
+    "bo": "Bolivia",
+    "cl": "Chile",
+    "co": "Colombia",
+    "cr": "Costa Rica",
+    "ec": "Ecuador",
+    "es": "España",
+    "gt": "Guatemala",
+    "hn": "Honduras",
+    "mx": "México",
+    "ni": "Nicaragua",
+    "pa": "Panamá",
+    "py": "Paraguay",
+    "pe": "Perú",
+    "sv": "El Salvador",
+    "uy": "Uruguay",
     "ve": "Venezuela",
 }
 
@@ -85,7 +98,7 @@ def html_to_text(s: Any) -> str:
     return s.strip()
 
 
-def _to_float(v: Any) -> Optional[float]:
+def _to_float(v: Any) -> float | None:
     if v is None or v == "":
         return None
     try:
@@ -94,7 +107,7 @@ def _to_float(v: Any) -> Optional[float]:
         return None
 
 
-def _to_int(v: Any) -> Optional[int]:
+def _to_int(v: Any) -> int | None:
     if v is None or v == "":
         return None
     try:
@@ -103,7 +116,7 @@ def _to_int(v: Any) -> Optional[int]:
         return None
 
 
-def _primary_category(item: dict) -> Optional[str]:
+def _primary_category(item: dict) -> str | None:
     cats = (item.get("sections", {}) or {}).get("header", {}).get("categories", []) or []
     primary = next((c for c in cats if c.get("is_primary")), None)
     if primary:
@@ -112,6 +125,7 @@ def _primary_category(item: dict) -> Optional[str]:
 
 
 # ── Fetch ───────────────────────────────────────────────────────────────────
+
 
 async def fetch_country(country: str, timeout: float = 60.0) -> list[dict]:
     """Descarga todos los productos `resource=course` de un país."""
@@ -147,6 +161,7 @@ async def fetch_country(country: str, timeout: float = 60.0) -> list[dict]:
 
 
 # ── Brief Markdown (SIN testimonios) ────────────────────────────────────────
+
 
 def build_brief_md(item: dict, country: str) -> str:
     """
@@ -194,7 +209,9 @@ def build_brief_md(item: dict, country: str) -> str:
     max_inst = _to_int(prices.get("max_installments"))
     inst_val = _to_float(prices.get("price_installments"))
     if max_inst and inst_val:
-        lines.append(f"**Precio (comunicar SIEMPRE en cuotas):** {max_inst} cuotas de {currency} {inst_val:,.2f}")
+        lines.append(
+            f"**Precio (comunicar SIEMPRE en cuotas):** {max_inst} cuotas de {currency} {inst_val:,.2f}"
+        )
     elif total:
         lines.append(f"**Precio:** {currency} {total:,.0f} (pago único — no hay cuotas disponibles)")
 
@@ -221,6 +238,7 @@ def build_brief_md(item: dict, country: str) -> str:
         lines.append("## Datos técnicos")
         # Parsear tabla HTML <tr><td>key</td><td>val</td></tr>
         import re as _re
+
         rows_html = _re.findall(
             r"<tr[^>]*>\s*<td[^>]*>(.*?)</td>\s*<td[^>]*>(.*?)</td>\s*</tr>",
             datos_tec_html,
@@ -245,7 +263,9 @@ def build_brief_md(item: dict, country: str) -> str:
         lines.append("## Perfiles objetivo — dolor y beneficio (usalo para vender)")
         for p in perfiles:
             perfil = (p.get("perfil") or "").strip()
-            problema = html_to_text(p.get("problema_actual__necesidad") or p.get("problema_actual_necesidad") or "")
+            problema = html_to_text(
+                p.get("problema_actual__necesidad") or p.get("problema_actual_necesidad") or ""
+            )
             obtiene = html_to_text(p.get("que_obtiene") or "")
             if perfil:
                 lines.append(f"### {perfil}")
@@ -258,9 +278,7 @@ def build_brief_md(item: dict, country: str) -> str:
     # ── Descripción y problemática (kb_ai prioritario, WP como fallback)
     desc = html_to_text(kb_ai.get("descripcion_y_problematica") or "")
     if not desc:
-        desc = html_to_text(
-            (item.get("sections", {}) or {}).get("content", {}).get("content", "")
-        )
+        desc = html_to_text((item.get("sections", {}) or {}).get("content", {}).get("content", ""))
     if desc:
         lines.append("## De qué trata el curso")
         lines.append(desc)
@@ -300,7 +318,11 @@ def build_brief_md(item: dict, country: str) -> str:
         if learning:
             lines.append("## Qué vas a aprender")
             for l in learning:
-                txt = html_to_text(l.get("msk_learning_content", "")) if isinstance(l, dict) else html_to_text(str(l))
+                txt = (
+                    html_to_text(l.get("msk_learning_content", ""))
+                    if isinstance(l, dict)
+                    else html_to_text(str(l))
+                )
                 if txt:
                     lines.append(f"- {txt}")
             lines.append("")
@@ -347,11 +369,13 @@ def build_brief_md(item: dict, country: str) -> str:
         if not t or key in seen_titles:
             continue
         seen_titles.add(key)
-        merged.append({
-            "title": t,
-            "description": html_to_text(inst.get("description", "")),
-            "price_str": "",
-        })
+        merged.append(
+            {
+                "title": t,
+                "description": html_to_text(inst.get("description", "")),
+                "price_str": "",
+            }
+        )
 
     for c in certs_src:
         if not isinstance(c, dict):
@@ -365,11 +389,13 @@ def build_brief_md(item: dict, country: str) -> str:
         p = _to_float(c.get("total_price")) or _to_float(c.get("regular_price"))
         if p and p > 0:
             price_str = f"{c.get('currency', '')} {p:,.0f}".strip()
-        merged.append({
-            "title": t,
-            "description": "",
-            "price_str": price_str,
-        })
+        merged.append(
+            {
+                "title": t,
+                "description": "",
+                "price_str": price_str,
+            }
+        )
 
     if merged:
         is_ar = country.lower() == "ar"
@@ -384,12 +410,25 @@ def build_brief_md(item: dict, country: str) -> str:
             tl = m["title"].lower()
             dl = m["description"].lower()
             combined = f"{tl} {dl}"
-            if any(x in combined for x in [
-                "colegio de médicos", "colegio médico",
-                "consejo médico", "consejo superior médico",
-                "colmedcat", "colememi", "csmlp", "cmsc", "cmsf",
-                "misiones", "catamarca", "la pampa", "santa cruz", "santa fe",
-            ]) or ("matricul" in combined and "argentina" in combined):
+            if any(
+                x in combined
+                for x in [
+                    "colegio de médicos",
+                    "colegio médico",
+                    "consejo médico",
+                    "consejo superior médico",
+                    "colmedcat",
+                    "colememi",
+                    "csmlp",
+                    "cmsc",
+                    "cmsf",
+                    "misiones",
+                    "catamarca",
+                    "la pampa",
+                    "santa cruz",
+                    "santa fe",
+                ]
+            ) or ("matricul" in combined and "argentina" in combined):
                 jurisdiccionales_ar.append(m)
             elif "udima" in tl or "internacional" in dl or "amir" in tl:
                 aval_principal.append(m)
@@ -522,6 +561,7 @@ def build_brief_md(item: dict, country: str) -> str:
 
 # ── Transform: JSON → row para Postgres ─────────────────────────────────────
 
+
 def to_row(item: dict, country: str) -> dict:
     prices = item.get("prices") or {}
     cedente = (item.get("cedente") or {}).get("title") or (item.get("cedente") or {}).get("name") or None
@@ -535,7 +575,7 @@ def to_row(item: dict, country: str) -> dict:
         product_id = _to_int(item.get("id"))  # fallback al ID de WP
 
     raw_date = item.get("date")
-    source_updated_at: Optional[datetime] = None
+    source_updated_at: datetime | None = None
     if raw_date:
         try:
             source_updated_at = datetime.fromisoformat(raw_date)
@@ -564,6 +604,7 @@ def to_row(item: dict, country: str) -> dict:
 
 
 # ── Sync ────────────────────────────────────────────────────────────────────
+
 
 async def sync_country(country: str, prune: bool = True) -> dict:
     """
@@ -594,6 +635,7 @@ async def sync_country(country: str, prune: bool = True) -> dict:
     # Invalidar cache Redis de los cursos actualizados
     try:
         from integrations import courses_cache
+
         await courses_cache.invalidate_country(country, seen_slugs)
     except Exception as e:
         logger.warning("course_cache_invalidate_failed", error=str(e))

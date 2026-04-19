@@ -8,6 +8,7 @@ Cubre:
   - Cerrar de nuevo si el HALF_OPEN succeed-ea
   - Re-abrir si el HALF_OPEN falla
 """
+
 from __future__ import annotations
 
 import time
@@ -50,7 +51,8 @@ def test_half_open_after_recovery_timeout():
 
 def test_half_open_success_closes_circuit():
     b = _fresh(failure_threshold=2, recovery_timeout=0)
-    b.record_failure(); b.record_failure()
+    b.record_failure()
+    b.record_failure()
     b.can_execute()  # → HALF_OPEN
     b.record_success()
     assert b.state == CircuitState.CLOSED
@@ -59,7 +61,8 @@ def test_half_open_success_closes_circuit():
 
 def test_half_open_failure_reopens_circuit():
     b = _fresh(failure_threshold=2, recovery_timeout=0)
-    b.record_failure(); b.record_failure()
+    b.record_failure()
+    b.record_failure()
     b.can_execute()  # → HALF_OPEN
     b.record_failure()
     assert b.state == CircuitState.OPEN
@@ -67,7 +70,8 @@ def test_half_open_failure_reopens_circuit():
 
 def test_reset_clears_state():
     b = _fresh(failure_threshold=2)
-    b.record_failure(); b.record_failure()
+    b.record_failure()
+    b.record_failure()
     assert b.state == CircuitState.OPEN
     b.reset()
     assert b.state == CircuitState.CLOSED

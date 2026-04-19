@@ -8,12 +8,14 @@ Se activa cuando:
 
 Reutiliza las herramientas de ventas + check_lead_history.
 """
-from langchain_openai import ChatOpenAI
+
 from langchain_core.messages import SystemMessage
+from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import create_react_agent
-from config.settings import get_settings
-from agents.closer.tools import CLOSER_TOOLS
+
 from agents.closer.prompts import build_closer_prompt
+from agents.closer.tools import CLOSER_TOOLS
+from config.settings import get_settings
 
 
 def build_closer_agent(

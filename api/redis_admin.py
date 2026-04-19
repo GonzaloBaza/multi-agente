@@ -2,11 +2,14 @@
 Redis Admin — visor y gestor de claves Redis para el panel de administración.
 Solo accesible por administradores autenticados.
 """
+
 import json
-from fastapi import APIRouter, HTTPException, Depends
-from pydantic import BaseModel
-from api.auth import require_role
+
 import structlog
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+
+from api.auth import require_role
 
 logger = structlog.get_logger(__name__)
 router = APIRouter(prefix="/api/v1/admin/redis", tags=["redis-admin"])
@@ -32,17 +35,20 @@ def _pattern_hits_protected(pattern: str) -> bool:
 
 async def _redis():
     from memory.conversation_store import get_conversation_store
+
     store = await get_conversation_store()
     return store._redis
 
 
 # ── Models ────────────────────────────────────────────────────────────────────
 
+
 class DeletePatternRequest(BaseModel):
     pattern: str
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
+
 
 @router.get("/keys")
 async def list_keys(pattern: str = "*", limit: int = 200, user: dict = Depends(require_role("admin"))):
@@ -77,13 +83,15 @@ async def list_keys(pattern: str = "*", limit: int = 200, user: dict = Depends(r
             elif ktype == "hash":
                 size = await r.hlen(key)
                 preview = f"{size} campos"
-            result.append({
-                "key": key,
-                "type": ktype,
-                "ttl": ttl,
-                "size": size,
-                "preview": preview,
-            })
+            result.append(
+                {
+                    "key": key,
+                    "type": ktype,
+                    "ttl": ttl,
+                    "size": size,
+                    "preview": preview,
+                }
+            )
         except Exception as e:
             result.append({"key": key, "type": "?", "ttl": -1, "size": 0, "preview": str(e)})
 
@@ -111,20 +119,27 @@ async def get_key(key: str, user: dict = Depends(require_role("admin"))):
         items = await r.lrange(key, 0, -1)
         value = json.dumps(
             [i.decode("utf-8", errors="replace") if isinstance(i, bytes) else i for i in items],
-            ensure_ascii=False, indent=2
+            ensure_ascii=False,
+            indent=2,
         )
     elif ktype == "set":
         members = await r.smembers(key)
         value = json.dumps(
             sorted([m.decode("utf-8", errors="replace") if isinstance(m, bytes) else m for m in members]),
-            ensure_ascii=False, indent=2
+            ensure_ascii=False,
+            indent=2,
         )
     elif ktype == "hash":
         fields = await r.hgetall(key)
         value = json.dumps(
-            {(k.decode() if isinstance(k, bytes) else k): (v.decode("utf-8", errors="replace") if isinstance(v, bytes) else v)
-             for k, v in fields.items()},
-            ensure_ascii=False, indent=2
+            {
+                (k.decode() if isinstance(k, bytes) else k): (
+                    v.decode("utf-8", errors="replace") if isinstance(v, bytes) else v
+                )
+                for k, v in fields.items()
+            },
+            ensure_ascii=False,
+            indent=2,
         )
     else:
         value = f"(tipo no soportado: {ktype})"
@@ -149,7 +164,10 @@ async def delete_by_pattern(req: DeletePatternRequest, user: dict = Depends(requ
     if not req.pattern or req.pattern.strip() == "*":
         raise HTTPException(status_code=400, detail="Patrón demasiado amplio — especificá un prefijo")
     if _pattern_hits_protected(req.pattern):
-        raise HTTPException(status_code=403, detail=f"El patrón '{req.pattern}' afecta claves protegidas (session:*, flow:*, widget:config)")
+        raise HTTPException(
+            status_code=403,
+            detail=f"El patrón '{req.pattern}' afecta claves protegidas (session:*, flow:*, widget:config)",
+        )
     r = await _redis()
     keys = []
     async for key in r.scan_iter(req.pattern, count=500):
@@ -170,33 +188,33 @@ async def flush_conversations(user: dict = Depends(require_role("admin"))):
     """
     r = await _redis()
     patterns = [
-        "conv:*",                # Conversaciones
-        "idx:widget:*",          # Índice widget
-        "idx:whatsapp:*",        # Índice WhatsApp
-        "wflow:*",               # Estados del menú widget
-        "bot_disabled:*",        # Bot desactivado (widget)
-        "bot_disabled_wa:*",     # Bot desactivado (WhatsApp)
-        "conv_events:*",         # Log de eventos
-        "conv_label:*",          # Etiquetas de leads
-        "conv_queue:*",          # Cola de conversación
-        "conv_assigned:*",       # Asignación
+        "conv:*",  # Conversaciones
+        "idx:widget:*",  # Índice widget
+        "idx:whatsapp:*",  # Índice WhatsApp
+        "wflow:*",  # Estados del menú widget
+        "bot_disabled:*",  # Bot desactivado (widget)
+        "bot_disabled_wa:*",  # Bot desactivado (WhatsApp)
+        "conv_events:*",  # Log de eventos
+        "conv_label:*",  # Etiquetas de leads
+        "conv_queue:*",  # Cola de conversación
+        "conv_assigned:*",  # Asignación
         "conv_assigned_name:*",  # Nombre asignado
-        "conv_enrichment:*",     # Enriquecimiento de perfil
-        "conv_notes:*",          # Notas internas
-        "closing_note:*",        # Nota de cierre
-        "frt:*",                 # First response time
-        "last_reply:*",          # Última respuesta
-        "agent_name:*",          # Nombre del agente asignado
-        "assigned_agent:*",      # Asignación de agente
-        "unread:*",              # Conteo de no leídos
-        "zoho_cache:*",          # Cache cobranzas Zoho
-        "zoho_cursadas:*",       # Cache perfil Zoho Contacts
-        "datos_deudor:*",        # Datos deudor cobranzas
-        "last_seen:*",           # Última vez visto
-        "typing:*",              # Estado "escribiendo"
-        "cm_session:*",          # Sesiones internas
-        "customer_session:*",    # Sesiones de cliente
-        "contact_sessions:*",    # Sesiones por contacto
+        "conv_enrichment:*",  # Enriquecimiento de perfil
+        "conv_notes:*",  # Notas internas
+        "closing_note:*",  # Nota de cierre
+        "frt:*",  # First response time
+        "last_reply:*",  # Última respuesta
+        "agent_name:*",  # Nombre del agente asignado
+        "assigned_agent:*",  # Asignación de agente
+        "unread:*",  # Conteo de no leídos
+        "zoho_cache:*",  # Cache cobranzas Zoho
+        "zoho_cursadas:*",  # Cache perfil Zoho Contacts
+        "datos_deudor:*",  # Datos deudor cobranzas
+        "last_seen:*",  # Última vez visto
+        "typing:*",  # Estado "escribiendo"
+        "cm_session:*",  # Sesiones internas
+        "customer_session:*",  # Sesiones de cliente
+        "contact_sessions:*",  # Sesiones por contacto
     ]
     total = 0
     deleted_by_pattern: dict = {}
@@ -209,7 +227,9 @@ async def flush_conversations(user: dict = Depends(require_role("admin"))):
             deleted_by_pattern[pattern] = len(keys)
             total += len(keys)
 
-    logger.info("redis_flush_conversations", deleted=total, by_pattern=deleted_by_pattern, by=user.get("username"))
+    logger.info(
+        "redis_flush_conversations", deleted=total, by_pattern=deleted_by_pattern, by=user.get("username")
+    )
     return {
         "deleted": total,
         "by_pattern": deleted_by_pattern,
@@ -228,15 +248,33 @@ async def nuclear_reset(user: dict = Depends(require_role("admin"))):
     # 1) Redis — patrones amplios (conversación + caches + sesiones de cliente)
     r = await _redis()
     patterns = [
-        "conv:*", "idx:widget:*", "idx:whatsapp:*", "wflow:*",
-        "bot_disabled:*", "bot_disabled_wa:*",
-        "conv_events:*", "conv_label:*", "conv_queue:*",
-        "conv_assigned:*", "conv_assigned_name:*", "conv_enrichment:*",
-        "conv_notes:*", "closing_note:*", "frt:*", "last_reply:*",
-        "agent_name:*", "assigned_agent:*", "unread:*",
-        "zoho_cache:*", "zoho_cursadas:*", "datos_deudor:*",
-        "last_seen:*", "typing:*", "cm_session:*",
-        "customer_session:*", "contact_sessions:*",
+        "conv:*",
+        "idx:widget:*",
+        "idx:whatsapp:*",
+        "wflow:*",
+        "bot_disabled:*",
+        "bot_disabled_wa:*",
+        "conv_events:*",
+        "conv_label:*",
+        "conv_queue:*",
+        "conv_assigned:*",
+        "conv_assigned_name:*",
+        "conv_enrichment:*",
+        "conv_notes:*",
+        "closing_note:*",
+        "frt:*",
+        "last_reply:*",
+        "agent_name:*",
+        "assigned_agent:*",
+        "unread:*",
+        "zoho_cache:*",
+        "zoho_cursadas:*",
+        "datos_deudor:*",
+        "last_seen:*",
+        "typing:*",
+        "cm_session:*",
+        "customer_session:*",
+        "contact_sessions:*",
     ]
     redis_total = 0
     redis_by_pattern: dict = {}
@@ -255,18 +293,25 @@ async def nuclear_reset(user: dict = Depends(require_role("admin"))):
     pg_error = None
     try:
         from memory import postgres_store as pg
+
         if pg.is_enabled():
             pool = await pg.get_pool()
             async with pool.acquire() as conn:
                 # messages y conversation_stage tienen ON DELETE CASCADE,
                 # pero los borramos explícitamente para contar.
-                pg_messages = int(await conn.fetchval(
-                    "WITH d AS (DELETE FROM public.messages RETURNING 1) SELECT COUNT(*) FROM d"
-                ) or 0)
+                pg_messages = int(
+                    await conn.fetchval(
+                        "WITH d AS (DELETE FROM public.messages RETURNING 1) SELECT COUNT(*) FROM d"
+                    )
+                    or 0
+                )
                 await conn.execute("DELETE FROM public.conversation_stage")
-                pg_conversations = int(await conn.fetchval(
-                    "WITH d AS (DELETE FROM public.conversations RETURNING 1) SELECT COUNT(*) FROM d"
-                ) or 0)
+                pg_conversations = int(
+                    await conn.fetchval(
+                        "WITH d AS (DELETE FROM public.conversations RETURNING 1) SELECT COUNT(*) FROM d"
+                    )
+                    or 0
+                )
     except Exception as e:
         pg_error = str(e)
         logger.error("nuclear_reset_postgres_failed", error=pg_error)
