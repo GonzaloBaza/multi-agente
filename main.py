@@ -12,9 +12,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
 
 from config.settings import get_settings
 
@@ -53,8 +52,10 @@ from api.webhooks import router as webhooks_router
 from api.widget import router as widget_router
 from api.widget_config import router as widget_config_router
 
-# Rate limiter global
-limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])
+# Rate limiter global — usa `user_or_ip` como key_func para dar cuota
+# separada a cada sesión autenticada (no solo IP agregada). Los límites
+# por endpoint viven en utils/rate_limits.py.
+from utils.rate_limits import limiter  # noqa: E402
 
 logger = structlog.get_logger(__name__)
 

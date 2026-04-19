@@ -4,7 +4,7 @@ Endpoints de administración (protegidos con API key interna):
 """
 
 import structlog
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Cookie, Depends, Header, HTTPException
 
 from config.settings import get_settings
 
@@ -29,34 +29,35 @@ def verify_admin_key(x_admin_key: str = Header(...)):
 async def verify_admin_or_session(
     x_admin_key: str | None = Header(None),
     x_session_token: str | None = Header(None),
+    msk_session: str | None = Cookie(None),
 ) -> dict:
     """Acepta cualquiera de:
       - `X-Admin-Key: <secret>` → para scripts internos / cron / curl manual.
-      - `X-Session-Token: <jwt>` → para el browser autenticado vía /auth/login.
+      - `msk_session` cookie (httpOnly) → browser autenticado (preferido).
+      - `X-Session-Token` header → compat con bundle JS viejo en cache.
 
     Retorna dict con `{auth: "admin"}` o `{auth: "session", user: {...}}`.
 
     Esto reemplaza a `verify_admin_key` en endpoints que el UI consume:
-    sin esto, el frontend tendría que mandar el admin key embebido en el
-    bundle JS (que se descarga en claro), bypaseando todo el sistema de
-    sesiones. Con esto el browser solo necesita su JWT.
+    el browser solo manda la cookie; los scripts externos usan admin key.
     """
     settings = get_settings()
 
-    # 1. Admin key (preferido si viene — backward-compat con scripts).
+    # 1. Admin key (backward-compat con scripts / cron).
     if x_admin_key:
         if x_admin_key == settings.app_secret_key:
             return {"auth": "admin"}
         raise HTTPException(status_code=403, detail="Invalid admin key")
 
-    # 2. Session token vía Redis (mismo storage que get_current_user).
-    if x_session_token:
+    # 2. Session token vía cookie (preferida) o header (compat).
+    token = msk_session or x_session_token
+    if token:
         import json as _json
 
         from memory.conversation_store import get_conversation_store
 
         store = await get_conversation_store()
-        data = await store._redis.get(f"session:{x_session_token}")
+        data = await store._redis.get(f"session:{token}")
         if not data:
             raise HTTPException(status_code=401, detail="Sesión expirada")
         if isinstance(data, bytes):

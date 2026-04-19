@@ -10,10 +10,11 @@ from __future__ import annotations
 import time
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from api.auth import require_role
+from utils.rate_limits import TEST_AGENT_PER_USER, limiter
 
 logger = structlog.get_logger(__name__)
 router = APIRouter(prefix="/api/v1/admin/test-agent", tags=["test-agent"])
@@ -29,7 +30,9 @@ class TestMessageRequest(BaseModel):
 
 
 @router.post("")
+@limiter.limit(TEST_AGENT_PER_USER)
 async def test_agent(
+    request: Request,
     req: TestMessageRequest,
     user: dict = Depends(require_role("admin", "supervisor")),
 ):

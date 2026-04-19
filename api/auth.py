@@ -1,10 +1,31 @@
-"""Auth endpoints y dependencia FastAPI."""
+"""Auth endpoints y dependencia FastAPI.
+
+Sesión: JWT emitido por Supabase (password grant), opaque-token nuestro
+almacenado en Redis con TTL 8h. Se entrega al cliente de dos formas:
+
+  1. `Set-Cookie: msk_session=<token>; HttpOnly; Secure; SameSite=Lax`
+     — forma recomendada para el browser. No es leíble desde JS, así
+     que un XSS que meta un npm comprometido NO puede robar el token.
+
+  2. Response body `{token, user}` — compat temporal con curl/scripts y
+     con el frontend viejo que todavía pueda estar en cache del browser.
+     Cuando todos los clientes migren, se puede quitar del body.
+
+El `get_current_user` acepta la cookie (preferida) o el header
+`x-session-token` (compat). Así no hay deploy-break: el día 1 el backend
+manda ambos, el frontend nuevo usa cookie, el viejo sigue usando header
+hasta que se renueve el bundle.
+
+CSRF: la cookie se setea con SameSite=Lax — cualquier form POST de
+origen externo no envía la cookie. Cross-site fetches del frontend
+funcionan porque los hace desde el mismo origin (agentes.msklatam.com).
+"""
 
 import json
 import uuid
 
 import structlog
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Request, Response
 from pydantic import BaseModel
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -13,6 +34,7 @@ logger = structlog.get_logger(__name__)
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
 SESSION_TTL = 28800  # 8 horas
+SESSION_COOKIE_NAME = "msk_session"
 
 ALL_QUEUES = [
     "ventas_AR",
@@ -66,19 +88,45 @@ class ResetPasswordRequest(BaseModel):
     new_password: str
 
 
-async def get_current_user(x_session_token: str | None = Header(None)) -> dict:
-    """Dependencia FastAPI: verifica sesión en Redis."""
-    if not x_session_token:
+async def get_current_user(
+    msk_session: str | None = Cookie(None),
+    x_session_token: str | None = Header(None),
+) -> dict:
+    """Dependencia FastAPI: verifica sesión en Redis.
+
+    Acepta cookie httpOnly (preferida) o header x-session-token (compat).
+    La cookie gana si ambas vienen — si el bundle JS viejo sigue mandando
+    el header, pero ya hay cookie nueva, la cookie es más reciente.
+    """
+    token = msk_session or x_session_token
+    if not token:
         raise HTTPException(status_code=401, detail="No autenticado")
     from memory.conversation_store import get_conversation_store
 
     store = await get_conversation_store()
-    data = await store._redis.get(f"session:{x_session_token}")
+    data = await store._redis.get(f"session:{token}")
     if not data:
         raise HTTPException(status_code=401, detail="Sesión expirada")
     if isinstance(data, bytes):
         data = data.decode("utf-8")
     return json.loads(data)
+
+
+def _set_session_cookie(response: Response, token: str, secure: bool) -> None:
+    """Setea la cookie de sesión con los flags correctos.
+
+    secure=True en prod (https). En dev (http) se desactiva porque los
+    browsers ignoran `Secure` sobre http y no persiste la cookie.
+    """
+    response.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=token,
+        max_age=SESSION_TTL,
+        httponly=True,
+        secure=secure,
+        samesite="lax",  # lax permite navegación top-level, bloquea CSRF form POST
+        path="/",
+    )
 
 
 def require_role(*roles: str):
@@ -97,7 +145,8 @@ auth_limiter = Limiter(key_func=get_remote_address)
 
 @router.post("/login")
 @auth_limiter.limit("5/minute")
-async def login(request: Request, req: LoginRequest):
+async def login(request: Request, response: Response, req: LoginRequest):
+    from config.settings import get_settings
     from integrations.supabase_client import get_profile, sign_in_with_password
 
     try:
@@ -117,6 +166,13 @@ async def login(request: Request, req: LoginRequest):
 
         store = await get_conversation_store()
         await store._redis.setex(f"session:{token}", SESSION_TTL, json.dumps(user_info))
+
+        # Cookie httpOnly — es la forma canónica de guardar el token.
+        # El body sigue devolviendo el token en plano para backward-compat
+        # (bundle JS viejo en cache, scripts de QA, curl manual).
+        settings = get_settings()
+        _set_session_cookie(response, token, secure=settings.is_production)
+
         logger.info("user_login", email=req.email, role=user_info["role"])
         return {"token": token, "user": user_info}
     except HTTPException:
@@ -185,12 +241,19 @@ async def reset_password(request: Request, req: ResetPasswordRequest):
 
 
 @router.post("/logout")
-async def logout(x_session_token: str | None = Header(None)):
-    if x_session_token:
+async def logout(
+    response: Response,
+    msk_session: str | None = Cookie(None),
+    x_session_token: str | None = Header(None),
+):
+    token = msk_session or x_session_token
+    if token:
         from memory.conversation_store import get_conversation_store
 
         store = await get_conversation_store()
-        await store._redis.delete(f"session:{x_session_token}")
+        await store._redis.delete(f"session:{token}")
+    # Invalida la cookie en el browser (expira inmediatamente)
+    response.delete_cookie(SESSION_COOKIE_NAME, path="/")
     return {"ok": True}
 
 

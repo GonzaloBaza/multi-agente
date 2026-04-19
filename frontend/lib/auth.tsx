@@ -1,5 +1,22 @@
 "use client";
 
+/**
+ * AuthProvider + hooks de auth.
+ *
+ * Cambio clave vs versión anterior: ya NO usamos localStorage para
+ * guardar el token. La sesión vive en una cookie httpOnly que el backend
+ * setea en `/api/v1/auth/login` y el browser manda automáticamente.
+ *
+ * Flujo:
+ *   - Mount     → fetch `/api/v1/auth/me` (con cookie). Si 200, user
+ *                  logueado. Si 401, redirect a `/login`.
+ *   - Login     → POST `/api/v1/auth/login` con creds. Backend setea
+ *                  cookie + devuelve user en body. Guardamos user en
+ *                  state; la cookie la maneja el browser.
+ *   - Logout    → POST `/api/v1/auth/logout` (borra cookie en backend)
+ *                  + limpiamos state.
+ *   - getAuthToken — legacy, no se usa; retorna null para compat.
+ */
 import { createContext, useContext, useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 
@@ -15,48 +32,33 @@ export type User = {
 
 type AuthCtx = {
   user: User | null;
-  token: string | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
 };
 
 const AuthContext = createContext<AuthCtx | null>(null);
-const TOKEN_KEY = "msk_console_token";
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
   const pathname = usePathname();
 
-  // Rutas que NO requieren auth (las únicas accesibles sin token).
+  // Rutas que NO requieren auth — las únicas accesibles sin sesión.
   const PUBLIC_ROUTES = ["/login", "/forgot-password", "/reset-password"];
   const isPublicRoute = PUBLIC_ROUTES.some((p) => pathname?.startsWith(p));
 
-  // Load token from localStorage on mount + validate with /auth/me.
-  // ANTES: si no había token, dejaba pasar al inbox y la UI usaba un
-  // admin key embebido en el bundle → cualquiera entraba sin loguearse.
-  // AHORA: sin token o con token inválido → redirect a /login (excepto
-  // para las rutas públicas como /login mismo o /forgot-password).
   useEffect(() => {
-    const t = typeof window !== "undefined" ? localStorage.getItem(TOKEN_KEY) : null;
-    if (!t) {
-      setLoading(false);
-      if (!isPublicRoute) router.replace("/login");
-      return;
-    }
-    setToken(t);
-    fetch("/api/v1/auth/me", { headers: { "x-session-token": t } })
+    // Validamos la sesión contra el backend. Si hay cookie válida,
+    // /me devuelve el user. Si no, 401 → redirect a login.
+    fetch("/api/v1/auth/me", { credentials: "include" })
       .then(async (r) => {
-        if (!r.ok) throw new Error("Token inválido");
+        if (!r.ok) throw new Error("No session");
         const data = await r.json();
         setUser(data);
       })
       .catch(() => {
-        localStorage.removeItem(TOKEN_KEY);
-        setToken(null);
         if (!isPublicRoute) router.replace("/login");
       })
       .finally(() => setLoading(false));
@@ -67,6 +69,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const res = await fetch("/api/v1/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify({ email, password }),
     });
     if (!res.ok) {
@@ -74,27 +77,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       throw new Error(`Login falló: ${res.status} ${txt}`);
     }
     const data = await res.json();
-    localStorage.setItem(TOKEN_KEY, data.token);
-    setToken(data.token);
     setUser(data.user);
     router.replace("/inbox");
   };
 
   const logout = () => {
-    if (token) {
-      fetch("/api/v1/auth/logout", { method: "POST", headers: { "x-session-token": token } }).catch(() => {});
-    }
-    localStorage.removeItem(TOKEN_KEY);
+    fetch("/api/v1/auth/logout", { method: "POST", credentials: "include" }).catch(() => {});
     setUser(null);
-    setToken(null);
     router.replace("/login");
   };
 
-  return (
-    <AuthContext.Provider value={{ user, token, loading, login, logout }}>
-      {children}
-    </AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={{ user, loading, login, logout }}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {
@@ -104,17 +97,15 @@ export function useAuth() {
 }
 
 /**
- * Lee el token actual sincronicamente para usar fuera de React (ej en api.ts).
+ * Legacy — devuelve null. La cookie httpOnly no es accesible desde JS.
+ * Mantenemos el export para no romper imports en archivos que lo
+ * referencian pero ya no usamos el valor.
  */
-export function getAuthToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem(TOKEN_KEY);
+export function getAuthToken(): null {
+  return null;
 }
 
 // ── Role helpers ─────────────────────────────────────────────────────────────
-// Jerarquía: admin > supervisor > agente. Un admin pasa cualquier chequeo,
-// un supervisor pasa chequeos de supervisor y agente, y un agente solo los
-// suyos. Se usa para ocultar nav items y proteger rutas.
 
 const ROLE_RANK: Record<Role, number> = { agente: 1, supervisor: 2, admin: 3 };
 
@@ -144,13 +135,7 @@ export function useRole() {
 
 /**
  * Envoltorio declarativo para ocultar contenido según rol.
- *
- * - `min`: rol mínimo jerárquico (admin pasa todo, supervisor pasa >= supervisor, etc).
- * - `anyOf`: lista explícita de roles permitidos (ignora la jerarquía).
- * - Si `denyFallback` viene, se muestra en vez de esconder (útil para una
- *   página completa que el user navegó manualmente sin permisos).
- * - Mientras `loading`, muestra `loadingFallback` (default: null) — evita
- *   flash de "sin permisos" antes de que `/auth/me` responda.
+ * Ver comentario del patron en la versión anterior.
  */
 export function RoleGate({
   children,

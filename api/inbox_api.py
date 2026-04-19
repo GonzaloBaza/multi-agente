@@ -29,13 +29,14 @@ from datetime import datetime
 from typing import Literal
 
 import structlog
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from pydantic import BaseModel, Field
 
 from api.admin import require_role_or_admin, verify_admin_or_session  # admin key + session + role gate
 from integrations.zoho.contacts import ZohoContacts
 from memory import conversation_meta as cm
 from memory import postgres_store
+from utils.rate_limits import BULK_OPS_PER_USER, LLM_PER_USER, UPLOAD_PER_USER, limiter
 
 logger = structlog.get_logger(__name__)
 
@@ -88,40 +89,19 @@ class MessageOut(BaseModel):
 
 
 @router.get("/stream")
-async def stream(
-    admin_key: str | None = Query(None, alias="key"),
-    session_token: str | None = Query(None, alias="token"),
-):
+async def stream():
     """
     SSE para nuevos eventos del inbox (mensajes, asignaciones, etc).
-    Auth: EventSource no permite headers custom, así que aceptamos:
-      - `?token=<session_token>` (preferido, lo que usa el frontend logueado).
-      - `?key=<admin_key>` (compat para herramientas internas/scripts).
-    Reusa el bus broadcast del inbox legacy.
+
+    Auth: heredada del router — `Depends(verify_admin_or_session)` ya
+    validó cookie `msk_session` (preferido), header `x-session-token`
+    (compat) o admin_key. EventSource moderno del browser manda la
+    cookie automáticamente si se abre con `withCredentials: true`.
+
+    No hace falta soporte de `?token=` en query — eso fue el workaround
+    de la era localStorage, cuando el JS no podía setear headers sobre
+    EventSource. Con cookies httpOnly el browser se encarga solo.
     """
-    from config.settings import get_settings
-
-    expected = get_settings().app_secret_key  # mismo que verify_admin_key
-
-    authed = False
-    # 1. Token de sesión: misma validación que get_current_user (Redis).
-    if session_token:
-        from memory.conversation_store import get_conversation_store
-
-        store = await get_conversation_store()
-        sess = await store._redis.get(f"session:{session_token}")
-        if sess:
-            authed = True
-    # 2. Admin key: solo el secreto real, sin fallback hardcodeado.
-    #    (Antes aceptábamos también "change-this-secret" como fallback —
-    #    eso permitía que el frontend bypaseara el login en cualquier env
-    #    que no hubiera rotado el secret. Removido.)
-    if not authed and admin_key and admin_key == expected:
-        authed = True
-
-    if not authed:
-        raise HTTPException(401, "no autenticado")
-
     import asyncio
     import json as _json
 
@@ -890,7 +870,8 @@ async def takeover(conv_id: str, body: AssignBody):
 
 
 @router.post("/upload")
-async def upload_attachment(file: UploadFile = File(...)):
+@limiter.limit(UPLOAD_PER_USER)
+async def upload_attachment(request: Request, file: UploadFile = File(...)):
     """
     Sube un archivo a R2 y devuelve la URL pública. Usado por el composer
     para audio + adjuntos antes de enviarlos al canal.
@@ -1079,7 +1060,9 @@ class BulkAssignBody(BaseModel):
 
 
 @router.post("/bulk/assign")
+@limiter.limit(BULK_OPS_PER_USER)
 async def bulk_assign(
+    request: Request,
     body: BulkAssignBody,
     auth: dict = Depends(require_role_or_admin("admin", "supervisor")),
 ):
@@ -1093,7 +1076,9 @@ class BulkStatusBody(BaseModel):
 
 
 @router.post("/bulk/status")
+@limiter.limit(BULK_OPS_PER_USER)
 async def bulk_status(
+    request: Request,
     body: BulkStatusBody,
     auth: dict = Depends(require_role_or_admin("admin", "supervisor")),
 ):
@@ -1110,7 +1095,8 @@ class CorrectBody(BaseModel):
 
 
 @router.post("/llm/correct-spelling")
-async def correct_spelling(body: CorrectBody):
+@limiter.limit(LLM_PER_USER)
+async def correct_spelling(request: Request, body: CorrectBody):
     """Corrige ortografía + gramática usando OpenAI, respetando el estilo."""
     if not body.text.strip():
         return {"corrected": body.text, "changed": False}

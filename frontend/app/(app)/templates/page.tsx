@@ -36,7 +36,6 @@ import { NoAccess } from "@/components/ui/coming-soon";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
-import { getAuthToken } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 
 type HSMButton = {
@@ -199,11 +198,12 @@ function TemplatesPageInner() {
     try {
       const form = new FormData();
       form.append("file", file);
-      const token = getAuthToken();
-      const res = await fetch("/api/templates/hsm/upload-media", {
+      // Cookie httpOnly va automática en same-origin. El prefix /api/v1
+      // es el canónico desde el refactor de versioning.
+      const res = await fetch("/api/v1/templates/hsm/upload-media", {
         method: "POST",
         body: form,
-        headers: token ? { "x-session-token": token } : {},
+        credentials: "include",
       });
       if (!res.ok) {
         const text = await res.text().catch(() => "");

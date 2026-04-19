@@ -404,13 +404,11 @@ export async function uploadFile(file: File): Promise<UploadedAttachment> {
   const fd = new FormData();
   fd.append("file", file);
 
-  // Auth: solo session token, NO admin key. Ver lib/api.ts.
-  const token = typeof window !== "undefined" ? localStorage.getItem("msk_console_token") : null;
-  const headers: Record<string, string> = {};
-  if (token) headers["x-session-token"] = token;
-  const res = await fetch(`/api/inbox/upload`, {
+  // Auth via cookie httpOnly — credentials: include la manda automático.
+  // /api/v1 es el path canónico desde el refactor de versioning.
+  const res = await fetch(`/api/v1/inbox/upload`, {
     method: "POST",
-    headers,
+    credentials: "include",
     body: fd,
   });
   if (!res.ok) {

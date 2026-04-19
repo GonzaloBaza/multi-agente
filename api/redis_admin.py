@@ -6,10 +6,11 @@ Solo accesible por administradores autenticados.
 import json
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from api.auth import require_role
+from utils.rate_limits import REDIS_FLUSH_PER_USER, REDIS_NUKE_PER_USER, limiter
 
 logger = structlog.get_logger(__name__)
 router = APIRouter(prefix="/api/v1/admin/redis", tags=["redis-admin"])
@@ -181,7 +182,8 @@ async def delete_by_pattern(req: DeletePatternRequest, user: dict = Depends(requ
 
 
 @router.post("/flush-conversations")
-async def flush_conversations(user: dict = Depends(require_role("admin"))):
+@limiter.limit(REDIS_FLUSH_PER_USER)
+async def flush_conversations(request: Request, user: dict = Depends(require_role("admin"))):
     """
     Elimina TODAS las conversaciones y datos de sesión.
     Conserva: widget:config, auth tokens, flows, templates.
@@ -238,7 +240,8 @@ async def flush_conversations(user: dict = Depends(require_role("admin"))):
 
 
 @router.post("/nuclear-reset")
-async def nuclear_reset(user: dict = Depends(require_role("admin"))):
+@limiter.limit(REDIS_NUKE_PER_USER)
+async def nuclear_reset(request: Request, user: dict = Depends(require_role("admin"))):
     """
     RESET TOTAL: Redis (conversaciones + caches) + Supabase (customers + auth users).
     Conserva: widget:config, flow:*, session:* (admin auth), perfiles de agentes (profiles).

@@ -1,46 +1,42 @@
 /**
- * Cliente HTTP de la API backend.
+ * Cliente HTTP del backend.
  *
- * Convención única: TODOS los endpoints del admin panel viven bajo `/api/*`
- * en FastAPI (auth, inbox, admin/*, templates, widget-config, etc). Este
- * wrapper antepone `/api` a cualquier path que pases — no hay casos
- * especiales.
+ * Auth: la sesión vive en una cookie `msk_session` httpOnly, emitida por
+ * `POST /api/v1/auth/login`. Como es httpOnly NO es leíble desde JS (eso
+ * es el punto — un XSS vía npm comprometida no puede robar el token).
+ * El browser la manda automáticamente en cada fetch al mismo origen, no
+ * hay que tocarla acá.
  *
- * Endpoints públicos (widget embebible, webhooks, LMS) NO pasan por este
- * cliente — los consume el chat.js standalone o sistemas externos.
+ * `credentials: "include"` fuerza que se mande incluso si el frontend
+ * está en otro origen (dev: localhost:3000 → api:8000). En prod mismo
+ * origen alcanzaría con "same-origin" pero "include" es equivalente.
  *
- * Seguridad: este cliente NO manda `X-Admin-Key`. El admin key es un
- * secret server-side (para scripts/cron/curl manual). Lo que va en el
- * header es `x-session-token` — el JWT de Supabase emitido por
- * POST /api/auth/login.
+ * Antes usábamos `x-session-token` header + localStorage. Se migró a
+ * cookies httpOnly porque el header era vulnerable a XSS — una dep npm
+ * comprometida podía leer `localStorage.getItem("msk_console_token")`.
  */
 
 class ApiError extends Error {
-  constructor(public status: number, message: string) {
+  constructor(
+    public status: number,
+    message: string,
+  ) {
     super(message);
   }
 }
 
-function getToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem("msk_console_token");
-}
-
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const token = getToken();
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    ...(init.headers as Record<string, string> || {}),
+    ...((init.headers as Record<string, string>) || {}),
   };
-  if (token) headers["x-session-token"] = token;
 
-  // Prefijo único versionado. `path` debe empezar con `/` (ej
-  // `/inbox/conversations` o `/auth/users`). Construimos
-  // `/api/v1/inbox/conversations`. Cuando haya breaking change en el
-  // schema del backend, se bumpea a /api/v2 y el cliente viejo sigue
-  // funcionando en paralelo.
   const url = `/api/v1${path}`;
-  const res = await fetch(url, { ...init, headers });
+  const res = await fetch(url, {
+    ...init,
+    headers,
+    credentials: "include", // manda la cookie msk_session automáticamente
+  });
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
@@ -51,10 +47,10 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 export const api = {
-  get:    <T,>(path: string) => request<T>(path, { method: "GET" }),
-  post:   <T,>(path: string, body?: unknown) =>
+  get: <T,>(path: string) => request<T>(path, { method: "GET" }),
+  post: <T,>(path: string, body?: unknown) =>
     request<T>(path, { method: "POST", body: body ? JSON.stringify(body) : undefined }),
-  put:    <T,>(path: string, body?: unknown) =>
+  put: <T,>(path: string, body?: unknown) =>
     request<T>(path, { method: "PUT", body: body ? JSON.stringify(body) : undefined }),
   delete: <T,>(path: string) => request<T>(path, { method: "DELETE" }),
 };
