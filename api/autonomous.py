@@ -18,7 +18,7 @@ from api.auth import require_role
 from memory.conversation_store import get_conversation_store
 
 logger = structlog.get_logger(__name__)
-router = APIRouter(prefix="/admin/autonomous", tags=["autonomous"])
+router = APIRouter(prefix="/api/admin/autonomous", tags=["autonomous"])
 
 
 @router.get("/status")

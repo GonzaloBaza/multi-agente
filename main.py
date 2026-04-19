@@ -36,9 +36,6 @@ if _settings_boot.sentry_dsn:
         ],
     )
 
-# NOTE: api.lifecycle existe pero no se registra por ahora — el Kanban + Reports
-# ya cubren el use case. Se puede activar en el futuro si el equipo crece.
-# from api.lifecycle import router as lifecycle_router
 from api.autonomous import router as autonomous_router
 from api.reports import router as reports_router
 from api.test_agent import router as test_agent_router
@@ -46,7 +43,6 @@ from api.webhooks import router as webhooks_router
 from api.widget import router as widget_router
 from api.admin import router as admin_router
 from api.admin_courses import router as admin_courses_router
-from api.inbox import router as inbox_router
 from api.inbox_api import router as inbox_api_router
 from api.templates import router as templates_router
 from api.admin_prompts import router as admin_prompts_router
@@ -176,22 +172,33 @@ def create_app() -> FastAPI:
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-    # Routers
-    app.include_router(auth_router)
-    app.include_router(customer_auth_router)
-    app.include_router(webhooks_router)
-    app.include_router(widget_router)
-    app.include_router(admin_router)
-    app.include_router(admin_courses_router)
-    app.include_router(inbox_router)
-    app.include_router(inbox_api_router)
-    app.include_router(templates_router)
-    app.include_router(admin_prompts_router)
-    app.include_router(widget_config_router)
-    app.include_router(redis_admin_router)
-    app.include_router(reports_router)
-    app.include_router(test_agent_router)
-    app.include_router(autonomous_router)
+    # Routers — toda la UI consola consume bajo /api/* (consistencia con
+    # frontend/lib/api.ts). Los públicos (widget embebible, webhooks,
+    # customer LMS) viven fuera del namespace /api/ por compat con
+    # consumidores externos.
+    app.include_router(auth_router)             # /api/auth/*
+    app.include_router(inbox_api_router)        # /api/inbox/*
+    app.include_router(admin_router)            # /api/admin/{status,channels-status}
+    app.include_router(admin_courses_router)    # /api/admin/courses/*
+    app.include_router(admin_prompts_router)    # /api/admin/prompts/*
+    app.include_router(widget_config_router)    # /api/admin/widget-config/*
+    app.include_router(redis_admin_router)      # /api/admin/redis/*
+    app.include_router(reports_router)          # /api/admin/reports/*
+    app.include_router(test_agent_router)       # /api/admin/test-agent
+    app.include_router(autonomous_router)       # /api/admin/autonomous/*
+    app.include_router(templates_router)        # /api/templates/*
+
+    # Públicos — fuera del namespace /api/ (consumidores externos).
+    app.include_router(customer_auth_router)    # /customer/* (LMS)
+    app.include_router(webhooks_router)         # /webhook/* (Meta, MP, Rebill, Zoho)
+    app.include_router(widget_router)           # /widget/* (chat embebible)
+
+    # Legacy — api/inbox.py contiene helpers internos (broadcast_event,
+    # start_pubsub_listener, auto_assign_round_robin, _bot_key) que muchos
+    # módulos importan directamente. Sus endpoints HTTP `/inbox/*` no los
+    # exponemos: el frontend nuevo consume /api/inbox/* (inbox_api.py) y no
+    # hay otros clientes. Por eso NO se registra el router — las utilidades
+    # siguen accesibles vía import Python.
 
     # Servir los archivos estáticos del widget
     static_dir = Path(__file__).parent / "widget" / "static"

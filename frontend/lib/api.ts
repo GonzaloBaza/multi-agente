@@ -1,25 +1,18 @@
 /**
- * Cliente de la API. En dev, las llamadas a /api/* las redirige
- * next.config.mjs (rewrites) al FastAPI local. En prod, Nginx hace lo mismo
- * en agentes.msklatam.com → /api/* → FastAPI.
+ * Cliente HTTP de la API backend.
  *
- * IMPORTANTE: el backend tiene DOS familias de routes:
- *   - /auth/*   → router de auth, montado SIN prefijo /api
- *                  (login, /auth/users, /auth/me, etc.)
- *   - /api/*    → todo el resto (inbox, prompts, channels, courses, ...)
+ * Convención única: TODOS los endpoints del admin panel viven bajo `/api/*`
+ * en FastAPI (auth, inbox, admin/*, templates, widget-config, etc). Este
+ * wrapper antepone `/api` a cualquier path que pases — no hay casos
+ * especiales.
  *
- * Si llamás `api.get("/auth/users")` ingenuamente, queda `/api/auth/users`
- * que NO existe en el backend → 404. Por eso `request()` detecta paths que
- * empiezan con /auth y los rutea sin el prefijo /api. Era el bug que hacía
- * que la pantalla de Configuración mostrara "Necesitás iniciar sesión como
- * admin" aunque estuvieras logueado como admin.
+ * Endpoints públicos (widget embebible, webhooks, LMS) NO pasan por este
+ * cliente — los consume el chat.js standalone o sistemas externos.
  *
- * SEGURIDAD: este cliente NO manda X-Admin-Key. El admin key es un secret
- * server-side (cron, scripts, webhooks internos) y cualquier cosa prefijada
- * con NEXT_PUBLIC_* se embebe en el bundle JS del browser — así que poner
- * el admin key acá lo expone a cualquier visitante que abra devtools.
- * La única credencial del browser es `x-session-token` (JWT emitido por
- * /auth/login). Si no hay token → 401 → el guard de cliente manda a /login.
+ * Seguridad: este cliente NO manda `X-Admin-Key`. El admin key es un
+ * secret server-side (para scripts/cron/curl manual). Lo que va en el
+ * header es `x-session-token` — el JWT de Supabase emitido por
+ * POST /api/auth/login.
  */
 
 class ApiError extends Error {
@@ -41,15 +34,15 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   };
   if (token) headers["x-session-token"] = token;
 
-  // Routes /auth/* viven en el root, no debajo de /api. Ver header del archivo.
-  const url = path.startsWith("/auth/") ? path : `/api${path}`;
+  // Prefijo único. `path` debe empezar con `/` (por ej `/inbox/conversations`
+  // o `/auth/users`). Construimos `/api/inbox/conversations` etc.
+  const url = `/api${path}`;
   const res = await fetch(url, { ...init, headers });
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new ApiError(res.status, `HTTP ${res.status}: ${text || res.statusText}`);
   }
-
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
 }

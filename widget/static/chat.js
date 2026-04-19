@@ -205,17 +205,6 @@
         </svg>
       </button>
     </div>
-    <div id="cm-country-bar">
-      <span>País:</span>
-      <select id="cm-country-select">
-        <option value="AR" ${CONFIG.country==="AR"?"selected":""}>🇦🇷 Argentina</option>
-        <option value="MX" ${CONFIG.country==="MX"?"selected":""}>🇲🇽 México</option>
-        <option value="CO" ${CONFIG.country==="CO"?"selected":""}>🇨🇴 Colombia</option>
-        <option value="PE" ${CONFIG.country==="PE"?"selected":""}>🇵🇪 Perú</option>
-        <option value="CL" ${CONFIG.country==="CL"?"selected":""}>🇨🇱 Chile</option>
-        <option value="UY" ${CONFIG.country==="UY"?"selected":""}>🇺🇾 Uruguay</option>
-      </select>
-    </div>
     <div id="cm-messages" role="log" aria-live="polite"></div>
     <div id="cm-typing">
       <span class="cm-dot"></span><span class="cm-dot"></span><span class="cm-dot"></span>
@@ -257,7 +246,7 @@
   let greetingBubbleEl = null;         // ref al <div> del saludo, para poder reemplazarlo si cambia el login
 
   // ─── DOM refs (asignados después de mount) ────────────────────────────────
-  let panel, fab, messagesEl, typingEl, inputEl, sendBtn, badge, countrySelect;
+  let panel, fab, messagesEl, typingEl, inputEl, sendBtn, badge;
 
   // ─── Render de mensajes ───────────────────────────────────────────────────
   function appendMessage(role, text, timestamp, mediaUrl, mediaType, mediaMime) {
@@ -504,7 +493,7 @@
   // ─── Load remote widget config from admin panel ────────────────────────────
   async function loadRemoteConfig() {
     try {
-      const res = await fetch(`${CONFIG.apiUrl}/admin/widget-config/public`);
+      const res = await fetch(`${CONFIG.apiUrl}/api/admin/widget-config/public`);
       if (!res.ok) return;
       const cfg = await res.json();
       if (cfg.title) CONFIG.title = cfg.title;
@@ -539,15 +528,10 @@
     inputEl = document.getElementById("cm-input");
     sendBtn = document.getElementById("cm-send-btn");
     badge = document.getElementById("cm-badge");
-    countrySelect = document.getElementById("cm-country-select");
 
     // Event listeners
     fab.addEventListener("click", togglePanel);
     document.getElementById("cm-close-btn").addEventListener("click", togglePanel);
-
-    countrySelect.addEventListener("change", function () {
-      country = this.value;
-    });
 
     sendBtn.addEventListener("click", function () {
       const text = inputEl.value.trim();

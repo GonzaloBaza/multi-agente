@@ -48,7 +48,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
     setToken(t);
-    fetch("/auth/me", { headers: { "x-session-token": t } })
+    fetch("/api/auth/me", { headers: { "x-session-token": t } })
       .then(async (r) => {
         if (!r.ok) throw new Error("Token inválido");
         const data = await r.json();
@@ -64,7 +64,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const login = async (email: string, password: string) => {
-    const res = await fetch("/auth/login", {
+    const res = await fetch("/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, password }),
@@ -82,7 +82,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = () => {
     if (token) {
-      fetch("/auth/logout", { method: "POST", headers: { "x-session-token": token } }).catch(() => {});
+      fetch("/api/auth/logout", { method: "POST", headers: { "x-session-token": token } }).catch(() => {});
     }
     localStorage.removeItem(TOKEN_KEY);
     setUser(null);

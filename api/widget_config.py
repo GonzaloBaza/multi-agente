@@ -22,7 +22,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from api.auth import require_role
 
-router = APIRouter(prefix="/admin/widget-config", tags=["widget-config"])
+router = APIRouter(prefix="/api/admin/widget-config", tags=["widget-config"])
 
 WIDGET_CONFIG_KEY = "widget:config"
 

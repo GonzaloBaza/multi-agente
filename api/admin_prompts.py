@@ -16,7 +16,7 @@ import structlog
 
 logger = structlog.get_logger(__name__)
 
-router = APIRouter(prefix="/admin", tags=["admin"])
+router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 BASE_DIR = Path(__file__).parent.parent
 

@@ -13,7 +13,7 @@ import structlog
 
 logger = structlog.get_logger(__name__)
 
-router = APIRouter(prefix="/templates", tags=["templates"])
+router = APIRouter(prefix="/api/templates", tags=["templates"])
 
 # Mapeo país → número de WhatsApp que envía (mismo que Botmaker)
 CHANNEL_NUMBERS = {

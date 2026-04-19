@@ -1,12 +1,13 @@
-# Core
+# Core web framework
 fastapi>=0.115.0
 uvicorn[standard]>=0.32.0
 pydantic>=2.10.0
 pydantic-settings>=2.6.0
 python-dotenv>=1.0.0
 httpx>=0.27.0
+python-multipart>=0.0.18   # FastAPI Form/UploadFile
 
-# LangGraph + LangChain
+# LangGraph + LangChain (agentes IA)
 langgraph>=0.2.50
 langchain>=0.3.10
 langchain-openai>=0.2.14
@@ -14,36 +15,22 @@ langchain-core>=0.3.20
 langchain-community>=0.3.10
 openai>=1.58.1,<2.0.0
 
-# Vector store — aiohttp<3.10 requerido por langchain-pinecone
+# Vector store (RAG de cursos) — aiohttp<3.10 requerido por langchain-pinecone
 pinecone-client>=5.0.0
 langchain-pinecone>=0.2.0
 aiohttp>=3.9.5,<3.10
 
-# Memory / cache
+# Memory
 redis>=5.2.0
+asyncpg>=0.29.0            # Postgres (Supabase)
 
-# Zoho CRM
-requests>=2.32.0
-PyJWT>=2.10.0
-
-# Utils
-python-multipart>=0.0.18
-sse-starlette>=2.1.0
+# Logging / rate limit / observability
 structlog>=24.4.0
-tenacity>=9.0.0
-jinja2>=3.1.0
-
-# Security
 slowapi>=0.1.9
-
-# Observability
 sentry-sdk[fastapi]>=2.18.0
 
-# Object storage (Cloudflare R2, S3-compatible)
+# Cloudflare R2 (S3-compatible) para media del inbox
 boto3>=1.35.0
 
-# Postgres durable store (Supabase)
-asyncpg>=0.29.0
-
-# Scheduler persistente (retargeting + pagos sin perder tareas en restart)
+# Scheduler persistente (retargeting, monitoreo de pagos)
 APScheduler>=3.10.4

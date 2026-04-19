@@ -77,9 +77,9 @@ class Settings(BaseSettings):
     r2_bucket: str = ""             # msk-multiagente-media
     r2_public_url: str = ""         # https://pub-XXXX.r2.dev
 
-    # Supabase
-    supabase_url: str = "https://ubycfticfuatoafzsrfv.supabase.co"
-    supabase_service_role_key: str = ""
+    # Supabase Auth (login de la consola)
+    supabase_url: str = ""
+    supabase_secret_key: str = ""          # service_role key
 
     # Notifications
     slack_webhook_url: str = ""
