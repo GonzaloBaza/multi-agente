@@ -23,7 +23,7 @@ from api.auth import require_role
 from memory import postgres_store
 
 logger = structlog.get_logger(__name__)
-router = APIRouter(prefix="/api/admin/reports", tags=["reports"])
+router = APIRouter(prefix="/api/v1/admin/reports", tags=["reports"])
 
 
 def _since(days: int) -> datetime:

@@ -34,9 +34,12 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   };
   if (token) headers["x-session-token"] = token;
 
-  // Prefijo único. `path` debe empezar con `/` (por ej `/inbox/conversations`
-  // o `/auth/users`). Construimos `/api/inbox/conversations` etc.
-  const url = `/api${path}`;
+  // Prefijo único versionado. `path` debe empezar con `/` (ej
+  // `/inbox/conversations` o `/auth/users`). Construimos
+  // `/api/v1/inbox/conversations`. Cuando haya breaking change en el
+  // schema del backend, se bumpea a /api/v2 y el cliente viejo sigue
+  // funcionando en paralelo.
+  const url = `/api/v1${path}`;
   const res = await fetch(url, { ...init, headers });
 
   if (!res.ok) {

@@ -37,7 +37,7 @@ from api.admin import verify_admin_or_session, require_role_or_admin  # admin ke
 
 logger = structlog.get_logger(__name__)
 
-router = APIRouter(prefix="/api/inbox", tags=["inbox"], dependencies=[Depends(verify_admin_or_session)])
+router = APIRouter(prefix="/api/v1/inbox", tags=["inbox"], dependencies=[Depends(verify_admin_or_session)])
 
 
 # ─── Schemas ─────────────────────────────────────────────────────────────────

@@ -9,7 +9,7 @@ from api.auth import require_role
 import structlog
 
 logger = structlog.get_logger(__name__)
-router = APIRouter(prefix="/api/admin/redis", tags=["redis-admin"])
+router = APIRouter(prefix="/api/v1/admin/redis", tags=["redis-admin"])
 
 # Prefijos protegidos — no se pueden borrar vía delete-pattern ni delete-key
 # para evitar eliminar accidentalmente sesiones de admin o config del widget.

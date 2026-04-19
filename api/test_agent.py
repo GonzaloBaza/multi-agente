@@ -16,7 +16,7 @@ import structlog
 from api.auth import require_role
 
 logger = structlog.get_logger(__name__)
-router = APIRouter(prefix="/api/admin/test-agent", tags=["test-agent"])
+router = APIRouter(prefix="/api/v1/admin/test-agent", tags=["test-agent"])
 
 
 class TestMessageRequest(BaseModel):

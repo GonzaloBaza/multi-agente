@@ -20,7 +20,7 @@ from memory import postgres_store
 
 logger = structlog.get_logger(__name__)
 
-router = APIRouter(prefix="/api/admin/courses", tags=["admin-courses"])
+router = APIRouter(prefix="/api/v1/admin/courses", tags=["admin-courses"])
 
 # Todos los países habilitados para sync
 ENABLED_COUNTRIES: list[str] = [

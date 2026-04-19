@@ -493,7 +493,7 @@
   // ─── Load remote widget config from admin panel ────────────────────────────
   async function loadRemoteConfig() {
     try {
-      const res = await fetch(`${CONFIG.apiUrl}/api/admin/widget-config/public`);
+      const res = await fetch(`${CONFIG.apiUrl}/api/v1/admin/widget-config/public`);
       if (!res.ok) return;
       const cfg = await res.json();
       if (cfg.title) CONFIG.title = cfg.title;

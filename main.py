@@ -118,32 +118,62 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # Cleanup
+    # ── Graceful shutdown ────────────────────────────────────────────────
+    logger.info("app_shutdown_start")
+
+    # 1. Cancelar el listener de Pub/Sub (background task) — dejamos que
+    # drene mensajes en vuelo durante 2s antes de forzar.
     pubsub_task.cancel()
+    try:
+        await asyncio.wait_for(pubsub_task, timeout=2.0)
+    except (asyncio.CancelledError, asyncio.TimeoutError):
+        pass
+
+    # 2. Cerrar SSE clients conectados (vacía sus colas → event_gen sale
+    # del while y el StreamingResponse termina). Sin esto, clientes
+    # abiertos mantienen el worker vivo bloqueando shutdown.
+    try:
+        from utils.realtime import _sse_clients
+        for q in list(_sse_clients):
+            try:
+                q.put_nowait({"type": "server_shutdown"})
+            except asyncio.QueueFull:
+                pass
+        _sse_clients.clear()
+    except Exception:
+        pass
+
+    # 3. Shutdown del scheduler — APScheduler tiene su propio stop path.
     try:
         from utils.scheduler import shutdown_scheduler
         await shutdown_scheduler()
     except Exception:
         pass
 
-    logger.info("app_shutdown")
+    # 4. Cerrar pool Postgres si estaba abierto.
+    try:
+        from memory import postgres_store
+        if postgres_store.is_enabled():
+            await postgres_store.close_pool()
+    except Exception:
+        pass
+
+    logger.info("app_shutdown_done")
 
 
 def create_app() -> FastAPI:
     settings = get_settings()
 
-    # Docs + OpenAPI schema bajo /api/* para que nginx los rutee a FastAPI
-    # (el regex solo permite /api/ para el admin panel). El schema es la
-    # fuente de los tipos TS que se autogeneran en el frontend via
-    # openapi-typescript (script `codegen:types` en frontend/package.json).
-    # Swagger UI queda habilitado también en prod porque ya está detrás del
-    # login de Supabase y solo expone endpoints que requieren token.
+    # Docs + OpenAPI schema bajo /api/v1/* (matchea la versión de la API).
+    # Cuando exista /api/v2 se va a servir también `/api/v2/openapi.json` en
+    # paralelo, sin romper clientes v1. El script `codegen:types` del
+    # frontend apunta a la misma URL.
     app = FastAPI(
         title="MSK Multi-Agente",
         description="Backend del bot multi-agente y la consola humana.",
         version="1.0.0",
-        openapi_url="/api/openapi.json",
-        docs_url="/api/docs",
+        openapi_url="/api/v1/openapi.json",
+        docs_url="/api/v1/docs",
         redoc_url=None,
         lifespan=lifespan,
     )
@@ -169,11 +199,21 @@ def create_app() -> FastAPI:
             response.headers["X-Frame-Options"] = "SAMEORIGIN"
             response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
             response.headers["Permissions-Policy"] = "camera=(), microphone=(self), geolocation=()"
+            # Cross-origin isolation — bloquea iframes externos cargando
+            # recursos del origen (aumenta postura frente a spectre-like).
+            response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+            response.headers["Cross-Origin-Resource-Policy"] = "same-site"
             if request.url.scheme == "https":
                 response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
             return response
 
     app.add_middleware(SecurityHeadersMiddleware)
+
+    # Request context (structlog contextvars + request_id + duration log).
+    # Se agrega DESPUÉS de security headers para que los logs vean la
+    # ruta final. Starlette ejecuta middlewares en orden inverso al add.
+    from utils.request_context import RequestContextMiddleware
+    app.add_middleware(RequestContextMiddleware)
 
     # Rate limiting
     app.state.limiter = limiter
@@ -219,19 +259,65 @@ def create_app() -> FastAPI:
     media_dir.mkdir(exist_ok=True)
     app.mount("/media", StaticFiles(directory=str(media_dir)), name="media")
 
-    @app.get("/health")
+    @app.get("/health", include_in_schema=False)
     async def health():
-        checks = {"status": "ok"}
+        """Liveness probe — 200 si el proceso responde. Usado por Docker
+        healthcheck y load balancers. NO chequea dependencias externas
+        (evita cascading failures y falsos positivos)."""
+        return {"status": "ok"}
+
+    @app.get("/api/v1/health/live", include_in_schema=False)
+    async def health_live():
+        """Liveness bajo /api/v1 para consumidores del frontend."""
+        return {"status": "ok"}
+
+    @app.get("/api/v1/health/ready")
+    async def health_ready():
+        """Readiness probe — chequea dependencias críticas con timeout
+        corto. Devuelve 200 si todo OK, 503 si algo crítico falla.
+
+        Críticas (sin ellas el servicio no funciona): Redis, Postgres.
+        Opcionales (degradan pero no tumban): OpenAI, Pinecone, Zoho.
+        """
+        import asyncio
+        import redis.asyncio as aioredis
+        from fastapi.responses import JSONResponse
+
+        checks: dict[str, str] = {}
+        critical_ok = True
+
+        # Redis (crítico — sesiones, pubsub, cache)
         try:
-            import redis.asyncio as aioredis
             client = aioredis.from_url(get_settings().redis_url)
-            await client.ping()
+            await asyncio.wait_for(client.ping(), timeout=2.0)
             checks["redis"] = "ok"
             await client.aclose()
-        except Exception:
-            checks["redis"] = "error"
-            checks["status"] = "degraded"
-        return checks
+        except Exception as e:
+            checks["redis"] = f"error: {type(e).__name__}"
+            critical_ok = False
+
+        # Postgres (crítico — conversaciones, profiles, audit)
+        try:
+            from memory import postgres_store
+            if postgres_store.is_enabled():
+                pool = await postgres_store.get_pool()
+                async with pool.acquire() as conn:
+                    await asyncio.wait_for(conn.fetchval("SELECT 1"), timeout=2.0)
+                checks["postgres"] = "ok"
+            else:
+                checks["postgres"] = "disabled"
+        except Exception as e:
+            checks["postgres"] = f"error: {type(e).__name__}"
+            critical_ok = False
+
+        # Config fingerprint — útil para verificar qué versión está corriendo
+        s = get_settings()
+        checks["env"] = s.app_env
+        checks["openai"] = "ok" if s.openai_api_key else "not_configured"
+        checks["supabase"] = "ok" if s.supabase_url else "not_configured"
+
+        body = {"status": "ready" if critical_ok else "not_ready", "checks": checks}
+        return body if critical_ok else JSONResponse(status_code=503, content=body)
 
     @app.get("/widget.js")
     async def serve_widget_js():
