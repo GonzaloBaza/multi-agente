@@ -52,10 +52,28 @@ from api.webhooks import router as webhooks_router
 from api.widget import router as widget_router
 from api.widget_config import router as widget_config_router
 
+# Structlog pipeline con PII scrubber. Aplica a TODOS los loggers del
+# backend — previene que passwords/tokens/emails aparezcan en stdout,
+# Sentry o cualquier destino futuro (Loki/Datadog). Ver utils/log_processors.
+from utils.log_processors import pii_scrubber  # noqa: E402
+
 # Rate limiter global — usa `user_or_ip` como key_func para dar cuota
 # separada a cada sesión autenticada (no solo IP agregada). Los límites
 # por endpoint viven en utils/rate_limits.py.
 from utils.rate_limits import limiter  # noqa: E402
+
+structlog.configure(
+    processors=[
+        structlog.contextvars.merge_contextvars,
+        structlog.processors.add_log_level,
+        structlog.processors.TimeStamper(fmt="iso"),
+        pii_scrubber,
+        structlog.processors.JSONRenderer(),
+    ],
+    wrapper_class=structlog.make_filtering_bound_logger(20),  # INFO
+    logger_factory=structlog.PrintLoggerFactory(),
+    cache_logger_on_first_use=True,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -246,6 +264,24 @@ def create_app() -> FastAPI:
     # Rate limiting
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+    # Prometheus metrics — expone /metrics con counters por endpoint +
+    # histograma de latencia + tamaños de request/response. Scrapeado por
+    # el container Prometheus en el compose. No expone información
+    # sensible (rutas sí, valores de params no).
+    try:
+        from prometheus_fastapi_instrumentator import Instrumentator
+
+        Instrumentator(
+            should_group_status_codes=True,
+            should_instrument_requests_inprogress=True,
+            excluded_handlers=["/health", "/metrics"],  # evita loop de scrape
+            env_var_name="ENABLE_METRICS",
+            inprogress_labels=True,
+        ).instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
+        logger.info("prometheus_metrics_enabled")
+    except ImportError:
+        logger.warning("prometheus_instrumentator_not_installed")
 
     # Routers — toda la UI consola consume bajo /api/* (consistencia con
     # frontend/lib/api.ts). Los públicos (widget embebible, webhooks,

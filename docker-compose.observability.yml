@@ -1,0 +1,53 @@
+# Stack de observability self-hosted. Aplicar con:
+#   docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d
+#
+# Expone en localhost (no público):
+#   - Prometheus → http://127.0.0.1:9090
+#   - Grafana    → http://127.0.0.1:3001  (admin/admin la primera vez)
+#
+# Para acceder desde tu laptop: tunel SSH
+#   ssh -L 9090:localhost:9090 -L 3001:localhost:3001 root@68.183.156.122
+#
+# NO exponerlos públicamente — Prometheus no tiene auth y Grafana con el
+# password default es RCE. Si hace falta acceso sin tunel, meter nginx
+# con basic_auth.
+services:
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: multiagente-prometheus-1
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      # Retención: 30 días — suficiente para investigar incidentes y mensual.
+      - "--storage.tsdb.retention.time=30d"
+      - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+      - "--web.console.templates=/usr/share/prometheus/consoles"
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    container_name: multiagente-grafana-1
+    ports:
+      - "127.0.0.1:3001:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+    environment:
+      # Admin default. CAMBIAR DESPUÉS DEL PRIMER LOGIN.
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_INSTALL_PLUGINS=
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+volumes:
+  prometheus_data:
+  grafana_data:

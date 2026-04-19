@@ -34,3 +34,8 @@ boto3>=1.35.0
 
 # Scheduler persistente (retargeting, monitoreo de pagos)
 APScheduler>=3.10.4
+
+# Prometheus metrics — endpoint /metrics con histogramas de latencia,
+# contadores de requests, size de responses. Scrapeable por Prometheus
+# self-hosted en el mismo droplet (ver docker-compose.yml).
+prometheus-fastapi-instrumentator>=7.0.0

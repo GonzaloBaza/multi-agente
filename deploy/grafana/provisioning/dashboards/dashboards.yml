@@ -1,0 +1,13 @@
+apiVersion: 1
+
+# Auto-provisiona los dashboards JSON que pongamos en este dir. Por ahora
+# arranca vacío — se pueden exportar desde la UI de Grafana y commitear.
+providers:
+  - name: multi-agente
+    orgId: 1
+    folder: MSK
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /etc/grafana/provisioning/dashboards

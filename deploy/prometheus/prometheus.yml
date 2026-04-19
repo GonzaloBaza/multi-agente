@@ -1,0 +1,22 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    service: multi-agente
+    env: production
+
+# Quién scrapear. `api` es el hostname del container en la red de
+# docker-compose — no hay que exponer puerto público.
+scrape_configs:
+  - job_name: multiagente-api
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["api:8000"]
+        labels:
+          component: api
+
+  # Prometheus se auto-scrapea. Útil para diagnosticar si el scrape
+  # principal no anda (si self-scrape funciona, el problema está en api).
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
