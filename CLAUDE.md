@@ -74,37 +74,70 @@ Enforcement:
 
 ## Deploy
 
-**Servidor**: `root@68.183.156.122` · `/opt/multiagente/` · SSH por password
-(`MSK!@L4t4m`).
+**Servidor productivo**: `MSK-Server-NET` · `root@129.212.145.193` (Reserved IP) /
+`157.245.8.143` (Public IPv4) · 16 GB RAM / 4 vCPU · Ubuntu 25.04.
+El proyecto vive en `/opt/multiagente/` con `COMPOSE_PROJECT_NAME=msk-multiagente`
+para evitar colisiones con el stack `msklatam.net` (otros 30+ containers del
+mismo server).
 
-**Containers** (`docker-compose.yml`):
-- `multiagente-api-1` (FastAPI, puerto 8000 interno)
-- `multiagente-ui-1` (Next.js, puerto 3000 interno)
-- `multiagente-redis-1` (Redis 7, solo localhost)
+SSH con key: `ssh -i ~/.ssh/msk_droplet -o ServerAliveInterval=30 root@129.212.145.193`
+(configurado hace ~1 día, elimina el problema de plink cortándose en builds
+largos). Password fallback: `tyxtbUKYUoQRMsD9ZtpboZQl`.
+
+**Docker data root ya está en volumen separado** (`/mnt/volume_nyc3_02/docker`,
+100 GB). El root disk (48 GB, 96% lleno de otros proyectos) NO se toca.
+
+**Droplet viejo**: `root@68.183.156.122` · 2 GB RAM · se puede apagar/destruir
+cuando Gonzalo diga (containers ya bajados, DNS switcheado 20 abr 2026).
+
+**Containers** (`msk-multiagente-*` — prefix del project name):
+- `msk-multiagente-api-1` (FastAPI + LangGraph, puerto 127.0.0.1:8000)
+- `msk-multiagente-ui-1` (Next.js 15, puerto 127.0.0.1:3000)
+- `msk-multiagente-redis-1` (Redis 7, **sin puerto expuesto** — uso interno)
 
 **Flujo deploy**:
 ```bash
 # local
 git add . && git commit -m "..." && git push
 
-# server
-plink -batch -pw 'MSK!@L4t4m' root@68.183.156.122
-cd /opt/multiagente && git pull
-docker compose up -d --build api ui
-# Si cambió deploy/nginx-agentes.msklatam.com.conf:
-cp deploy/nginx-agentes.msklatam.com.conf /etc/nginx/sites-available/agentes.msklatam.com
-nginx -t && systemctl reload nginx
+# server (con tmux porque builds pueden tardar 1-5 min según cambios)
+ssh -i ~/.ssh/msk_droplet root@129.212.145.193
+cd /opt/multiagente
+git pull
+
+# Build corre en tmux así no muere si SSH se corta:
+tmux new-session -d -s deploy 'docker compose -p msk-multiagente build api ui > /tmp/build.log 2>&1 && docker compose -p msk-multiagente up -d --force-recreate api ui && echo DEPLOY_DONE > /tmp/done.flag'
+
+# Wait loop hasta ver el flag
+until [ -f /tmp/done.flag ]; do sleep 8; done; rm /tmp/done.flag
+tail -5 /tmp/build.log
+
+# Para solo backend (código Python):
+docker compose -p msk-multiagente build api && docker compose -p msk-multiagente up -d --force-recreate api
+
+# Para solo frontend:
+docker compose -p msk-multiagente build ui && docker compose -p msk-multiagente up -d --force-recreate ui
 ```
 
 **Verificación**:
 ```bash
-curl -sf https://agentes.msklatam.com/health       # 200 {"status":"ok"}
-curl -sf https://agentes.msklatam.com/widget.js    # 200 ~36KB
+curl -sf https://agentes.msklatam.com/health                # 200 {"status":"ok"}
+curl -sf https://agentes.msklatam.com/widget.js             # 200 ~45KB (bot SVG + logic)
+curl -sf https://agentes.msklatam.com/static/bot-kawaii.png # 200 (FAB image)
 ```
 
-⚠️ `--build` es **obligatorio** en cada deploy. El `docker-compose.yml` no
-monta el código como volumen — la imagen tiene el snapshot. Sin `--build` el
-container sirve código viejo aunque el FS del host esté actualizado.
+⚠️ **Siempre `-p msk-multiagente`** en los comandos compose — sin el project
+name, docker usa el nombre del directorio ("multiagente") y colisiona con
+containers del otro stack msklatam.net. Nuestros containers tienen que
+empezar con `msk-multiagente-` sí o sí.
+
+⚠️ `--force-recreate` es **obligatorio** — sin eso compose reutiliza el
+container viejo aunque la imagen sea nueva.
+
+**Override de compose** (`docker-compose.override.yml`):
+- Puertos a 127.0.0.1 (nginx del host rutea, no exposición directa)
+- Redis sin ports (el `!reset []` necesita sintaxis YAML compose v2)
+- `mem_limit: 2g` en ui para que next build no tire del 16 GB del server
 
 ## DB (Supabase Postgres)
 
@@ -166,3 +199,90 @@ cachea el módulo). ⚠️ `docker compose build` sin pushear a git sobrescribe.
 - Trabajar directo en `main`, nunca worktrees.
 - No inventar features ni nombres de archivos.
 - Cambios pequeños y verificables, no big-bang.
+
+## Features relevantes al 20-abr-2026
+
+**Inbox**:
+- Panel derecho de contacto con: Insights IA, CRUD Zoho (links directos a
+  `crm.zoho.com/crm/msklatam/tab/Contacts/{id}` y `.../CustomModule20/{id}`),
+  Cobranzas, Llamadas (Zoho Voice logs).
+- Teléfono clickeable como `tel:` link → ZDialer Chrome extension lo
+  intercepta si está instalado (llamadas salientes via Zoho Voice).
+
+**Notificaciones in-app** (✓ funcional end-to-end):
+- Dropdown en el rail (`components/layout/notifications-dropdown.tsx`)
+- SSE push real-time (`/api/v1/notifications/stream`) + polling fallback
+- Triggers wired: `conv_assigned` (assign endpoint), `new_message_mine` (WA
+  Meta + Twilio channels), `conv_stale` (cron cada 15 min, ver
+  `utils/stale_conversations.py` + `utils/scheduler.py`)
+- Triggers stub (arquitectura lista, falta wire): `template_approved`
+  (webhook Meta HSM status change)
+- Settings: `/settings/notifications` con toggles por tipo + sound + digest
+- DB: `public.notifications` + `public.notification_preferences` (migration
+  007).
+
+**Analytics** (`/analytics`) — dashboard operativo con:
+- KPIs de volumen (convs, mensajes, hot leads) + estado AHORA (abiertas,
+  needs_human, stale)
+- SLA cards (takeover rate, bot-only %, SLA <15m / <1h, TMR p50/p90) con
+  semáforo verde/rojo según umbrales
+- Heatmap 7×24 (día × hora) para decidir turnos
+- Leaderboard de agentes humanos (convs atendidas, TMR individual, load)
+- Breakdowns por canal, cola, país, lifecycle con % sobre total
+
+**Pipeline** (`/pipeline`) — kanban de conversaciones por cola IA:
+- 3 columnas: Ventas / Cobranzas / Post-venta (queue del router IA)
+- Cards con cliente, lifecycle, canal, badges de flags (needs_human,
+  bot_paused), preview del último msg
+- Filtros: lifecycle + status
+- Click "mover a otra cola" via menú `MoreVertical` de cada card → PATCH
+  `/api/v1/inbox/conversations/{id}/queue`
+- Auto-refresh 30s via TanStack Query refetchInterval
+- Drag-and-drop NO implementado aún (requiere `@dnd-kit/core`)
+
+**Widget embebible** (`/widget.js`, usado en msklatam.tech y .com):
+- Render SYNC — aparece en <100ms, sin esperar fetch de config remota.
+- FAB customizable via `bubble_icon` en Redis `widget:config`. Hoy es el
+  bot kawaii 3D (`/static/bot-kawaii.png`, 73 KB optimizado con Pillow
+  LANCZOS de un render Gemini).
+- CSS: si `#cm-fab` tiene clase `.cm-fab-image` (JS la agrega cuando hay
+  imagen), pierde círculo y primary background → se ve la silueta del PNG
+  con drop-shadow violeta. Si no, muestra SVG bot custom con ojos
+  animados (blink cada 4.5s + mouse-follow via requestAnimationFrame).
+- Lock sincrónico `window.__mskWidgetBooted` previene doble-mount en
+  Next.js (strategy `afterInteractive` a veces inyecta 2 veces).
+- z-index 2147483647 + `isolation: isolate` → nunca tapado por overlays
+  del site embebedor.
+- CORP header `cross-origin` para `/widget*`, `/static/*`, `/media/*`
+  (resto del backend mantiene `same-site`).
+
+**Zoho Voice**:
+- OAuth app separada de CRM (ZOHO_VOICE_CLIENT_ID/SECRET/REFRESH_TOKEN
+  en `.env`). Scope: `ZohoVoice.call.READ` + `ZohoVoice.call.CREATE`.
+- Endpoint `/api/v1/voice/logs?phone=+549...` trae call logs desde
+  `voice.zoho.com/rest/json/zv/logs` con params camelCase Zoho
+  (`from`, `size`, `userNumber`, `fromDate`, `toDate`, `callType`).
+- El INICIO de llamadas lo hace ZDialer (Chrome extension) — Zoho Voice
+  no tiene API REST pública para marcar desde sistemas externos.
+
+**Settings** (`/settings`) con sub-nav:
+- `/settings/agents` → CRUD del equipo humano (Supabase Auth + profiles)
+- `/settings/queues` → matriz de agentes × 18 colas (ventas/cobranzas/
+  post-venta × 8 países)
+- `/settings/notifications` → preferencias del user logueado (sound, email
+  digest, toggles por tipo)
+- `/settings/audit` → audit log viewer (admin)
+- `/settings/workspace` → estado de integraciones (admin)
+
+## Deuda técnica conocida
+
+- `/pipeline` sin drag-drop — falta instalar `@dnd-kit/core` + wire onDragEnd
+- `template_approved` notif stub — falta wire en `api/webhooks.py` cuando
+  llega el webhook de Meta con status de HSM
+- `email_digest` notif marcado "Próximamente" — falta cron diario que
+  mande mail con pendientes no leídos
+- Script `msk-front` (msklatam.tech) tiene el `<Script src=agentes...widget.js>`
+  en `nonprod-rediseño-preview` — el deploy a prod depende del pipeline
+  Vercel del equipo frontend (fuera de este repo).
+- Droplet viejo (`68.183.156.122`) todavía existe apagado — destruir cuando
+  confirmen 1+ semana sin issues.

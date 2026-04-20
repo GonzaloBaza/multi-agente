@@ -11,6 +11,7 @@ import {
   BarChart3,
   Settings,
   MessageSquare,
+  Kanban,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth, hasRole, type Role } from "@/lib/auth";
@@ -29,6 +30,7 @@ type RailLink = {
 // Orden = orden en el rail. Los que tienen `min` se filtran según rol.
 const NAV: RailLink[] = [
   { href: "/inbox",     label: "Inbox",               icon: Inbox },
+  { href: "/pipeline",  label: "Pipeline (kanban IA)", icon: Kanban,      min: "supervisor" },
   { href: "/analytics", label: "Analytics",           icon: BarChart3,    min: "supervisor" },
   { href: "/courses",   label: "Catálogo de cursos",  icon: BookOpen,     min: "supervisor" },
   { href: "/templates", label: "Plantillas HSM",      icon: MessageSquare, min: "supervisor" },
