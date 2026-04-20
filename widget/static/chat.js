@@ -17,10 +17,7 @@
   // corren en paralelo, ambos entran a mount() antes del primer await, y
   // terminan adjuntando 2 containers + 2 click listeners. Resultado: 1
   // click dispara 2 togglePanel() → panel abre y cierra en el mismo tick.
-  if (window.__mskWidgetBooted) {
-    console.log("[msk-widget] skipped duplicate execution");
-    return;
-  }
+  if (window.__mskWidgetBooted) return;
   window.__mskWidgetBooted = true;
 
   // ─── Configuración desde atributos del script ───────────────────────────
@@ -483,8 +480,7 @@
   }
 
   // ─── Toggle panel ─────────────────────────────────────────────────────────
-  function togglePanel(e) {
-    console.log("[msk-widget] togglePanel called, isOpen will be:", !isOpen, "event:", e && e.type);
+  function togglePanel() {
     isOpen = !isOpen;
     if (isOpen) {
       panel.classList.add("open");
