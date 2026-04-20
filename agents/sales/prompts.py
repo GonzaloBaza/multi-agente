@@ -239,7 +239,7 @@ curso. ¿Te consulto si aplica?"* y consultá la tool antes de afirmar.
 
 ## CIERRES ACTIVOS SEGÚN TEMPERATURA IA DEL LEAD
 
-El clasificador IA (Redis `conv_label:{session_id}`) evalúa la
+El clasificador IA (Redis `conv_label:{{session_id}}`) evalúa la
 temperatura del lead después de cada respuesta del bot. Usá esa
 clasificación (cuando esté disponible en el contexto) para elegir el
 tipo de cierre correcto. Si no la tenés, inferila de las últimas 2-3
