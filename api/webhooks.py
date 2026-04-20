@@ -109,14 +109,73 @@ async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
         try:
             entry = payload.get("entry", [{}])[0]
             changes = entry.get("changes", [{}])[0]
+            field = changes.get("field", "")
             value = changes.get("value", {})
-            if "statuses" in value:
+            # Meta también envía webhooks para cambios de estado de templates
+            # HSM (APPROVED/REJECTED/FLAGGED/PAUSED). `field` nos dice qué tipo
+            # de evento llegó — si es template status, tiene su propio handler.
+            if field == "message_template_status_update":
+                background_tasks.add_task(_handle_template_status, value)
+            elif "statuses" in value:
                 background_tasks.add_task(_handle_wa_status, value["statuses"])
             elif "messages" in value:
                 background_tasks.add_task(process_wa_meta, payload)
         except Exception:
             background_tasks.add_task(process_wa_meta, payload)
     return {"status": "ok"}
+
+
+async def _handle_template_status(value: dict):
+    """Procesa cambios de estado de templates HSM desde Meta.
+
+    Payload típico:
+        {
+          "event": "APPROVED" | "REJECTED" | "FLAGGED" | "PAUSED",
+          "message_template_id": 123456,
+          "message_template_name": "nombre_template",
+          "message_template_language": "es",
+          "reason": "...(opcional, si REJECTED)"
+        }
+
+    Dispara notif `template_approved` a todos los admins del workspace.
+    El nombre de la notif dice "approved" pero el tipo cubre cualquier
+    cambio — el data.event distingue el estado real para que el frontend
+    muestre el mensaje correcto.
+    """
+    try:
+        template_name = value.get("message_template_name") or "plantilla"
+        event_status = value.get("event") or "UPDATED"
+        language = value.get("message_template_language") or ""
+        reason = value.get("reason") or ""
+
+        logger.info(
+            "wa_template_status_update",
+            template=template_name,
+            status=event_status,
+            language=language,
+        )
+
+        # Notificar a todos los admins del workspace. Los admins son los que
+        # gestionan plantillas HSM — agentes/supervisores no necesitan saber.
+        from integrations.supabase_client import list_profiles
+        from utils.notifications import notify
+
+        profiles = await list_profiles()
+        admin_ids = [p["id"] for p in profiles if p.get("role") == "admin"]
+
+        for admin_id in admin_ids:
+            await notify(
+                admin_id,
+                "template_approved",
+                {
+                    "template_name": template_name,
+                    "event": event_status,
+                    "language": language,
+                    "reason": reason,
+                },
+            )
+    except Exception as e:
+        logger.warning("template_status_handler_error", error=str(e))
 
 
 async def _handle_wa_status(statuses: list):

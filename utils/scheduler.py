@@ -109,6 +109,22 @@ async def start_scheduler() -> None:
         coalesce=True,
     )
 
+    # Digest diario de notificaciones — 9:00 AR (hora local del scheduler).
+    # Solo envía si RESEND_API_KEY o EMAIL_SMTP_* están configurados; sino
+    # logea advertencia y no hace nada (el job queda registrado para cuando
+    # se configure el provider sin requerir redeploy del scheduler).
+    from utils.email_digest import run_email_digest
+
+    s.add_job(
+        run_email_digest,
+        trigger=CronTrigger(hour=9, minute=0),
+        id="email_digest",
+        name="Digest diario de notificaciones sin leer",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+
     s.start()
     logger.info("scheduler_started", jobs=[j.id for j in s.get_jobs()])
 

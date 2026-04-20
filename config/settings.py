@@ -33,6 +33,18 @@ class Settings(BaseSettings):
     zoho_voice_refresh_token: str = ""
     zoho_voice_base_url: str = "https://voice.zoho.com/rest/json/zv"
 
+    # Email (digest diario de notificaciones). Si NINGUNO está seteado, el
+    # cron `run_email_digest` no envía — loguea advertencia y sale. Para
+    # activar, setear UNO de los dos sets:
+    #   A) Resend (moderno, recomendado): RESEND_API_KEY
+    #   B) SMTP clásico: EMAIL_SMTP_HOST + EMAIL_SMTP_USER + EMAIL_SMTP_PASSWORD
+    resend_api_key: str = ""
+    email_smtp_host: str = ""
+    email_smtp_port: int = 587
+    email_smtp_user: str = ""
+    email_smtp_password: str = ""
+    email_from: str = "MSK Console <notifs@agentes.msklatam.com>"
+
     # Botmaker
     botmaker_client_id: str = ""
     botmaker_secret_id: str = ""

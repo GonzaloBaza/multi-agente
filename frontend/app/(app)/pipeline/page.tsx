@@ -1,41 +1,41 @@
 "use client";
 
 /**
- * /pipeline — Kanban de conversaciones agrupadas por cola IA.
+ * /pipeline — Kanban drag-and-drop de conversaciones agrupadas por cola IA.
  *
- * Columnas: Ventas / Cobranzas / Post-venta — las tres colas que maneja el
- * router de agentes IA. Cada card es una conversación con:
- *   - Info del cliente (nombre, avatar, país)
- *   - Lifecycle (new/hot/customer/cold) como badge colorado
- *   - Ultima actividad (relative)
- *   - Canal (whatsapp/widget)
- *   - Agente asignado (si hay humano)
- *   - Flags (needs_human, bot_paused)
- *   - Menú contextual para MOVER de cola → PATCH backend
+ * Columnas: Ventas / Cobranzas / Post-venta (las 3 queues del router IA).
+ * Cards draggables via @dnd-kit/core. onDragEnd dispara PATCH a
+ * /api/v1/inbox/conversations/{id}/queue y actualiza optimístamente la UI
+ * (si falla el backend, revert).
  *
- * El drag-and-drop real (arrastrar cards entre columnas) requiere instalar
- * @dnd-kit — lo dejamos para una iteración futura. Por ahora el move se
- * hace desde el menú "..." de cada card.
+ * Además del drag, cada card tiene un menú "..." como fallback (acceso a
+ * teclado, mobile sin drag bien soportado, etc).
  *
- * Uso: supervisor+ puede ver y mover. Agente solo ve SUS convs (filtrado
- * por backend según rol).
- *
- * Auto-refresh: 30s via TanStack Query refetchInterval. Para realtime real
- * se puede subscribir al SSE de /inbox/stream y reactuar a "queue_changed"
- * events, pero el polling es suficiente para un kanban operativo.
+ * Auto-refresh: 30s via TanStack Query. Si otro agente movió una conv
+ * mientras estabas viendo, el polling lo refleja.
  */
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  useDraggable,
+  useDroppable,
+  type DragEndEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core";
+import {
   Loader2,
   RefreshCw,
   MoreVertical,
   ArrowRight,
-  Bot,
   UserCog,
-  Clock,
   Flame,
   Snowflake,
   Sparkles,
@@ -44,7 +44,7 @@ import {
   Phone,
   Globe,
   Pause,
-  AlertCircle,
+  GripVertical,
 } from "lucide-react";
 
 import { api } from "@/lib/api";
@@ -53,17 +53,40 @@ import { Button } from "@/components/ui/button";
 import { RoleGate } from "@/lib/auth";
 import { NoAccess } from "@/components/ui/coming-soon";
 import {
-  QUEUE_LABEL,
   type ConversationListItem,
   type LifecycleStage,
   type Queue,
 } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
 
-const COLUMNS: { queue: Queue; label: string; color: string; borderColor: string }[] = [
-  { queue: "sales", label: "Ventas", color: "text-accent", borderColor: "border-accent/30" },
-  { queue: "billing", label: "Cobranzas", color: "text-warn", borderColor: "border-warn/30" },
-  { queue: "post-sales", label: "Post-venta", color: "text-info", borderColor: "border-info/30" },
+const COLUMNS: {
+  queue: Queue;
+  label: string;
+  color: string;
+  borderColor: string;
+  bgHover: string;
+}[] = [
+  {
+    queue: "sales",
+    label: "Ventas",
+    color: "text-accent",
+    borderColor: "border-accent/30",
+    bgHover: "bg-accent/5",
+  },
+  {
+    queue: "billing",
+    label: "Cobranzas",
+    color: "text-warn",
+    borderColor: "border-warn/30",
+    bgHover: "bg-warn/5",
+  },
+  {
+    queue: "post-sales",
+    label: "Post-venta",
+    color: "text-info",
+    borderColor: "border-info/30",
+    bgHover: "bg-info/5",
+  },
 ];
 
 const LIFECYCLE_META: Record<
@@ -97,6 +120,7 @@ function Inner() {
   const qc = useQueryClient();
   const [lifecycleFilter, setLifecycleFilter] = useState<LifecycleStage | "all">("all");
   const [statusFilter, setStatusFilter] = useState<"open" | "pending" | "all">("open");
+  const [activeConv, setActiveConv] = useState<ConversationListItem | null>(null);
 
   const convsQ = useQuery<ConversationListItem[]>({
     queryKey: ["pipeline", "conversations", statusFilter],
@@ -112,10 +136,30 @@ function Inner() {
   const moveQueue = useMutation({
     mutationFn: ({ convId, queue }: { convId: string; queue: Queue }) =>
       api.post(`/inbox/conversations/${convId}/queue`, { queue }),
-    onSuccess: () => {
+    // Optimistic update — mueve la card al toque en la UI sin esperar round-trip.
+    onMutate: async ({ convId, queue }) => {
+      await qc.cancelQueries({ queryKey: ["pipeline", "conversations", statusFilter] });
+      const previous = qc.getQueryData<ConversationListItem[]>([
+        "pipeline",
+        "conversations",
+        statusFilter,
+      ]);
+      qc.setQueryData<ConversationListItem[]>(
+        ["pipeline", "conversations", statusFilter],
+        (old) => old?.map((c) => (c.id === convId ? { ...c, queue } : c)) ?? [],
+      );
+      return { previous };
+    },
+    onError: (e: Error, _vars, ctx) => {
+      // Revert si el PATCH falló
+      if (ctx?.previous) {
+        qc.setQueryData(["pipeline", "conversations", statusFilter], ctx.previous);
+      }
+      alert(`No se pudo mover: ${e.message}`);
+    },
+    onSettled: () => {
       qc.invalidateQueries({ queryKey: ["pipeline", "conversations"] });
     },
-    onError: (e: Error) => alert(e.message),
   });
 
   const grouped = useMemo(() => {
@@ -136,18 +180,40 @@ function Inner() {
   const totalFiltered =
     grouped.sales.length + grouped.billing.length + grouped["post-sales"].length;
 
+  // Sensors — PointerSensor con delay chico para no confundir click con drag.
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor),
+  );
+
+  const handleDragStart = (e: DragStartEvent) => {
+    const conv = (convsQ.data ?? []).find((c) => c.id === e.active.id);
+    if (conv) setActiveConv(conv);
+  };
+
+  const handleDragEnd = (e: DragEndEvent) => {
+    setActiveConv(null);
+    const { active, over } = e;
+    if (!over) return;
+    const convId = String(active.id);
+    const targetQueue = String(over.id) as Queue;
+    const currentConv = (convsQ.data ?? []).find((c) => c.id === convId);
+    if (!currentConv || currentConv.queue === targetQueue) return;
+    if (!COLUMNS.some((c) => c.queue === targetQueue)) return;
+    moveQueue.mutate({ convId, queue: targetQueue });
+  };
+
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       <div className="px-6 py-4 border-b border-border flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-lg font-semibold">Pipeline</h1>
           <p className="text-xs text-fg-dim mt-0.5">
-            Kanban de conversaciones agrupadas por cola IA. Mové entre colas
-            desde el menú de cada card.
+            Kanban de conversaciones — arrastrá las cards entre columnas para
+            cambiar su cola de atención.
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {/* Filtro lifecycle */}
           <select
             value={lifecycleFilter}
             onChange={(e) => setLifecycleFilter(e.target.value as LifecycleStage | "all")}
@@ -159,7 +225,6 @@ function Inner() {
             <option value="customer">🏆 Clientes</option>
             <option value="cold">❄ Cold</option>
           </select>
-          {/* Filtro status */}
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as "open" | "pending" | "all")}
@@ -181,15 +246,18 @@ function Inner() {
         </div>
       </div>
 
-      {/* Toolbar info */}
       <div className="px-6 py-2 border-b border-border text-[11px] text-fg-dim flex items-center gap-4">
         <span>
           <span className="font-medium text-fg">{totalFiltered}</span> conversaciones
           {lifecycleFilter !== "all" && (
-            <span> · lifecycle: <span className="text-fg">{LIFECYCLE_META[lifecycleFilter].label}</span></span>
+            <span>
+              {" "}
+              · lifecycle:{" "}
+              <span className="text-fg">{LIFECYCLE_META[lifecycleFilter].label}</span>
+            </span>
           )}
         </span>
-        <span>· Auto-refresh 30s</span>
+        <span>· Auto-refresh 30s · Drag & drop entre columnas</span>
       </div>
 
       {convsQ.isLoading ? (
@@ -197,22 +265,33 @@ function Inner() {
           <Loader2 className="w-5 h-5 animate-spin" />
         </div>
       ) : (
-        <div className="flex-1 overflow-x-auto scroll-thin">
-          <div className="flex gap-4 p-4 min-h-full" style={{ minWidth: "1200px" }}>
-            {COLUMNS.map((col) => (
-              <Column
-                key={col.queue}
-                queue={col.queue}
-                label={col.label}
-                color={col.color}
-                borderColor={col.borderColor}
-                convs={grouped[col.queue]}
-                onMove={(convId, q) => moveQueue.mutate({ convId, queue: q })}
-                moving={moveQueue.isPending}
-              />
-            ))}
+        <DndContext
+          sensors={sensors}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
+          onDragCancel={() => setActiveConv(null)}
+        >
+          <div className="flex-1 overflow-x-auto scroll-thin">
+            <div className="flex gap-4 p-4 min-h-full" style={{ minWidth: "1200px" }}>
+              {COLUMNS.map((col) => (
+                <Column
+                  key={col.queue}
+                  queue={col.queue}
+                  label={col.label}
+                  color={col.color}
+                  borderColor={col.borderColor}
+                  bgHover={col.bgHover}
+                  convs={grouped[col.queue]}
+                  onMove={(convId, q) => moveQueue.mutate({ convId, queue: q })}
+                  moving={moveQueue.isPending}
+                />
+              ))}
+            </div>
           </div>
-        </div>
+          <DragOverlay dropAnimation={null}>
+            {activeConv ? <DraggingCard conv={activeConv} /> : null}
+          </DragOverlay>
+        </DndContext>
       )}
     </div>
   );
@@ -223,6 +302,7 @@ function Column({
   label,
   color,
   borderColor,
+  bgHover,
   convs,
   onMove,
   moving,
@@ -231,27 +311,47 @@ function Column({
   label: string;
   color: string;
   borderColor: string;
+  bgHover: string;
   convs: ConversationListItem[];
   onMove: (convId: string, queue: Queue) => void;
   moving: boolean;
 }) {
+  const { setNodeRef, isOver } = useDroppable({ id: queue });
   return (
-    <div className={cn("flex-1 min-w-[320px] bg-card rounded-lg border flex flex-col overflow-hidden", borderColor)}>
+    <div
+      ref={setNodeRef}
+      className={cn(
+        "flex-1 min-w-[320px] bg-card rounded-lg border flex flex-col overflow-hidden transition-colors",
+        borderColor,
+        isOver && bgHover,
+        isOver && "border-2",
+      )}
+    >
       <div className={cn("px-3 py-2.5 border-b flex items-center justify-between", borderColor)}>
         <div className="flex items-center gap-2">
           <span className={cn("w-2 h-2 rounded-full", color.replace("text-", "bg-"))} />
           <span className="text-sm font-semibold">{label}</span>
           <span className="text-[10px] text-fg-dim tabular-nums">({convs.length})</span>
         </div>
+        {isOver && (
+          <span className="text-[10px] text-accent animate-pulse">Soltar aquí</span>
+        )}
       </div>
       <div className="flex-1 overflow-y-auto scroll-thin p-2 space-y-2">
         {convs.length === 0 && (
           <div className="text-[11px] text-fg-dim italic text-center py-8">
             Sin conversaciones
+            {isOver && <div className="text-accent mt-1">Soltar aquí para mover</div>}
           </div>
         )}
         {convs.map((c) => (
-          <Card key={c.id} conv={c} onMove={onMove} moving={moving} currentQueue={queue} />
+          <Card
+            key={c.id}
+            conv={c}
+            onMove={onMove}
+            moving={moving}
+            currentQueue={queue}
+          />
         ))}
       </div>
     </div>
@@ -270,14 +370,32 @@ function Card({
   currentQueue: Queue;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: conv.id,
+  });
   const lifecycleMeta = LIFECYCLE_META[conv.lifecycle];
   const LifecycleIcon = lifecycleMeta.icon;
   const targetQueues = COLUMNS.filter((c) => c.queue !== currentQueue);
 
   return (
-    <div className="bg-bg border border-border rounded-md p-2.5 hover:border-accent/50 transition-colors relative group">
-      {/* Header: avatar + nombre + menú */}
+    <div
+      ref={setNodeRef}
+      className={cn(
+        "bg-bg border border-border rounded-md p-2.5 transition-all relative group",
+        isDragging ? "opacity-40" : "hover:border-accent/50",
+      )}
+    >
       <div className="flex items-start gap-2 mb-1.5">
+        {/* Handle de drag — cursor grab, solo acá el pointer puede arrastrar */}
+        <button
+          {...attributes}
+          {...listeners}
+          className="touch-none cursor-grab active:cursor-grabbing text-fg-dim hover:text-fg shrink-0 mt-0.5"
+          title="Arrastrar para mover"
+          aria-label="Arrastrar para mover"
+        >
+          <GripVertical className="w-3.5 h-3.5" />
+        </button>
         <div className="w-7 h-7 rounded-full bg-gradient-to-br from-pink-500 to-fuchsia-600 text-white text-[9px] font-bold flex items-center justify-center shrink-0">
           {conv.contact.initials}
         </div>
@@ -300,9 +418,13 @@ function Card({
         </button>
       </div>
 
-      {/* Badges: lifecycle + flags */}
-      <div className="flex items-center gap-1 mb-1.5 flex-wrap">
-        <span className={cn("text-[9px] px-1.5 py-0.5 rounded flex items-center gap-0.5", lifecycleMeta.color)}>
+      <div className="flex items-center gap-1 mb-1.5 flex-wrap pl-6">
+        <span
+          className={cn(
+            "text-[9px] px-1.5 py-0.5 rounded flex items-center gap-0.5",
+            lifecycleMeta.color,
+          )}
+        >
           <LifecycleIcon className="w-2.5 h-2.5" /> {lifecycleMeta.label}
         </span>
         {conv.needsHuman && (
@@ -326,23 +448,20 @@ function Card({
         )}
       </div>
 
-      {/* Último mensaje (preview) */}
-      <div className="text-[11px] text-fg-dim line-clamp-2 leading-snug mb-1.5">
+      <div className="text-[11px] text-fg-dim line-clamp-2 leading-snug mb-1.5 pl-6">
         {conv.lastMessage}
       </div>
 
-      {/* Acción: abrir en inbox */}
       <Link
         href={`/inbox?c=${conv.id}`}
-        className="inline-flex items-center gap-1 text-[10px] text-accent hover:underline"
+        className="inline-flex items-center gap-1 text-[10px] text-accent hover:underline pl-6"
       >
         Abrir en inbox <ArrowRight className="w-2.5 h-2.5" />
       </Link>
 
-      {/* Menú contextual */}
       {menuOpen && (
         <div
-          className="absolute top-7 right-2 z-10 bg-panel border border-border rounded-md shadow-lg py-1 w-44"
+          className="absolute top-7 right-2 z-20 bg-panel border border-border rounded-md shadow-lg py-1 w-44"
           onMouseLeave={() => setMenuOpen(false)}
         >
           <div className="px-2 py-1 text-[9px] uppercase tracking-wider text-fg-muted">
@@ -373,6 +492,38 @@ function Card({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * DragOverlay — preview fantasma que sigue al cursor durante el drag.
+ * Lo mantenemos simple: solo el nombre del cliente + lifecycle badge.
+ */
+function DraggingCard({ conv }: { conv: ConversationListItem }) {
+  const lifecycleMeta = LIFECYCLE_META[conv.lifecycle];
+  const LifecycleIcon = lifecycleMeta.icon;
+  return (
+    <div className="bg-card border-2 border-accent shadow-lg rounded-md p-2.5 w-[280px] rotate-2">
+      <div className="flex items-center gap-2 mb-1">
+        <div className="w-7 h-7 rounded-full bg-gradient-to-br from-pink-500 to-fuchsia-600 text-white text-[9px] font-bold flex items-center justify-center shrink-0">
+          {conv.contact.initials}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1">
+            <Flag iso={conv.contact.country} size={10} />
+            <span className="text-xs font-medium truncate">{conv.contact.name}</span>
+          </div>
+        </div>
+      </div>
+      <span
+        className={cn(
+          "text-[9px] px-1.5 py-0.5 rounded flex items-center gap-0.5 w-fit",
+          lifecycleMeta.color,
+        )}
+      >
+        <LifecycleIcon className="w-2.5 h-2.5" /> {lifecycleMeta.label}
+      </span>
     </div>
   );
 }
