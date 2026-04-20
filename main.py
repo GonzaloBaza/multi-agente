@@ -224,6 +224,17 @@ def create_app() -> FastAPI:
     from starlette.requests import Request as StarletteRequest
     from starlette.responses import Response
 
+    # Paths públicos que se embeben en sitios externos (msklatam.com,
+    # msklatam.tech, etc.). Para éstos NO podemos mandar CORP=same-site
+    # porque el browser bloquea el script en el dominio embebedor. Usamos
+    # cross-origin solo en esos paths — el resto del backend mantiene
+    # same-site (postura más segura).
+    _PUBLIC_CROSS_ORIGIN_PREFIXES = (
+        "/widget",        # /widget.js, /widget/chat, /widget/history/...
+        "/static",        # assets del widget (chat.css)
+        "/media",         # uploads que el widget muestra
+    )
+
     class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         async def dispatch(self, request: StarletteRequest, call_next):
             response: Response = await call_next(request)
@@ -234,7 +245,11 @@ def create_app() -> FastAPI:
             # Cross-origin isolation — bloquea iframes externos cargando
             # recursos del origen (aumenta postura frente a spectre-like).
             response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
-            response.headers["Cross-Origin-Resource-Policy"] = "same-site"
+            path = request.url.path
+            if path.startswith(_PUBLIC_CROSS_ORIGIN_PREFIXES):
+                response.headers["Cross-Origin-Resource-Policy"] = "cross-origin"
+            else:
+                response.headers["Cross-Origin-Resource-Policy"] = "same-site"
             if request.url.scheme == "https":
                 response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
             return response
