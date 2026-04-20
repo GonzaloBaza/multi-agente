@@ -14,9 +14,11 @@
  * Si Zoho tira error o timeout → mensaje discreto, no crash.
  */
 
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Phone, PhoneIncoming, PhoneOutgoing, PhoneMissed, Clock, Loader2, RefreshCw,
+  ChevronDown, ChevronUp,
 } from "lucide-react";
 
 import { api } from "@/lib/api";
@@ -62,11 +64,12 @@ function formatRelative(iso: string | null): string {
 
 export function CallHistory({ phone }: { phone: string | null | undefined }) {
   const enabled = !!phone;
+  const [open, setOpen] = useState(true);
 
   const { data, isLoading, error, refetch, isFetching } = useQuery<LogsResponse>({
     queryKey: ["voice", "logs", phone],
     queryFn: () => api.get(`/voice/logs?phone=${encodeURIComponent(phone!)}&limit=10`),
-    enabled,
+    enabled: enabled && open, // no fetchea si está cerrado — ahorra call a Zoho
     staleTime: 60_000, // 1 min — no spameamos Zoho
     retry: 1,
   });
@@ -77,82 +80,99 @@ export function CallHistory({ phone }: { phone: string | null | undefined }) {
 
   return (
     <div className="border border-border rounded-md overflow-hidden">
-      <div className="bg-card px-3 py-2 flex items-center justify-between border-b border-border">
-        <div className="text-[10px] uppercase tracking-wider font-semibold text-fg-muted flex items-center gap-1.5">
+      {/* Header colapsable — mismo patrón que Contacto/Cobranzas. */}
+      <div className="bg-card px-3 py-2 flex items-center justify-between border-b border-border gap-2">
+        <button
+          onClick={() => setOpen((s) => !s)}
+          className="text-[10px] uppercase tracking-wider font-semibold text-fg-muted hover:text-fg flex-1 text-left flex items-center gap-1.5"
+        >
           <Phone className="w-3 h-3" />
           Llamadas
           {logs.length > 0 && (
             <span className="text-fg-dim normal-case">({logs.length})</span>
           )}
-        </div>
-        <button
-          onClick={() => refetch()}
-          className="text-fg-dim hover:text-fg p-0.5"
-          disabled={isFetching}
-          title="Refrescar"
-        >
-          <RefreshCw className={cn("w-3 h-3", isFetching && "animate-spin")} />
         </button>
-      </div>
-
-      <div className="p-3">
-        {isLoading && (
-          <div className="flex items-center gap-2 text-[11px] text-fg-dim">
-            <Loader2 className="w-3 h-3 animate-spin" /> Consultando Zoho Voice…
-          </div>
-        )}
-        {error && (
-          <div className="text-[11px] text-fg-dim">
-            No pudimos traer el historial de llamadas.
-          </div>
-        )}
-        {!isLoading && !error && logs.length === 0 && (
-          <div className="text-[11px] text-fg-dim">Sin llamadas registradas.</div>
-        )}
-        <ul className="space-y-2">
-          {logs.map((log) => (
-            <li key={log.logid} className="flex items-start gap-2">
-              <DirectionIcon direction={log.direction} />
-              <div className="flex-1 min-w-0 text-[11px]">
-                <div className="flex items-baseline gap-2">
-                  <span className="font-medium truncate">
-                    {log.agent_name || "—"}
-                  </span>
-                  <span className="text-fg-dim text-[10px] shrink-0">
-                    {formatRelative(log.start)}
-                  </span>
-                </div>
-                <div className="flex items-center gap-1.5 text-fg-dim text-[10px] mt-0.5">
-                  <Clock className="w-2.5 h-2.5" />
-                  <span className="tabular-nums">{log.duration || "0:00"}</span>
-                  {log.hangup_cause && (
-                    <>
-                      <span>·</span>
-                      <span className="truncate">{log.hangup_cause}</span>
-                    </>
-                  )}
-                </div>
-              </div>
-            </li>
-          ))}
-        </ul>
-
-        {/* Hint sobre ZDialer — solo la primera vez, o cuando no hay llamadas */}
-        {logs.length === 0 && !isLoading && !error && (
-          <div className="mt-2 pt-2 border-t border-border text-[10px] text-fg-dim leading-snug">
-            Para llamar: instalá la{" "}
-            <a
-              href="https://chromewebstore.google.com/detail/zdialer-zoho-voice-extens/gnpglhdhioifppkjdpmlmolgeanpaofi"
-              target="_blank"
-              rel="noreferrer"
-              className="text-accent hover:underline"
+        <div className="flex items-center gap-2">
+          {open && (
+            <button
+              onClick={() => refetch()}
+              className="text-fg-dim hover:text-fg p-0.5"
+              disabled={isFetching}
+              title="Refrescar"
             >
-              extensión ZDialer
-            </a>
-            . Va a aparecer un botón 📞 al lado del teléfono.
-          </div>
-        )}
+              <RefreshCw className={cn("w-3 h-3", isFetching && "animate-spin")} />
+            </button>
+          )}
+          <button
+            onClick={() => setOpen((s) => !s)}
+            className="text-fg-dim hover:text-fg p-0.5"
+            aria-label={open ? "Colapsar" : "Expandir"}
+          >
+            {open ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          </button>
+        </div>
       </div>
+
+      {open && (
+        <div className="p-3">
+          {isLoading && (
+            <div className="flex items-center gap-2 text-[11px] text-fg-dim">
+              <Loader2 className="w-3 h-3 animate-spin" /> Consultando Zoho Voice…
+            </div>
+          )}
+          {error && (
+            <div className="text-[11px] text-fg-dim">
+              No pudimos traer el historial de llamadas.
+            </div>
+          )}
+          {!isLoading && !error && logs.length === 0 && (
+            <div className="text-[11px] text-fg-dim">Sin llamadas registradas.</div>
+          )}
+          <ul className="space-y-2">
+            {logs.map((log) => (
+              <li key={log.logid} className="flex items-start gap-2">
+                <DirectionIcon direction={log.direction} />
+                <div className="flex-1 min-w-0 text-[11px]">
+                  <div className="flex items-baseline gap-2">
+                    <span className="font-medium truncate">
+                      {log.agent_name || "—"}
+                    </span>
+                    <span className="text-fg-dim text-[10px] shrink-0">
+                      {formatRelative(log.start)}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-fg-dim text-[10px] mt-0.5">
+                    <Clock className="w-2.5 h-2.5" />
+                    <span className="tabular-nums">{log.duration || "0:00"}</span>
+                    {log.hangup_cause && (
+                      <>
+                        <span>·</span>
+                        <span className="truncate">{log.hangup_cause}</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+
+          {/* Hint sobre ZDialer — solo cuando no hay llamadas y no está cargando */}
+          {logs.length === 0 && !isLoading && !error && (
+            <div className="mt-2 pt-2 border-t border-border text-[10px] text-fg-dim leading-snug">
+              Para llamar: instalá la{" "}
+              <a
+                href="https://chromewebstore.google.com/detail/zdialer-zoho-voice-extens/gnpglhdhioifppkjdpmlmolgeanpaofi"
+                target="_blank"
+                rel="noreferrer"
+                className="text-accent hover:underline"
+              >
+                extensión ZDialer
+              </a>
+              . Al clickear el teléfono se dispara la llamada.
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

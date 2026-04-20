@@ -4,6 +4,7 @@ import { useState } from "react";
 import {
   ExternalLink, Sparkles, ArrowRight, DollarSign, AlertCircle, Copy,
   ChevronDown, ChevronUp, FileText, Calendar, CreditCard, TrendingUp,
+  Phone as PhoneIcon,
 } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -61,18 +62,29 @@ export function ContactPanel({ contact }: Props) {
               {contact.name}
             </div>
             <div className="text-[11px] text-fg-dim truncate">{contact.email}</div>
-            {/* Teléfono renderizado como tel: link — la extensión ZDialer
-                inyecta un botón 📞 automáticamente al lado. También permite
-                click nativo desde mobile/softphone si el agente no usa
-                ZDialer. */}
+            {/* Teléfono: número + botón 📞 propio con el theme del panel.
+                El <a href="tel:…"> sigue siendo el clickeable real — cuando
+                ZDialer está instalado, Chrome lo pasa a la extensión. El
+                widget feo que ZDialer inyecta al lado está oculto vía
+                `.hide-zdialer-inject` (ver app/globals.css). */}
             {contact.phone && (
-              <a
-                href={`tel:${contact.phone}`}
-                className="text-[11px] text-fg-dim hover:text-accent truncate block"
-                title="Llamar (ZDialer / softphone)"
-              >
-                {contact.phone}
-              </a>
+              <div className="hide-zdialer-inject flex items-center gap-1.5 mt-0.5">
+                <a
+                  href={`tel:${contact.phone}`}
+                  className="text-[11px] text-fg-dim hover:text-accent truncate"
+                  title="Llamar (ZDialer / softphone)"
+                >
+                  {contact.phone}
+                </a>
+                <a
+                  href={`tel:${contact.phone}`}
+                  className="shrink-0 w-5 h-5 rounded-full bg-accent/15 hover:bg-accent/25 text-accent flex items-center justify-center transition-colors"
+                  title="Iniciar llamada"
+                  aria-label="Llamar"
+                >
+                  <PhoneIcon className="w-2.5 h-2.5" />
+                </a>
+              </div>
             )}
           </div>
         </div>

@@ -28,4 +28,19 @@
     scrollbar-width: thin;
     scrollbar-color: #262626 transparent;
   }
+
+  /* ZDialer (extensión de Chrome de Zoho Voice) inyecta un botón flotante
+     en cualquier <a href="tel:..."> que detecte. Su estilo es un círculo
+     gris claro que se ve muy fuera de contexto en nuestro theme oscuro.
+     Dentro de .hide-zdialer-inject (lo usamos en el ContactPanel del
+     inbox), ocultamos todo elemento inyectado por la extensión. El link
+     tel: sigue funcionando al click — ZDialer lo intercepta como handler
+     del protocolo aunque el widget visual esté oculto. */
+  .hide-zdialer-inject [class*="zdialer" i],
+  .hide-zdialer-inject [id*="zdialer" i],
+  .hide-zdialer-inject [class*="zd-dialer" i],
+  .hide-zdialer-inject zohovoice-dialer,
+  .hide-zdialer-inject [class^="zd-" i][class*="-btn" i] {
+    display: none !important;
+  }
 }
