@@ -16,13 +16,22 @@ class Settings(BaseSettings):
     # Postgres (durable store, Supabase) — empty disables dual-write
     database_url: str = ""
 
-    # Zoho
+    # Zoho CRM (contacts, leads, cobranzas)
     zoho_client_id: str = ""
     zoho_client_secret: str = ""
     zoho_refresh_token: str = ""
     zoho_redirect_uri: str = ""
     zoho_base_url: str = "https://www.zohoapis.com/crm/v6"
     zoho_accounts_url: str = "https://accounts.zoho.com"
+
+    # Zoho Voice — app OAuth aparte (scope ZohoVoice.call.*). El iniciado
+    # de llamadas lo resuelve la extensión ZDialer en Chrome; desde el
+    # backend solo LEEMOS call logs para mostrarlos en la timeline de
+    # cada conversación. Base URL distinta del CRM (voice.zoho.com).
+    zoho_voice_client_id: str = ""
+    zoho_voice_client_secret: str = ""
+    zoho_voice_refresh_token: str = ""
+    zoho_voice_base_url: str = "https://voice.zoho.com/rest/json/zv"
 
     # Botmaker
     botmaker_client_id: str = ""

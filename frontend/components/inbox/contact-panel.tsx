@@ -8,6 +8,7 @@ import {
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Flag } from "@/components/ui/flag";
+import { CallHistory } from "@/components/inbox/call-history";
 import type { ContactDetail, DebtStatus } from "@/lib/mock-data";
 
 const DEBT_STATUS: Record<DebtStatus, { label: string; color: string; dot: string }> = {
@@ -60,7 +61,19 @@ export function ContactPanel({ contact }: Props) {
               {contact.name}
             </div>
             <div className="text-[11px] text-fg-dim truncate">{contact.email}</div>
-            <div className="text-[11px] text-fg-dim truncate">{contact.phone}</div>
+            {/* Teléfono renderizado como tel: link — la extensión ZDialer
+                inyecta un botón 📞 automáticamente al lado. También permite
+                click nativo desde mobile/softphone si el agente no usa
+                ZDialer. */}
+            {contact.phone && (
+              <a
+                href={`tel:${contact.phone}`}
+                className="text-[11px] text-fg-dim hover:text-accent truncate block"
+                title="Llamar (ZDialer / softphone)"
+              >
+                {contact.phone}
+              </a>
+            )}
           </div>
         </div>
       </div>
@@ -315,6 +328,9 @@ export function ContactPanel({ contact }: Props) {
             <div className="text-[10px] mt-0.5 opacity-70">(sin compras previas)</div>
           </div>
         )}
+
+        {/* ============= CARD: HISTORIAL DE LLAMADAS (Zoho Voice) ============= */}
+        <CallHistory phone={contact.phone} />
       </div>
     </aside>
   );
