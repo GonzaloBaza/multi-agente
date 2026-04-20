@@ -111,21 +111,41 @@ class ZohoVoice:
         self,
         phone: str | None = None,
         limit: int = 50,
-        start: int = 1,
+        offset: int = 0,
+        from_date: str | None = None,
+        to_date: str | None = None,
+        call_type: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Lista call logs. Si se pasa `phone`, filtra client-side.
+        """Lista call logs. Si se pasa `phone`, intenta filtrar server-side
+        vía `userNumber` y además filtra client-side como red de seguridad.
 
-        El filtro client-side compara solo los últimos 10 dígitos para ser
-        tolerante a formatos distintos entre CRM (+5491112345678) y Voice
-        (+54 9 11 1234-5678 o sin el 9, etc.).
+        Zoho usa param names camelCase bien específicos — nombres "obvios"
+        como limit/page/per_page tiran 400 `ZVT010 Extra parameter found`.
+        Ver: https://help.zoho.com/portal/en/kb/zoho-voice/zoho-voice-apis/common-apis/articles/call-logs-api
 
-        `limit` es cuántos logs traer de Zoho; si filtrás por phone y el match
-        es raro, subí `limit` para tener más base donde buscar.
+        Params Zoho:
+            from (int)       → offset
+            size (int)       → cantidad
+            fromDate (str)   → YYYY-MM-DD
+            toDate (str)     → YYYY-MM-DD
+            userNumber (str) → solo dígitos; matchea prefijo del cliente
+            callType (str)   → incoming|outgoing|missed|bridged|forward
         """
         headers = await self._auth.auth_headers()
-        params = {"limit": min(limit * 4 if phone else limit, 200), "start": start}
-        url = f"{self._base}/logs"
+        # Overfetch si vamos a filtrar client-side (userNumber de Zoho matchea
+        # prefijo, puede ser demasiado laxo o estricto según el formato).
+        size = min(limit * 4 if phone else limit, 200)
+        params: dict[str, Any] = {"from": offset, "size": size}
+        if phone:
+            params["userNumber"] = _digits_only(phone)
+        if from_date:
+            params["fromDate"] = from_date
+        if to_date:
+            params["toDate"] = to_date
+        if call_type:
+            params["callType"] = call_type
 
+        url = f"{self._base}/logs"
         async with httpx.AsyncClient(timeout=15.0) as client:
             resp = await client.get(url, headers=headers, params=params)
 
@@ -134,6 +154,7 @@ class ZohoVoice:
                 "zoho_voice_logs_error",
                 status=resp.status_code,
                 body=resp.text[:300],
+                params=params,
             )
             return []
 
@@ -141,8 +162,12 @@ class ZohoVoice:
         raw_logs = data.get("logs") or data.get("data") or []
         logs = [normalize_log(r) for r in raw_logs]
 
+        # Filtro client-side extra por si userNumber matchea más laxo de lo
+        # esperado. Comparamos últimos 10 dígitos (tolerante a +54 vs 54 vs
+        # formatos con guiones).
         if phone:
-            target = _digits_only(phone)[-10:] if len(_digits_only(phone)) >= 10 else _digits_only(phone)
+            target_digits = _digits_only(phone)
+            target = target_digits[-10:] if len(target_digits) >= 10 else target_digits
             logs = [
                 log
                 for log in logs
