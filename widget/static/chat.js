@@ -246,7 +246,39 @@
   <button id="cm-fab" aria-label="Abrir chat de soporte">
     ${CONFIG.bubbleIcon
       ? '<img id="cm-fab-img" src="' + CONFIG.bubbleIcon + '" alt="Chat" />'
-      : '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>'}
+      : `
+    <svg id="cm-fab-bot" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <radialGradient id="cm-bot-body" cx="45%" cy="35%" r="70%">
+          <stop offset="0%" stop-color="#ffffff"/>
+          <stop offset="70%" stop-color="#f3e8ff"/>
+          <stop offset="100%" stop-color="#d8b4fe"/>
+        </radialGradient>
+        <radialGradient id="cm-bot-visor" cx="50%" cy="35%" r="70%">
+          <stop offset="0%" stop-color="#3b1261"/>
+          <stop offset="60%" stop-color="#1e0838"/>
+          <stop offset="100%" stop-color="#0a041b"/>
+        </radialGradient>
+        <filter id="cm-bot-glow" x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur stdDeviation="1.2"/>
+        </filter>
+      </defs>
+      <!-- cuerpo blanco con gradient pseudo-3D -->
+      <ellipse cx="50" cy="56" rx="42" ry="36" fill="url(#cm-bot-body)"/>
+      <!-- visor oscuro -->
+      <ellipse cx="50" cy="54" rx="32" ry="27" fill="url(#cm-bot-visor)"/>
+      <!-- reflejo superior del visor (highlight) -->
+      <ellipse cx="43" cy="44" rx="15" ry="6" fill="#fff" opacity="0.18"/>
+      <!-- ojos violetas brillantes -->
+      <g filter="url(#cm-bot-glow)">
+        <ellipse id="cm-bot-eye-l" cx="41" cy="52" rx="4" ry="6" fill="#e879f9"/>
+        <ellipse id="cm-bot-eye-r" cx="59" cy="52" rx="4" ry="6" fill="#e879f9"/>
+      </g>
+      <!-- boca sonriente -->
+      <path d="M 44 64 Q 50 69 56 64" stroke="#e879f9" stroke-width="2.5" fill="none" stroke-linecap="round" filter="url(#cm-bot-glow)"/>
+      <!-- sombra inferior para pseudo-3D -->
+      <ellipse cx="50" cy="92" rx="25" ry="2.5" fill="#000" opacity="0.12"/>
+    </svg>`}
   </button>
 </div>`;
   }
@@ -577,6 +609,77 @@
     // bot, que corre después de mount — no hace falta re-inyectarlos acá.
   }
 
+  // ─── Bot kawaii animations (blink + mouse-follow) ────────────────────────
+  // El FAB default es un SVG con 2 elipses como ojos (#cm-bot-eye-l/-r).
+  // Les agregamos:
+  //   1. Blink cada 4.5s — rapida animación ry:6 → ry:0.5 → ry:6 (120ms).
+  //   2. Mouse-follow: los ojos se desvían hacia el cursor con un rango
+  //      limitado (±2.5px en x, ±2px en y) — sutil pero le da "vida".
+  //   3. Al abrir el panel (isOpen=true) las pupilas bajan como "mirando
+  //      al user escribiendo". No crítico — se puede sacar si molesta.
+  //
+  // Todo en vanilla — sin lib externa. El SVG usa CSS transition en cx/cy
+  // para suavizar el movimiento entre frames (ver chat.css).
+  function setupBotAnimations() {
+    var svg = document.getElementById("cm-fab-bot");
+    if (!svg) return; // bubbleIcon custom o SVG no montado — salimos.
+    var eyeL = svg.querySelector("#cm-bot-eye-l");
+    var eyeR = svg.querySelector("#cm-bot-eye-r");
+    if (!eyeL || !eyeR) return;
+
+    // Defaults del SVG (centros de los ojos)
+    var CX_L = 41, CX_R = 59, CY = 52, RY_NORMAL = 6;
+    var RANGE_X = 2.5;
+    var RANGE_Y = 2;
+
+    // 1) Blink — animamos ry cerrando los "párpados"
+    function blink() {
+      eyeL.setAttribute("ry", "0.6");
+      eyeR.setAttribute("ry", "0.6");
+      setTimeout(function () {
+        eyeL.setAttribute("ry", String(RY_NORMAL));
+        eyeR.setAttribute("ry", String(RY_NORMAL));
+      }, 130);
+    }
+    // Primer blink a los 1.5s, después cada 4-6s aleatorio (más natural)
+    setTimeout(blink, 1500);
+    setInterval(function () {
+      blink();
+    }, 4500 + Math.random() * 1500);
+
+    // 2) Mouse-follow — los ojos se desvían hacia la posición del cursor.
+    //    Usamos requestAnimationFrame throttling (no seteamos atributos en
+    //    cada mousemove, que puede ser 60+/s).
+    var lastMouseX = 0, lastMouseY = 0;
+    var rafPending = false;
+    function onMouseMove(e) {
+      lastMouseX = e.clientX;
+      lastMouseY = e.clientY;
+      if (rafPending) return;
+      rafPending = true;
+      requestAnimationFrame(updateEyes);
+    }
+    function updateEyes() {
+      rafPending = false;
+      var rect = svg.getBoundingClientRect();
+      if (!rect.width) return;
+      var faceCx = rect.left + rect.width / 2;
+      var faceCy = rect.top + rect.height / 2;
+      // Normalizamos la distancia a (-1, 1) con un tope (si el mouse está
+      // muy lejos, las pupilas quedan en el extremo máximo).
+      var maxDist = 400; // px
+      var nx = Math.max(-1, Math.min(1, (lastMouseX - faceCx) / maxDist));
+      var ny = Math.max(-1, Math.min(1, (lastMouseY - faceCy) / maxDist));
+      var dx = nx * RANGE_X;
+      var dy = ny * RANGE_Y;
+      eyeL.setAttribute("cx", String(CX_L + dx));
+      eyeR.setAttribute("cx", String(CX_R + dx));
+      eyeL.setAttribute("cy", String(CY + dy));
+      eyeR.setAttribute("cy", String(CY + dy));
+    }
+    document.addEventListener("mousemove", onMouseMove, { passive: true });
+  }
+
   // ─── Mount ────────────────────────────────────────────────────────────────
   async function mount() {
     // Guard contra doble-mount: si el script ya corrió antes en esta página
@@ -646,6 +749,11 @@
     });
 
     inputEl.addEventListener("input", autoResize);
+
+    // Animaciones del bot kawaii del FAB: blink periódico + mouse-follow
+    // de las pupilas. Solo corre si NO hay bubbleIcon custom (en ese caso
+    // el FAB es un <img> y no tiene ojos animables).
+    setupBotAnimations();
 
     // Cerrar con Escape
     document.addEventListener("keydown", function (e) {

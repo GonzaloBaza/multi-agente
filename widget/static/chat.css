@@ -30,35 +30,66 @@
   font-family: var(--cm-font);
 }
 
-/* ─── FAB button ─────────────────────────────────────────────────────────── */
+/* ─── FAB button (bot kawaii) ────────────────────────────────────────────── */
 #cm-fab {
-  width: 60px;
-  height: 60px;
+  /* Ligeramente más grande para dar presencia al avatar 3D-ish */
+  width: 72px;
+  height: 72px;
   border-radius: 50%;
-  background: var(--cm-primary);
+  /* Transparent — el body del bot lo dibuja el SVG con su propio gradiente.
+     Si el user setea un bubbleIcon (imagen custom), el CSS #cm-fab-img
+     cubre el botón y tapa esto. */
+  background: transparent;
   border: none;
   cursor: pointer;
-  /* Shadow con glow sutil del primary color — estilo moderno tipo
-     Intercom/respond.io. Usa variable CSS que se pisa dinámicamente si
-     cambia el color (ver applyRemoteConfigToDOM en chat.js). */
-  box-shadow: 0 8px 24px rgba(168, 85, 247, 0.35), 0 4px 12px rgba(0,0,0,0.15);
+  /* Glow violeta flotando detrás del bot, con doble shadow para pseudo-3D
+     (glow difuso + contact shadow más concentrado cerca del piso virtual). */
+  box-shadow:
+    0 14px 26px -8px rgba(168, 85, 247, 0.45),
+    0 8px 16px -6px rgba(0, 0, 0, 0.18);
   display: flex;
   align-items: center;
   justify-content: center;
-  overflow: hidden;
   outline: none;
-  /* Animación de levitación sutil que llama la atención sin ser molesta.
-     3s de loop, baja amplitud (6px). Se combina con hover scale. */
-  animation: cm-fab-float 3s ease-in-out infinite;
-  transition: transform 0.2s, box-shadow 0.2s;
+  /* Animación de levitación — el bot flota suavemente */
+  animation: cm-fab-float 3.2s ease-in-out infinite;
+  transition: transform 0.2s, box-shadow 0.2s, filter 0.2s;
 }
 #cm-fab:hover {
-  /* En hover paramos el float y subimos escala para feedback claro */
   animation-play-state: paused;
-  transform: scale(1.08);
-  box-shadow: 0 12px 30px rgba(168, 85, 247, 0.5), 0 6px 16px rgba(0,0,0,0.2);
+  transform: scale(1.1);
+  filter: brightness(1.05);
+  box-shadow:
+    0 20px 36px -8px rgba(168, 85, 247, 0.55),
+    0 12px 24px -6px rgba(0, 0, 0, 0.22);
 }
 #cm-fab svg { pointer-events: none; }
+#cm-fab-bot {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+#cm-fab-bot #cm-bot-eye-l,
+#cm-fab-bot #cm-bot-eye-r {
+  /* Transición suave cuando el JS mueve los ojos (mouse-follow) */
+  transition: cx 0.08s ease-out, cy 0.08s ease-out, ry 0.06s ease-out;
+}
+/* Imagen custom (cuando bubbleIcon está seteado — ej. logo brand) */
+#cm-fab-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+  pointer-events: none;
+  user-select: none;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.15));
+}
+
+/* Keyframes del float — sube y baja 6px con un ease suave */
+@keyframes cm-fab-float {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-6px); }
+}
 /* Imagen custom (logo MSK u otro) — cubre el FAB completo sin recortes.
    pointer-events:none para que el click llegue al button, no a la img. */
 #cm-fab-img {
