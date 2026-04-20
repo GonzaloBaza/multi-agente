@@ -163,8 +163,13 @@
   /* Z-index alto para estar arriba del SVG / <img> del bot que pueden
      crear stacking contexts propios (por filter drop-shadow). */
   z-index: 10;
-  /* Bounce al aparecer (animation solo corre cuando pasa de display:none
-     a display:flex, que el JS hace cuando llega msg). */
+  /* Animación de bounce: solo corre si el badge tiene .cm-badge-pop
+     (clase que el JS agrega brevemente al incrementar unread). Sin
+     animación en default porque el browser puede no re-disparar el
+     keyframe al cambiar de display:none → display:flex, y el badge
+     queda stuck en scale(0) = invisible. */
+}
+.cm-badge-pop {
   animation: cm-badge-pop 0.35s ease-out;
 }
 /* Cuando el FAB usa imagen del bot (84×84, silueta más chica), el badge
