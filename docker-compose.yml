@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   api:
     build: .
@@ -11,6 +9,21 @@ services:
     restart: unless-stopped
     volumes:
       - media_data:/app/media
+
+  # Next.js 15 (consola interna en agentes.msklatam.com). En prod el nginx
+  # del host rutea / → http://127.0.0.1:3000 y /api/* → http://127.0.0.1:8000
+  # (ver deploy/nginx-agentes.msklatam.com.conf). API_BASE_URL apunta al
+  # service `api` para SSR calls internos dentro de la red de Docker.
+  ui:
+    build: ./frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - API_BASE_URL=http://api:8000
+    depends_on:
+      - api
+    restart: unless-stopped
 
   redis:
     image: redis:7-alpine
