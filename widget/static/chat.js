@@ -507,6 +507,15 @@
 
   // ─── Mount ────────────────────────────────────────────────────────────────
   async function mount() {
+    // Guard contra doble-mount: si el script ya corrió antes en esta página
+    // (ej. Next.js con strategy=afterInteractive a veces lo inyecta 2 veces
+    // durante transiciones client-side), tendríamos 2 event listeners en el
+    // FAB y cada click dispararía togglePanel() dos veces → el panel abre y
+    // se cierra en el mismo click. Si ya hay un widget montado, no hacemos
+    // nada.
+    if (document.getElementById("cm-widget-container")) {
+      return;
+    }
     await loadRemoteConfig();
     injectCSS();
 
