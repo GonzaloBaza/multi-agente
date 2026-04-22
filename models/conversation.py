@@ -3,9 +3,9 @@ from datetime import datetime
 from typing import Annotated, Any
 
 from langgraph.graph.message import add_messages
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, BeforeValidator, Field
 
-from config.constants import AgentType, Channel, ConversationStatus, Country
+from config.constants import AgentType, Channel, ConversationStatus, Country, normalize_country
 from models.message import Message
 
 
@@ -17,7 +17,10 @@ class UserProfile(BaseModel):
     name: str | None = None
     email: str | None = None
     phone: str | None = None
-    country: Country = Country.ARGENTINA
+    # BeforeValidator: paises desconocidos (ej. un widget embebido en un sitio
+    # con un usuario de un pais fuera del catalogo WP) caen en INT en vez de
+    # tirar 500. Igual criterio que Wordpress para paises sin ficha propia.
+    country: Annotated[Country, BeforeValidator(normalize_country)] = Country.ARGENTINA
     lms_user_id: str | None = None
     active_courses: list[str] = Field(default_factory=list)
     payment_status: str | None = None

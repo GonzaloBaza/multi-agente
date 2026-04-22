@@ -10,30 +10,100 @@ class AgentType(StrEnum):
 
 
 class Country(StrEnum):
+    """Paises soportados por el bot.
+
+    Alineado con `integrations/msk_courses.LANG_BY_COUNTRY` (los 17 paises
+    con catalogo WP propio) + `INTERNATIONAL` como fallback — mismo criterio
+    que usa Wordpress: cualquier pais sin ficha propia cae en INT con precio
+    fijo USD.
+
+    Ojo: es distinto de las colas de atencion humana. Para `ventas_XX` /
+    `cobranzas_XX` / `post_venta_XX` se usa `MP` (multi-pais) — el enum
+    `Country` solo modela el pais de origen del usuario, no la cola.
+    """
+
     ARGENTINA = "AR"
-    MEXICO = "MX"
-    COLOMBIA = "CO"
-    PERU = "PE"
+    BOLIVIA = "BO"
     CHILE = "CL"
+    COLOMBIA = "CO"
+    COSTA_RICA = "CR"
+    ECUADOR = "EC"
+    SPAIN = "ES"
+    GUATEMALA = "GT"
+    HONDURAS = "HN"
+    MEXICO = "MX"
+    NICARAGUA = "NI"
+    PANAMA = "PA"
+    PARAGUAY = "PY"
+    PERU = "PE"
+    EL_SALVADOR = "SV"
     URUGUAY = "UY"
+    VENEZUELA = "VE"
+    INTERNATIONAL = "INT"  # fallback para paises sin catalogo propio
+
+
+def normalize_country(raw: object) -> Country:
+    """Normaliza un string de pais al enum Country.
+
+    Si es un codigo ISO-2 que tenemos soportado → devuelve el enum correspondiente.
+    Cualquier otro valor (None, string desconocido, raw != str) → INTERNATIONAL.
+
+    Usado como BeforeValidator en `UserProfile.country` para que un widget
+    embebido en un dominio con un usuario de un pais no listado (ej: Nigeria,
+    USA, etc.) NO tumbe la request con 500 — en su lugar cae en INT y sigue
+    el flow normal con precios USD.
+    """
+    if isinstance(raw, Country):
+        return raw
+    if not isinstance(raw, str) or not raw:
+        return Country.INTERNATIONAL
+    code = raw.strip().upper()
+    try:
+        return Country(code)
+    except ValueError:
+        return Country.INTERNATIONAL
 
 
 COUNTRY_PHONE_PREFIXES: dict[str, Country] = {
     "54": Country.ARGENTINA,
-    "52": Country.MEXICO,
-    "57": Country.COLOMBIA,
-    "51": Country.PERU,
+    "591": Country.BOLIVIA,
     "56": Country.CHILE,
+    "57": Country.COLOMBIA,
+    "506": Country.COSTA_RICA,
+    "593": Country.ECUADOR,
+    "34": Country.SPAIN,
+    "502": Country.GUATEMALA,
+    "504": Country.HONDURAS,
+    "52": Country.MEXICO,
+    "505": Country.NICARAGUA,
+    "507": Country.PANAMA,
+    "595": Country.PARAGUAY,
+    "51": Country.PERU,
+    "503": Country.EL_SALVADOR,
     "598": Country.URUGUAY,
+    "58": Country.VENEZUELA,
+    # INT no tiene prefix — es fallback para paises sin mapeo explicito
 }
 
 COUNTRY_CURRENCY: dict[Country, str] = {
     Country.ARGENTINA: "ARS",
-    Country.MEXICO: "MXN",
-    Country.COLOMBIA: "COP",
-    Country.PERU: "PEN",
+    Country.BOLIVIA: "BOB",
     Country.CHILE: "CLP",
+    Country.COLOMBIA: "COP",
+    Country.COSTA_RICA: "CRC",
+    Country.ECUADOR: "USD",  # dolarizado
+    Country.SPAIN: "EUR",
+    Country.GUATEMALA: "GTQ",
+    Country.HONDURAS: "HNL",
+    Country.MEXICO: "MXN",
+    Country.NICARAGUA: "NIO",
+    Country.PANAMA: "USD",  # balboa 1:1 USD, de facto USD
+    Country.PARAGUAY: "PYG",
+    Country.PERU: "PEN",
+    Country.EL_SALVADOR: "USD",  # dolarizado
     Country.URUGUAY: "UYU",
+    Country.VENEZUELA: "USD",  # operan en USD por hiperinflacion
+    Country.INTERNATIONAL: "USD",  # mismo criterio que WP para paises sin ficha
 }
 
 # Conversation TTL in Redis (seconds)
