@@ -381,8 +381,19 @@ async def _build_user_context(
                 full_first = contact.get("First_Name", "")
                 full_last = contact.get("Last_Name", "")
                 full_name = (f"{full_first} {full_last}").strip()
+                # Fallback a Full_Name si First/Last vienen vacíos pero
+                # Full_Name no (pasa con users cargados por formularios que
+                # sólo tienen el campo compuesto).
+                if not full_name:
+                    full_name = contact.get("Full_Name", "").strip()
                 if full_name and not signals.get("profile_name"):
                     signals["profile_name"] = full_name
+                    # También inyectar al ctx para que el LLM salude por nombre.
+                    # Antes solo se agregaba en el branch de Supabase (línea
+                    # ~188), pero si Supabase no tiene el profile y Zoho sí,
+                    # el nombre se perdía para el greeting.
+                    if not any(l.startswith("Nombre del cliente:") for l in lines):
+                        lines.insert(0, f"Nombre del cliente: {full_name}")
                 if full_name:
                     zoho_profile_for_sync["name"] = full_name
 
