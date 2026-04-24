@@ -193,7 +193,7 @@
     // Cache-bust: versión del bundle → cada deploy del widget.js cambia
     // este string y el browser descarga CSS nuevo. Sin esto, un browser
     // con la CSS vieja cacheada sigue mostrando el círculo/borde previo.
-    const CSS_VERSION = "20260423-1";
+    const CSS_VERSION = "20260423-2";
     link.href = `${CONFIG.apiUrl}/static/chat.css?v=${CSS_VERSION}`;
     document.head.appendChild(link);
 
@@ -1009,8 +1009,32 @@
     } catch(e) { return ''; }
   }
 
+  // ─── Auto-offset del widget en /checkout ──────────────────────────────────
+  // El checkout del site embebedor tiene un banner sticky ("PAGO 100% SEGURO
+  // / Continuar →") que tapa el FAB en mobile. Subimos el widget ~80px
+  // mientras el usuario esté en esa ruta; al salir volvemos al default.
+  // La detección matchea "/checkout", "/checkout/", "/checkout/xxx" en
+  // cualquier parte del path (para que cubra tanto /checkout como /es/checkout).
+  function _isCheckoutPath() {
+    try {
+      return /(^|\/)checkout(\/|$)/i.test(window.location.pathname);
+    } catch (e) { return false; }
+  }
+  function _applyCheckoutOffset() {
+    var cont = document.getElementById("cm-widget-container");
+    if (!cont) return;
+    if (_isCheckoutPath()) {
+      cont.classList.add("cm-checkout-offset");
+    } else {
+      cont.classList.remove("cm-checkout-offset");
+    }
+  }
+
   var _lastSlug = CONFIG.pageSlug || '';
   function startSlugWatcher() {
+    // Aplicar el offset la primera vez (el watcher ya reacciona a cambios
+    // posteriores, pero el mount inicial no dispara el tick del setInterval).
+    _applyCheckoutOffset();
     setInterval(async function() {
       // Prioridad: window.MSK_PAGE_SLUG > auto-detect URL
       var raw = window.MSK_PAGE_SLUG || _detectSlugFromURL();
@@ -1020,6 +1044,9 @@
         var parts = raw.split('/');
         raw = parts[parts.length - 1] || '';
       }
+      // Re-evaluar offset del checkout en cada tick (SPA navigation puede
+      // cambiar el pathname sin tocar el slug del curso).
+      _applyCheckoutOffset();
       if (raw === _lastSlug) return;
       _lastSlug = raw;
       CONFIG.pageSlug = raw;
