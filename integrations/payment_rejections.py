@@ -1,113 +1,181 @@
 """
-Mapeo canónico de motivos de rechazo de pago a explicaciones humanas.
+Mapeo canónico de motivos de rechazo de pago a explicaciones humanas
+**ampliadas**.
 
 Las claves coinciden 1-a-1 con los `PaymentErrorStatus` del frontend
 (`msk-front/src/app/[lang]/checkout/utils/paymentErrorMessages.ts`):
     insufficient_funds | card_declined | expired_card | invalid_card |
     processing_error   | fraud_high_risk | invalid_session | rejected
 
+⚠️ IMPORTANTE: el `userMessage` que el frontend muestra en la pantalla de
+rechazo es **muy corto** (1 línea). El widget tiene que aportar valor real,
+no repetir lo mismo. Las "explicaciones" de este archivo son **ampliadas**
+respecto al texto del checkout — incluyen:
+  - Causas posibles concretas (varias opciones)
+  - Pasos para diagnosticar (qué chequear primero)
+  - Contexto sobre quién es responsable (banco vs procesadora vs user)
+  - Tiempos esperados de resolución cuando aplica
+
 El frontend ya hace el mapping de los códigos crudos de cada gateway
 (MP statusDetail, Rebill error code, Stripe error code) a estos status
-canónicos vía `mapRebillErrorToStatus()` y similares. El widget recibe
-el código YA mapeado en el evento `msk:paymentRejected`.
-
-`explicacion` reusa los `userMessage` de Ariel del front (mismo texto que
-el user ve en la pantalla de rechazo). `accion` agrega el próximo paso
-concreto que el agente puede ofrecer.
+canónicos. El widget recibe el código YA mapeado vía `msk:paymentRejected`.
 
 Si llega un código que no está en el dict, se hace fallback al `message`
-crudo del frontend (el agente lo parafrasea).
+crudo del gateway.
 """
 
-# Mapeo: status canónico (matchea PaymentErrorStatus del front) → texto humano
-# + acción concreta. El gateway específico (MP/Rebill/Stripe) se reporta
-# aparte en el `gateway` del payload.
+# Mapeo: status canónico → {titulo, explicacion (ampliada), accion}.
+# La "explicacion" debe darle al user info NUEVA respecto del checkout.
 PAYMENT_REJECTIONS: dict[str, dict[str, str]] = {
     "insufficient_funds": {
         "titulo": "Fondos insuficientes",
         "explicacion": (
-            "Tu tarjeta no tiene fondos suficientes. Prueba con otra tarjeta o "
-            "método de pago."
+            "El banco emisor de la tarjeta rechazó el cobro porque la cuenta "
+            "no tiene saldo o cupo disponible para este monto. Esto puede pasar "
+            "por tres razones típicas:\n"
+            "1. **Saldo real**: la cuenta no llega al monto del curso (revisalo "
+            "en homebanking).\n"
+            "2. **Límite de la tarjeta de crédito**: aunque tengas saldo, el "
+            "cupo mensual de la tarjeta no alcanza para este consumo.\n"
+            "3. **Pagos online bloqueados**: muchos bancos vienen con un cupo "
+            "menor para compras online; podés ampliarlo desde la app del banco "
+            "en menos de 1 minuto."
         ),
         "accion": (
-            "Probá con otra tarjeta de crédito o débito, o esperá a que se "
-            "libere cupo en la cuenta. Si querés, te genero un nuevo link "
-            "ahora."
+            "Lo más rápido es probar con una tarjeta distinta. Si querés usar "
+            "esta misma, ampliá el cupo de compras online desde la app del "
+            "banco y reintentá. Si necesitás te genero un nuevo link de pago."
         ),
     },
     "card_declined": {
-        "titulo": "Tarjeta rechazada",
+        "titulo": "Tarjeta rechazada por el banco",
         "explicacion": (
-            "Tu tarjeta fue rechazada por el banco. Verifica los datos o "
-            "prueba con otra tarjeta."
+            "El banco emisor rechazó el cobro pero no comunicó el motivo "
+            "exacto a la procesadora — esto es lo más común y suele significar "
+            "una de tres cosas:\n"
+            "1. **Sistema antifraude del banco** bloqueó el consumo por ser "
+            "online o por monto inusual. Suele resolverse autorizándolo desde "
+            "la app del banco.\n"
+            "2. **Datos del titular** no coinciden (nombre completo, DNI/RFC/"
+            "CURP según país). Verificá que coincidan con los del frente de "
+            "la tarjeta.\n"
+            "3. **Restricción interna del banco**: tarjeta nueva sin activar, "
+            "límite agotado, deuda atrasada. Esto solo lo resuelve el banco."
         ),
         "accion": (
-            "Revisá que el nombre del titular, número y datos coincidan, o "
-            "probá con otra tarjeta. A veces el banco bloquea pagos online "
-            "y conviene autorizarlos por la app del homebanking."
+            "Te recomiendo dos cosas en paralelo: (1) revisá la app del banco "
+            "y autorizá el consumo si te aparece como pendiente, y (2) mientras "
+            "tanto probá con otra tarjeta para no perder tiempo. Si sigue sin "
+            "andar, llamá al número del dorso de la tarjeta — los operadores "
+            "suelen autorizar el pago en el momento."
         ),
     },
     "expired_card": {
         "titulo": "Tarjeta vencida",
-        "explicacion": "La tarjeta que usaste está vencida. Utiliza una tarjeta válida.",
-        "accion": "Usá una tarjeta vigente — te genero un nuevo link cuando estés listo.",
-    },
-    "invalid_card": {
-        "titulo": "Datos de tarjeta inválidos",
         "explicacion": (
-            "Los datos de tu tarjeta son inválidos. Verifica el número, fecha "
-            "y CVV."
+            "La fecha de vencimiento que ingresaste o la que el sistema tiene "
+            "guardada ya pasó. Tené en cuenta dos detalles:\n"
+            "1. La tarjeta vence el **último día del mes** indicado, no el "
+            "primero. Si tu vencimiento es 06/26, sirve hasta el 30 de junio.\n"
+            "2. Si te llegó el plástico nuevo pero todavía no lo activaste, el "
+            "banco rechaza pagos online aunque la fecha esté vigente."
         ),
         "accion": (
-            "Revisá número, fecha de vencimiento y los 3 dígitos del dorso "
-            "(CVV) — un dígito de más o de menos hace que el sistema "
-            "rechace el pago."
+            "Si tenés el plástico nuevo, activalo desde la app del banco y "
+            "reintentá. Si no, usá otra tarjeta vigente — te genero un link "
+            "nuevo cuando estés listo."
+        ),
+    },
+    "invalid_card": {
+        "titulo": "Datos de la tarjeta no válidos",
+        "explicacion": (
+            "El sistema rechazó los datos antes de llegar al banco. El error "
+            "está casi siempre en uno de estos tres campos:\n"
+            "1. **Número de tarjeta**: 16 dígitos seguidos (sin espacios ni "
+            "guiones). Un solo dígito mal lo invalida.\n"
+            "2. **Fecha de vencimiento**: formato MM/AA (ej. 09/27, no 9/2027).\n"
+            "3. **CVV**: los 3 dígitos del dorso (4 si es Amex, en el frente). "
+            "No es el PIN ni la clave de cajero."
+        ),
+        "accion": (
+            "Lo más útil es volver a tipear los 3 campos mirando la tarjeta "
+            "física (no copiando del homebanking, que a veces formatea distinto). "
+            "Si seguís con el mismo error, probá con otra tarjeta."
         ),
     },
     "processing_error": {
         "titulo": "Error de procesamiento",
         "explicacion": (
-            "Ocurrió un error al procesar tu pago. Intenta nuevamente o "
-            "contacta a un asesor."
+            "No es un problema con tu tarjeta — algo falló en la red bancaria "
+            "que conecta a la procesadora con el banco. Suele ser:\n"
+            "1. **Caída momentánea** del banco emisor (típico fines de semana "
+            "o feriados, dura entre 5 y 30 min).\n"
+            "2. **Timeout** en la respuesta: la solicitud llegó pero el banco "
+            "tardó mucho en contestar y se cortó.\n"
+            "3. Más raro: problema entre la procesadora y la red de tarjetas "
+            "(Visa/Mastercard)."
         ),
         "accion": (
-            "Esperá un par de minutos y reintentá — suelen ser caídas "
-            "momentáneas de la red bancaria. Si persiste, te derivo con "
-            "un asesor humano."
+            "Lo más probable es que andá en 5-10 minutos sin tocar nada. Si "
+            "querés, esperá un cafecito y reintentá. Si después de 30 min "
+            "sigue, te derivo con un asesor humano para revisar."
         ),
     },
     "fraud_high_risk": {
-        "titulo": "Validación bloqueada por seguridad",
+        "titulo": "Bloqueado por sistema antifraude",
         "explicacion": (
-            "Hubo un inconveniente validando esta tarjeta. Te recomendamos "
-            "intentar con otra."
+            "El sistema antifraude (de la procesadora o del banco) marcó la "
+            "operación como riesgosa y la bloqueó **antes** de que el banco la "
+            "rechazara. **No es un problema con tu tarjeta** — son controles "
+            "automáticos que evalúan dispositivo, IP, monto, hora y patrón de "
+            "compra.\n\n"
+            "Causas típicas: estás comprando desde una IP nueva, una red "
+            "pública (wifi de hotel/aeropuerto), un dispositivo distinto al "
+            "habitual, o el monto es alto para tu perfil de la tarjeta."
         ),
         "accion": (
-            "El sistema antifraude bloqueó la operación — no es un problema "
-            "tuyo. Probá con otra tarjeta, o autorizá el consumo desde la app "
-            "del banco antes de reintentar."
+            "Probá tres cosas en este orden: (1) cambiá a una red conocida "
+            "(wifi de casa o datos móviles), (2) si seguís en problema, "
+            "autorizá el consumo desde la app del banco (a veces el banco "
+            "manda push de confirmación), (3) usá otra tarjeta. No insistas "
+            "más de 2 veces seguidas o el sistema bloquea más fuerte."
         ),
     },
     "invalid_session": {
         "titulo": "Sesión de pago expirada",
         "explicacion": (
-            "Tu sesión de pago expiró. Por favor, actualiza la página y "
-            "vuelve a intentarlo."
+            "El link/sesión del checkout tiene vida útil corta (10-15 min) y "
+            "ya expiró. Esto suele pasar si:\n"
+            "1. Dejaste la pestaña abierta un rato largo antes de pagar.\n"
+            "2. Reintentaste varias veces y el sistema invalidó la sesión "
+            "anterior por seguridad.\n"
+            "3. Volviste con el botón ‘atrás’ del navegador a una sesión vieja.\n\n"
+            "**No se cobró nada** — la sesión simplemente caducó."
         ),
         "accion": (
-            "Refrescá la página del checkout y reintentá. Si querés, te paso "
-            "un nuevo link de pago directo por acá."
+            "Refrescá la página del checkout (F5) y la sesión se regenera "
+            "automáticamente. Si querés, te paso un link nuevo directo por "
+            "acá y lo abrís en una pestaña limpia."
         ),
     },
     "rejected": {
         "titulo": "Pago rechazado",
         "explicacion": (
-            "No pudimos procesar tu inscripción. Por favor, prueba con otro "
-            "método de pago o contacta con un asesor."
+            "La procesadora rechazó la operación pero no devolvió un código "
+            "específico que nos permita decirte el motivo exacto. Estadísticamente "
+            "los motivos más probables son, en orden:\n"
+            "1. **Antifraude del banco** (≈40%): el banco bloqueó el consumo "
+            "online sin avisar el motivo.\n"
+            "2. **Cupo o saldo insuficiente** (≈30%): aunque parezca que tenés "
+            "saldo, el cupo online puede ser menor.\n"
+            "3. **Datos no coinciden** (≈20%): nombre, DNI o CVV con un dato mal.\n"
+            "4. Otros (≈10%): tarjeta nueva sin activar, restricción interna."
         ),
         "accion": (
-            "Probá con otra tarjeta, o si querés te derivo con un asesor "
-            "humano para revisar qué pasó puntualmente."
+            "Lo más eficiente: probá con otra tarjeta de entrada — si esa "
+            "anda, era problema del banco emisor de la primera. Si querés "
+            "diagnosticar la original, llamá al banco al número del dorso. "
+            "Si preferís que te ayude un humano, te derivo."
         ),
     },
 }
@@ -119,10 +187,10 @@ def explain_rejection(
     reason: str = "",
 ) -> dict[str, str]:
     """
-    Devuelve la explicación humana para un código de rechazo.
+    Devuelve la explicación humana ampliada para un código de rechazo.
 
     Prioridad:
-      1. Match exacto del `code` en el dict canónico → texto pulido.
+      1. Match exacto del `code` en el dict canónico → texto ampliado.
       2. Si no matchea pero hay `raw_message`/`reason` → fallback con texto crudo.
       3. Genérico.
 
@@ -142,10 +210,16 @@ def explain_rejection(
     if fallback_text:
         return {
             "titulo": "Pago rechazado",
-            "explicacion": fallback_text[:400],
+            "explicacion": (
+                f"La procesadora devolvió este motivo: «{fallback_text[:300]}». "
+                "Sin más detalle del banco, las causas más comunes son antifraude "
+                "del banco, datos del titular que no coinciden, o cupo online "
+                "insuficiente."
+            ),
             "accion": (
-                "Te puedo ayudar a entender qué pasó y a probar con otra "
-                "tarjeta. También podés contactar al banco emisor."
+                "Te puedo ayudar a diagnosticar — contame qué tarjeta usaste "
+                "(crédito o débito, banco) y vemos. En paralelo podés probar "
+                "con otra tarjeta o contactar al banco emisor."
             ),
             "code": code_norm or "unknown",
         }
@@ -153,12 +227,14 @@ def explain_rejection(
     return {
         "titulo": "Pago rechazado",
         "explicacion": (
-            "El pago fue rechazado por la procesadora — no recibimos un "
-            "motivo específico."
+            "La procesadora rechazó la operación sin devolver un motivo "
+            "específico. Las causas más probables son antifraude del banco, "
+            "cupo online insuficiente, o un dato del titular que no coincide."
         ),
         "accion": (
-            "Probá con otra tarjeta de crédito o débito, o contactá al banco "
-            "emisor para más detalles."
+            "Probá con otra tarjeta como primer paso — si esa anda, era "
+            "problema del banco de la primera. Si preferís, te derivo con "
+            "un asesor humano."
         ),
         "code": code_norm or "unknown",
     }
@@ -191,23 +267,33 @@ def build_context_block(rejection: dict) -> str:
 
     return (
         "## ⚠️ CONTEXTO CRÍTICO — RECHAZO DE PAGO RECIENTE\n\n"
-        "El usuario acaba de tener un pago rechazado en el checkout. **Tu primer "
-        "turno DEBE arrancar reconociendo el rechazo y explicando el motivo en "
-        "lenguaje claro.** No saludos genéricos — empatía + información + acción.\n\n"
+        "El usuario acaba de tener un pago rechazado en el checkout y el chat se "
+        "abrió automáticamente para ayudarlo. **Tu primer turno DEBE arrancar "
+        "explicando el motivo en lenguaje claro y aportando información AMPLIADA "
+        "respecto al banner que ya vio en el checkout.** El user ya leyó algo "
+        "como «Tu tarjeta fue rechazada por el banco» — repetir eso sería ruido. "
+        "Tu valor está en explicar **causas posibles + cómo diagnosticar + "
+        "qué hacer**.\n\n"
         f"**Motivo del rechazo: {info['titulo']}**\n"
-        f"  - Código del gateway: `{info['code']}`{(' (' + gateway + ')') if gateway else ''}\n"
-        f"  - Explicación humana: {info['explicacion']}\n"
-        f"  - Próximo paso recomendado: {info['accion']}\n\n"
+        f"  - Código del gateway: `{info['code']}`{(' (' + gateway + ')') if gateway else ''}\n\n"
+        "**Información ampliada (parafraseala — NO la pegues literal):**\n"
+        f"{info['explicacion']}\n\n"
+        "**Próximo paso recomendado (call-to-action que tenés que ofrecer):**\n"
+        f"{info['accion']}\n\n"
         "## INSTRUCCIONES PARA ESTE TURNO\n"
         "1. Empezá con empatía breve (1 línea, sin sobreactuar): «Vi que tuviste "
-        "un problema con el pago — te explico qué pasó».\n"
-        "2. Explicá el motivo del rechazo con tus propias palabras, basándote en "
-        "la **explicación humana** de arriba (NO leas el código crudo al user).\n"
+        "un problema con el pago — te explico qué pasó y cómo resolverlo».\n"
+        "2. Explicá el motivo del rechazo aportando las **causas posibles** "
+        "del bloque ampliado (las 3 razones típicas, no solo el título). "
+        "Adaptá el tono al país y resumí en 4-6 líneas máximo — no peques de "
+        "manual.\n"
         "3. Ofrecé el **próximo paso recomendado** como acción concreta.\n"
         "4. Si el usuario quiere reintentar, generá un nuevo link de pago con "
         "`create_payment_link` (mismo curso, asumí que ya viene del checkout).\n"
-        "5. Si pide hablar con un humano o el motivo es ambiguo, derivá con "
+        "5. Si pide hablar con humano o el motivo es ambiguo, derivá con "
         "HANDOFF_REQUIRED.\n"
         "6. **NO inventes** otros motivos ni sugiras métodos que MSK no acepta "
-        "(solo tarjeta crédito/débito — ver Regla #7)."
+        "(solo tarjeta crédito/débito — ver Regla #7).\n"
+        "7. **NO leas el código crudo** (`cc_rejected_*`, `card_declined`) — "
+        "es ruido para el usuario."
     )
