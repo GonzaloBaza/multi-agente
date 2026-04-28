@@ -987,6 +987,7 @@
       if (detail.country && detail.country.toUpperCase() !== CONFIG.country) {
         CONFIG.country = detail.country.toUpperCase();
       }
+      var slugChanged = false;
       if (detail.pageSlug !== undefined) {
         // Sanitizar igual que el init
         var raw = String(detail.pageSlug || "").replace(/^\/+|\/+$/g, "");
@@ -994,15 +995,24 @@
         var clean = parts[parts.length - 1] || "";
         if (clean !== CONFIG.pageSlug) {
           CONFIG.pageSlug = clean;
+          // OJO: actualizamos _lastSlug acá para que el slug watcher (que
+          // tickea cada 1.5s) NO duplique la regeneración del saludo. Pero
+          // marcamos slugChanged=true para disparar el refresh nosotros
+          // mismos al final del listener.
           _lastSlug = clean;
+          slugChanged = true;
         }
       }
 
-      // Si entra login fresco (antes no había email, ahora sí) y la conv
-      // no se materializó, refrescar saludo para que personalice al toque.
-      // Si ya hay conv activa, los datos se pegarán en el próximo /widget/chat.
-      if (changed && CONFIG.email && !conversationMaterialized) {
-        lastKnownEmail = CONFIG.email;
+      // Refrescar saludo cuando:
+      //   (a) login fresco (antes no había email, ahora sí), o
+      //   (b) navegación SPA cambió el slug del curso (ej. /curso/A → /curso/B)
+      // En ambos casos, solo si la conv no se materializó — si ya hay
+      // mensajes del user, el saludo viejo queda congelado en el historial.
+      if (!conversationMaterialized && (slugChanged || (changed && CONFIG.email))) {
+        if (changed && CONFIG.email) {
+          lastKnownEmail = CONFIG.email;
+        }
         refreshGreetingForNewUser().catch(function () { /* silent */ });
       }
     });
