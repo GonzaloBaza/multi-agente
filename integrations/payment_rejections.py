@@ -42,9 +42,10 @@ PAYMENT_REJECTIONS: dict[str, dict[str, str]] = {
             "en menos de 1 minuto."
         ),
         "accion": (
-            "Lo más rápido es probar con una tarjeta distinta. Si querés usar "
-            "esta misma, ampliá el cupo de compras online desde la app del "
-            "banco y reintentá. Si necesitás te genero un nuevo link de pago."
+            "Lo más rápido es probar con una tarjeta distinta volviendo al "
+            "checkout. Si querés usar esta misma, ampliá el cupo de compras "
+            "online desde la app del banco y reintentá. Si no podés "
+            "resolverlo, te derivo con un asesor humano que te ayuda."
         ),
     },
     "card_declined": {
@@ -82,8 +83,8 @@ PAYMENT_REJECTIONS: dict[str, dict[str, str]] = {
         ),
         "accion": (
             "Si tenés el plástico nuevo, activalo desde la app del banco y "
-            "reintentá. Si no, usá otra tarjeta vigente — te genero un link "
-            "nuevo cuando estés listo."
+            "reintentá desde el checkout. Si no, usá otra tarjeta vigente. "
+            "Si necesitás ayuda extra, te derivo con un asesor humano."
         ),
     },
     "invalid_card": {
@@ -154,8 +155,8 @@ PAYMENT_REJECTIONS: dict[str, dict[str, str]] = {
         ),
         "accion": (
             "Refrescá la página del checkout (F5) y la sesión se regenera "
-            "automáticamente. Si querés, te paso un link nuevo directo por "
-            "acá y lo abrís en una pestaña limpia."
+            "automáticamente. Si después de refrescar sigue sin andar, te "
+            "derivo con un asesor humano para que te asista."
         ),
     },
     "rejected": {
@@ -278,22 +279,28 @@ def build_context_block(rejection: dict) -> str:
         f"  - Código del gateway: `{info['code']}`{(' (' + gateway + ')') if gateway else ''}\n\n"
         "**Información ampliada (parafraseala — NO la pegues literal):**\n"
         f"{info['explicacion']}\n\n"
-        "**Próximo paso recomendado (call-to-action que tenés que ofrecer):**\n"
+        "**Acción que el usuario puede intentar por su cuenta (sugeríla):**\n"
         f"{info['accion']}\n\n"
         "## INSTRUCCIONES PARA ESTE TURNO\n"
         "1. Empezá con empatía breve (1 línea, sin sobreactuar): «Vi que tuviste "
-        "un problema con el pago — te explico qué pasó y cómo resolverlo».\n"
+        "un problema con el pago — te explico qué pasó».\n"
         "2. Explicá el motivo del rechazo aportando las **causas posibles** "
         "del bloque ampliado (las 3 razones típicas, no solo el título). "
         "Adaptá el tono al país y resumí en 4-6 líneas máximo — no peques de "
         "manual.\n"
-        "3. Ofrecé el **próximo paso recomendado** como acción concreta.\n"
-        "4. Si el usuario quiere reintentar, generá un nuevo link de pago con "
-        "`create_payment_link` (mismo curso, asumí que ya viene del checkout).\n"
-        "5. Si pide hablar con humano o el motivo es ambiguo, derivá con "
-        "HANDOFF_REQUIRED.\n"
-        "6. **NO inventes** otros motivos ni sugiras métodos que MSK no acepta "
-        "(solo tarjeta crédito/débito — ver Regla #7).\n"
+        "3. Sugerí la **acción que el usuario puede intentar por su cuenta** "
+        "(otra tarjeta, autorizar desde la app del banco, etc.).\n"
+        "4. **🚫 PROHIBIDO regenerar links de pago.** NO uses `create_payment_link`. "
+        "NO digas «te genero un link nuevo», «te paso un link directo» ni nada "
+        "parecido. El reintento del pago se hace desde el checkout original — "
+        "el usuario refresca o vuelve a la página y reintenta.\n"
+        "5. **Si el usuario insiste en reintentar el pago, no puede resolverlo "
+        "solo, o pide hablar con alguien → derivá SIEMPRE a humano con "
+        "HANDOFF_REQUIRED.** Un asesor humano puede asistirlo personalmente "
+        "(verificar datos, generar manualmente un link distinto, ofrecer "
+        "alternativas caso a caso).\n"
+        "6. **NO inventes** otros métodos que MSK no acepta (solo tarjeta "
+        "crédito/débito — ver Regla #7).\n"
         "7. **NO leas el código crudo** (`cc_rejected_*`, `card_declined`) — "
         "es ruido para el usuario."
     )
