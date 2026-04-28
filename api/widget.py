@@ -23,6 +23,20 @@ router = APIRouter(prefix="/widget", tags=["widget"])
 widget_limiter = Limiter(key_func=get_remote_address)
 
 
+class PaymentRejectionPayload(BaseModel):
+    """
+    Payload del evento `msk:paymentRejected` que dispara el frontend del site
+    embebedor (msk-front) cuando el gateway (MP/Rebill/Stripe) rechaza un pago
+    en el checkout. Se inyecta al contexto del agente para que arranque el
+    turno explicando el motivo del rechazo y ofreciendo alternativas.
+    """
+
+    reason: str = ""  # razón corta del frontend (ej. "Fondos insuficientes")
+    code: str = ""  # código del gateway (ej. "cc_rejected_insufficient_amount")
+    message: str = ""  # mensaje crudo que el gateway devolvió al frontend
+    gateway: str = ""  # "mercadopago" | "rebill" | "stripe" | ""
+
+
 class ChatRequest(BaseModel):
     session_id: str | None = None
     message: str
@@ -39,6 +53,7 @@ class ChatRequest(BaseModel):
     user_cargo: str = ""  # ej. "Jefe de servicio", "Coordinación"
     page_slug: str = ""  # slug del curso que está mirando el usuario (si aplica)
     initial_greeting: str = ""  # saludo stateless a persistir si la conv se crea recién
+    payment_rejection: PaymentRejectionPayload | None = None  # rechazo de pago reciente del checkout
 
 
 class GreetingRequest(BaseModel):
@@ -80,6 +95,9 @@ async def chat(request: Request, req: ChatRequest):
         user_courses=req.user_courses,
         page_slug=req.page_slug,
         initial_greeting=req.initial_greeting,
+        payment_rejection=(
+            req.payment_rejection.model_dump() if req.payment_rejection else None
+        ),
     )
 
     return ChatResponse(

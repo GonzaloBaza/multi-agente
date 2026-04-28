@@ -193,7 +193,7 @@
     // Cache-bust: versión del bundle → cada deploy del widget.js cambia
     // este string y el browser descarga CSS nuevo. Sin esto, un browser
     // con la CSS vieja cacheada sigue mostrando el círculo/borde previo.
-    const CSS_VERSION = "20260423-2";
+    const CSS_VERSION = "20260428-1";
     link.href = `${CONFIG.apiUrl}/static/chat.css?v=${CSS_VERSION}`;
     document.head.appendChild(link);
 
@@ -267,6 +267,9 @@
   let conversationMaterialized = false; // true cuando ya hay al menos un mensaje de user
   let lastKnownEmail = CONFIG.email || "";  // para detectar cambios de login/logout
   let greetingBubbleEl = null;         // ref al <div> del saludo, para poder reemplazarlo si cambia el login
+  // Payload de rechazo de pago a enviar al backend en el próximo /widget/chat.
+  // Lo setea el listener `msk:paymentRejected`. Se consume y limpia en sendMessage().
+  let pendingPaymentRejection = null;
 
   // ─── DOM refs (asignados después de mount) ────────────────────────────────
   let panel, fab, messagesEl, typingEl, inputEl, sendBtn, badge;
@@ -409,6 +412,13 @@
     };
     if (pendingGreeting) {
       payload.initial_greeting = pendingGreeting;
+    }
+    // Si llegó un evento `msk:paymentRejected` antes del primer mensaje del
+    // user, lo adjuntamos UNA sola vez al primer POST. El backend lo inyecta
+    // al contexto del agente para que arranque hablando del rechazo.
+    if (pendingPaymentRejection) {
+      payload.payment_rejection = pendingPaymentRejection;
+      pendingPaymentRejection = null;
     }
 
     try {
@@ -1025,8 +1035,16 @@
     if (!cont) return;
     if (_isCheckoutPath()) {
       cont.classList.add("cm-checkout-offset");
+      // En mobile el FAB se oculta completo (lo decide CSS via media query).
+      // Esta clase es solo el "scope" — la regla
+      // `@media (max-width: 768px) #cm-widget-container.cm-checkout-mobile-scope { display: none }`
+      // hace el resto. Mantenemos siempre el container montado para que
+      // window.MSKChat.open() siga funcionando si el site lo invoca desde
+      // un botón "Solicitar asistencia" propio.
+      cont.classList.add("cm-checkout-mobile-scope");
     } else {
       cont.classList.remove("cm-checkout-offset");
+      cont.classList.remove("cm-checkout-mobile-scope");
     }
   }
 
@@ -1079,10 +1097,191 @@
     }
   }
 
+  // ─── Detección desktop/mobile ─────────────────────────────────────────────
+  // Mismo breakpoint que el CSS (cm-checkout-mobile-scope se oculta a ≤768px).
+  // Usamos matchMedia para reaccionar si el usuario rota un tablet o cambia
+  // el viewport (raro pero gratis).
+  function _isDesktop() {
+    try {
+      return window.matchMedia("(min-width: 769px)").matches;
+    } catch (e) {
+      return true; // fallback optimista — si el browser no soporta, asumimos desktop
+    }
+  }
+
+  // ─── Auto-open por inactividad (5 min, solo desktop, 1 vez por URL+sesión) ─
+  // Reglas:
+  //   - Solo desktop. En mobile no abrimos solo (es invasivo).
+  //   - 5 min de inactividad real (sin mousemove/keydown/scroll/touchstart).
+  //   - Cambiar de URL (SPA o navegación) resetea el timer.
+  //   - Una sola apertura automática por (URL × sesión). Flag en sessionStorage:
+  //       autoOpened:{url-pathname}  → si está, no volvemos a abrir.
+  //   - Si el panel ya está abierto, no hacemos nada.
+  //   - Si el user cierra el panel después del auto-open, NO se vuelve a abrir
+  //     en esa misma URL (la flag persiste).
+  var INACTIVITY_MS = 5 * 60 * 1000;
+  var inactivityTimer = null;
+  var lastInactivityPath = "";
+
+  function _autoOpenedKeyForCurrentURL() {
+    try {
+      return "msk_widget_autoopened:" + window.location.pathname;
+    } catch (e) {
+      return "msk_widget_autoopened:_";
+    }
+  }
+
+  function _alreadyAutoOpenedHere() {
+    try {
+      return sessionStorage.getItem(_autoOpenedKeyForCurrentURL()) === "1";
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function _markAutoOpenedHere() {
+    try {
+      sessionStorage.setItem(_autoOpenedKeyForCurrentURL(), "1");
+    } catch (e) { /* ignore */ }
+  }
+
+  function _resetInactivityTimer() {
+    if (!_isDesktop()) return;
+    if (inactivityTimer) {
+      clearTimeout(inactivityTimer);
+      inactivityTimer = null;
+    }
+    // Si ya disparamos auto-open en esta URL, no rearmamos (one-shot).
+    if (_alreadyAutoOpenedHere()) return;
+    // Si ya está abierto, no tiene sentido programar auto-open.
+    if (isOpen) return;
+    inactivityTimer = setTimeout(function () {
+      // Re-chequeo de invariantes en el momento del fire.
+      if (!_isDesktop() || isOpen || _alreadyAutoOpenedHere()) return;
+      _markAutoOpenedHere();
+      togglePanel();
+    }, INACTIVITY_MS);
+  }
+
+  function _onInactivityActivity() {
+    // Si cambió la URL desde el último tick, también resetea la flag de
+    // "ya abrí acá" porque ahora estamos en una página distinta.
+    var p = "";
+    try { p = window.location.pathname; } catch (e) {}
+    if (p !== lastInactivityPath) {
+      lastInactivityPath = p;
+    }
+    _resetInactivityTimer();
+  }
+
+  function startInactivityWatcher() {
+    if (!_isDesktop()) return;
+    try { lastInactivityPath = window.location.pathname; } catch (e) {}
+    var events = ["mousemove", "keydown", "scroll", "touchstart", "click"];
+    events.forEach(function (ev) {
+      window.addEventListener(ev, _onInactivityActivity, { passive: true });
+    });
+    // Reset también cuando cambia la URL en SPAs (Next.js puede no disparar
+    // los eventos de actividad inmediatamente). El slug watcher ya corre
+    // cada 1500ms, así que reusamos su tick: en cada cambio de pathname
+    // limpiamos el timer.
+    setInterval(function () {
+      try {
+        var p = window.location.pathname;
+        if (p !== lastInactivityPath) {
+          lastInactivityPath = p;
+          _resetInactivityTimer();
+        }
+      } catch (e) { /* ignore */ }
+    }, 1500);
+    _resetInactivityTimer();
+  }
+
+  // ─── Listener: rechazo de pago ────────────────────────────────────────────
+  // El site embebedor (msk-front) dispara
+  //   window.dispatchEvent(new CustomEvent('msk:paymentRejected', {
+  //     detail: { reason, code, message, gateway? }
+  //   }))
+  // cuando el gateway (MercadoPago/Rebill/Stripe) rechaza un pago.
+  //
+  // Acciones del widget:
+  //   1. Abre el panel (solo desktop — en mobile el FAB ya está oculto y el
+  //      site debería usar su propio CTA "Solicitar asistencia").
+  //   2. Guarda el detail en `pendingPaymentRejection` para que viaje al
+  //      backend en el próximo POST /widget/chat. El backend lo inyecta al
+  //      contexto del agente sales/closer para que arranque explicando el
+  //      motivo del rechazo y ofrezca alternativas.
+  //   3. Si la conversación todavía no se materializó, dispara un mensaje
+  //      automático del user con un trigger interno (`__widget_payment_rejected__`)
+  //      para que el bot responda al toque sin necesidad de que el user escriba.
+  function startPaymentRejectionListener() {
+    window.addEventListener("msk:paymentRejected", function (ev) {
+      var detail = (ev && ev.detail) || {};
+      pendingPaymentRejection = {
+        reason: String(detail.reason || ""),
+        code: String(detail.code || ""),
+        message: String(detail.message || ""),
+        gateway: String(detail.gateway || ""),
+      };
+      // Solo abrimos automáticamente en desktop. En mobile, el site ya
+      // muestra los mensajes de Ariel y un botón "Solicitar asistencia"
+      // que invoca window.MSKChat.open() si el user lo decide.
+      if (_isDesktop() && !isOpen) {
+        // Marcamos la URL como "auto-abierta" para que la inactividad
+        // no abra de nuevo en esta misma página.
+        _markAutoOpenedHere();
+        togglePanel();
+      }
+      // Disparar primer turno automático solo si la conv no arrancó aún.
+      // Mandamos un mensaje natural del user ("Tuve un problema con el pago…")
+      // que se renderiza en la UI como un saludo del lado del cliente y le
+      // da pie al bot. El detalle del rechazo viaja en el body via
+      // pendingPaymentRejection (consumido en el próximo sendMessage).
+      // Si ya hay conv en curso, esperamos al próximo turno del user — el
+      // contexto del rechazo se inyecta sin necesidad de un mensaje extra.
+      if (!conversationMaterialized && !isLoading) {
+        sendMessage("Acabo de tener un rechazo en el pago.");
+      }
+    });
+  }
+
+  // ─── API pública: window.MSKChat ──────────────────────────────────────────
+  // Permite al site embebedor controlar el widget desde su propio código.
+  // Ejemplo de uso (botón "Solicitar asistencia" en /checkout mobile):
+  //   <button onclick="window.MSKChat && window.MSKChat.open()">Solicitar asistencia</button>
+  //
+  // Métodos:
+  //   open()    → abre el panel (no-op si ya está abierto)
+  //   close()   → cierra el panel (no-op si ya está cerrado)
+  //   toggle()  → toggle del panel
+  //   isOpen()  → bool
+  //   reportPaymentRejection(detail) → equivalente a dispatch del custom event,
+  //               para sites que prefieren llamada directa
+  function _exposePublicAPI() {
+    window.MSKChat = {
+      open: function () { if (!isOpen) togglePanel(); },
+      close: function () { if (isOpen) togglePanel(); },
+      toggle: function () { togglePanel(); },
+      isOpen: function () { return !!isOpen; },
+      reportPaymentRejection: function (detail) {
+        try {
+          window.dispatchEvent(new CustomEvent("msk:paymentRejected", { detail: detail || {} }));
+        } catch (e) { /* ignore */ }
+      },
+    };
+  }
+
   // ─── Init ─────────────────────────────────────────────────────────────────
+  async function _bootstrap() {
+    await mount();
+    _exposePublicAPI();
+    startPaymentRejectionListener();
+    startInactivityWatcher();
+  }
+
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", mount);
+    document.addEventListener("DOMContentLoaded", _bootstrap);
   } else {
-    mount();
+    _bootstrap();
   }
 })();

@@ -47,6 +47,18 @@
   }
 }
 
+/* En mobile (≤768px) ocultamos SOLO el FAB cuando el user está en /checkout
+   — no el container entero. Así el panel sigue pudiendo abrirse cuando el
+   site embebedor llama a `window.MSKChat.open()` desde su propio botón
+   "Solicitar asistencia" (Rober/Ariel). En desktop la regla NO aplica →
+   el FAB sigue visible. La clase `cm-checkout-mobile-scope` la aplica el
+   JS (`_applyCheckoutOffset()`) en cualquier pathname que matchee /checkout. */
+@media (max-width: 768px) {
+  #cm-widget-container.cm-checkout-mobile-scope #cm-fab {
+    display: none !important;
+  }
+}
+
 /* ─── FAB button (bot kawaii) ────────────────────────────────────────────── */
 #cm-fab {
   /* Ligeramente más grande para dar presencia al avatar 3D-ish */

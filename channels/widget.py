@@ -811,6 +811,7 @@ async def process_widget_message(
     user_courses: str = "",
     page_slug: str = "",
     initial_greeting: str = "",
+    payment_rejection: dict | None = None,
 ) -> dict:
     """
     Procesa un mensaje del widget web.
@@ -1235,6 +1236,36 @@ async def process_widget_message(
         history_without_last = [
             {"role": "system", "content": _build_context_block(user_context_lines)}
         ] + history_without_last
+
+    # ── Inyectar contexto de rechazo de pago (si llegó del checkout) ─────────
+    # El widget pasa el payload del evento `msk:paymentRejected` en el body.
+    # Se inyecta como system msg ALTO en la pila para que el agente arranque
+    # el turno explicando el motivo del rechazo (ver
+    # `integrations.payment_rejections.build_context_block`).
+    if payment_rejection:
+        try:
+            from integrations.payment_rejections import build_context_block as _build_pr_block
+
+            pr_block = _build_pr_block(payment_rejection)
+            if pr_block:
+                history_without_last = [
+                    {"role": "system", "content": pr_block}
+                ] + history_without_last
+                await log_event(
+                    session_id,
+                    "action",
+                    {
+                        "action": "rechazo_pago_recibido",
+                        "detail": (
+                            f"Rechazo inyectado al contexto — "
+                            f"code={payment_rejection.get('code', '—')} | "
+                            f"gateway={payment_rejection.get('gateway', '—')} | "
+                            f"reason={(payment_rejection.get('reason') or payment_rejection.get('message') or '')[:80]}"
+                        ),
+                    },
+                )
+        except Exception as _e:
+            logger.warning("payment_rejection_inject_failed", error=str(_e))
 
     # ─────────────────────────────────────────────────────────────────────────
     # AGENTE IA — procesar con el supervisor
