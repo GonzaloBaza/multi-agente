@@ -28,23 +28,6 @@
      mantiene su propia capa arriba. */
   isolation: isolate;
   font-family: var(--cm-font);
-  /* Transición suave al entrar/salir del checkout donde el bottom cambia. */
-  transition: bottom 0.25s ease;
-}
-
-/* Offset cuando el usuario está en /checkout — en mobile el site tiene un
-   banner sticky ("PAGO 100% SEGURO / Continuar →") que ocupa los ~80px de
-   abajo y tapa el FAB. Subimos el widget por encima. La clase la aplica JS
-   detectando el pathname. */
-#cm-widget-container.cm-checkout-offset {
-  bottom: 100px;
-}
-@media (min-width: 768px) {
-  /* En desktop el banner sticky suele ser más bajo o directamente no existe.
-     Offset menor para no desperdiciar espacio innecesariamente. */
-  #cm-widget-container.cm-checkout-offset {
-    bottom: 88px;
-  }
 }
 
 /* En mobile (≤768px) ocultamos SOLO el FAB cuando el user está en /checkout

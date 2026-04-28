@@ -193,7 +193,7 @@
     // Cache-bust: versión del bundle → cada deploy del widget.js cambia
     // este string y el browser descarga CSS nuevo. Sin esto, un browser
     // con la CSS vieja cacheada sigue mostrando el círculo/borde previo.
-    const CSS_VERSION = "20260428-1";
+    const CSS_VERSION = "20260428-2";
     link.href = `${CONFIG.apiUrl}/static/chat.css?v=${CSS_VERSION}`;
     document.head.appendChild(link);
 
@@ -1029,12 +1029,11 @@
     } catch(e) { return ''; }
   }
 
-  // ─── Auto-offset del widget en /checkout ──────────────────────────────────
-  // El checkout del site embebedor tiene un banner sticky ("PAGO 100% SEGURO
-  // / Continuar →") que tapa el FAB en mobile. Subimos el widget ~80px
-  // mientras el usuario esté en esa ruta; al salir volvemos al default.
-  // La detección matchea "/checkout", "/checkout/", "/checkout/xxx" en
-  // cualquier parte del path (para que cubra tanto /checkout como /es/checkout).
+  // ─── Detección de /checkout para ocultar FAB en mobile ────────────────────
+  // En /checkout + mobile escondemos el FAB (el site embebedor renderiza su
+  // propio botón "Solicitar asistencia"). En desktop el FAB queda visible en
+  // la posición default — ya no aplicamos offset porque sin FAB mobile no hay
+  // banner sticky que tapar.
   function _isCheckoutPath() {
     try {
       return /(^|\/)checkout(\/|$)/i.test(window.location.pathname);
@@ -1044,16 +1043,12 @@
     var cont = document.getElementById("cm-widget-container");
     if (!cont) return;
     if (_isCheckoutPath()) {
-      cont.classList.add("cm-checkout-offset");
-      // En mobile el FAB se oculta completo (lo decide CSS via media query).
-      // Esta clase es solo el "scope" — la regla
-      // `@media (max-width: 768px) #cm-widget-container.cm-checkout-mobile-scope { display: none }`
-      // hace el resto. Mantenemos siempre el container montado para que
-      // window.MSKChat.open() siga funcionando si el site lo invoca desde
-      // un botón "Solicitar asistencia" propio.
+      // Solo agregamos la clase mobile-scope — la regla
+      // `@media (max-width: 768px) ... #cm-fab { display: none }` la usa
+      // para esconder solo el FAB en mobile. Mantenemos el container montado
+      // para que window.MSKChat.open() siga funcionando si el site lo invoca.
       cont.classList.add("cm-checkout-mobile-scope");
     } else {
-      cont.classList.remove("cm-checkout-offset");
       cont.classList.remove("cm-checkout-mobile-scope");
     }
   }
