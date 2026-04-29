@@ -157,7 +157,7 @@
     html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g,
       '<a href="$2" target="_blank" rel="noopener">$1</a>');
 
-    // Listas con - o •
+    // Listas con - o • (sin números — los numerados los manejamos abajo)
     html = html.replace(/((?:^|\n)[•\-] .+)+/g, (block) => {
       const items = block.trim().split(/\n/).map(line =>
         `<li>${line.replace(/^[•\-] /, "")}</li>`
@@ -165,11 +165,25 @@
       return `<ul>${items}</ul>`;
     });
 
-    // Saltos de línea (fuera de listas/pre)
+    // Listas numeradas: "1. ", "2. " al inicio de línea (consecutivas).
+    // Sin esto, el LLM que tira "1. Curso A — pitch\n2. Curso B — pitch"
+    // queda pegado en una sola línea visual cuando el render colapsa los \n.
+    html = html.replace(/((?:^|\n)\d+\. .+(?:\n\d+\. .+)*)/g, (block) => {
+      const items = block.trim().split(/\n/).map(line =>
+        `<li>${line.replace(/^\d+\. /, "")}</li>`
+      ).join("");
+      return `<ol>${items}</ol>`;
+    });
+
+    // Doble salto de línea → <br><br> (separa párrafos visualmente).
+    // Tiene que ir ANTES del reemplazo de \n simple.
+    html = html.replace(/\n\n+/g, "<br><br>");
+
+    // Saltos de línea simples (fuera de listas/pre)
     html = html.replace(/\n/g, "<br>");
-    // Limpiar <br> dentro de <ul>/<li>
-    html = html.replace(/<br>(<\/?(?:ul|li)>)/g, "$1");
-    html = html.replace(/(<\/?(?:ul|li)>)<br>/g, "$1");
+    // Limpiar <br> dentro/alrededor de <ul>/<ol>/<li>
+    html = html.replace(/<br>(<\/?(?:ul|ol|li)>)/g, "$1");
+    html = html.replace(/(<\/?(?:ul|ol|li)>)<br>/g, "$1");
 
     return html;
   }
@@ -193,7 +207,7 @@
     // Cache-bust: versión del bundle → cada deploy del widget.js cambia
     // este string y el browser descarga CSS nuevo. Sin esto, un browser
     // con la CSS vieja cacheada sigue mostrando el círculo/borde previo.
-    const CSS_VERSION = "20260428-2";
+    const CSS_VERSION = "20260429-1";
     link.href = `${CONFIG.apiUrl}/static/chat.css?v=${CSS_VERSION}`;
     document.head.appendChild(link);
 
