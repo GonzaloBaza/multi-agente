@@ -413,16 +413,34 @@ def build_brief_md(item: dict, country: str) -> str:
     if merged:
         is_ar = country.lower() == "ar"
         jurisdiccionales_ar: list[dict] = []
+        colmed3_nacional: list[dict] = []  # COLMED III — certificación NACIONAL AR (no provincial)
         aval_principal: list[dict] = []
         otros: list[dict] = []
 
         # Heurísticas sobre título + descripción combinados.
+        # COLMED III (Distrito III) es certificación NACIONAL AR — válida para
+        # todos los médicos matriculados en Argentina, NO requiere matrícula
+        # provincial específica. Se separa de las jurisdiccionales para que el
+        # agente la presente con jerarquía distinta.
         # Jurisdiccional AR = colegio/consejo médico provincial argentino
-        # (COLEMEMI, COLMEDCAT, CSMLP, CMSC, CMSF, o texto explícito).
+        # (COLEMEMI, COLMEDCAT, CSMLP, CMSC, CMSF, etc.).
         for m in merged:
             tl = m["title"].lower()
             dl = m["description"].lower()
             combined = f"{tl} {dl}"
+
+            # Detectar COLMED III primero — es la única "nacional"
+            if (
+                "colmed3" in tl
+                or "colmed 3" in tl
+                or "colmed iii" in tl
+                or "distrito iii" in combined
+                or "distrito 3" in combined
+                or ("distrito" in combined and ("iii" in combined or " 3" in combined))
+            ):
+                colmed3_nacional.append(m)
+                continue
+
             if any(
                 x in combined
                 for x in [
@@ -497,14 +515,37 @@ def build_brief_md(item: dict, country: str) -> str:
                 lines.append(line)
             lines.append("")
 
-        if is_ar and jurisdiccionales_ar:
-            lines.append("### Certificaciones de alcance jurisdiccional en Argentina")
+        if is_ar and colmed3_nacional:
+            lines.append("### Certificación nacional Argentina (COLMED III)")
             lines.append(
-                "> **Solo aplican si el profesional está matriculado** en cada "
-                "institución. No son obligatorias — son avales adicionales "
-                "disponibles para quienes ya tienen matrícula. No las ofrezcas "
-                "por defecto, solo si el usuario pregunta por avales locales, "
-                "menciona su provincia o confirma que está matriculado."
+                "> ✅ **VALIDEZ NACIONAL** para todos los médicos matriculados en "
+                "Argentina — **NO requiere matrícula en COLMED III específicamente**. "
+                "Se otorga junto con la inscripción al curso, sin costo adicional. "
+                "**Mencionala SIEMPRE para usuarios AR** cuando pregunten por "
+                "certificaciones, avales o validez en su país."
+            )
+            for m in colmed3_nacional:
+                line = f"- **{m['title']}**"
+                if m["description"]:
+                    line += f" — {m['description']}"
+                lines.append(line)
+            lines.append("")
+            lines.append(
+                "**Cómo comunicarlo (texto sugerido)**: *\"Certificaciones en "
+                "Argentina: el curso cuenta con la certificación del Colegio "
+                "Médico de la Provincia de Buenos Aires, Distrito III (COLMED III) "
+                "— válida a nivel nacional para médicos matriculados en Argentina.\"*"
+            )
+            lines.append("")
+
+        if is_ar and jurisdiccionales_ar:
+            lines.append("### Otras certificaciones jurisdiccionales (provinciales)")
+            lines.append(
+                "> **Estas son provinciales y solo aplican si el profesional está "
+                "matriculado** en cada institución. Son avales adicionales sin "
+                "costo, disponibles para quienes ya tienen matrícula. **A diferencia "
+                "de COLMED III, NO son nacionales**: cada una requiere matrícula "
+                "específica en ese colegio provincial."
             )
             for m in jurisdiccionales_ar:
                 line = f"- **{m['title']}**"
@@ -513,14 +554,15 @@ def build_brief_md(item: dict, country: str) -> str:
                 lines.append(line)
             lines.append("")
             lines.append(
-                "**Cómo comunicarlo**: En el primer pitch SOLO mencionás el "
-                "certificado MSK Digital (incluido/bonificado). "
-                "Si el usuario está logueado y su ficha Zoho indica matrícula "
-                "en alguno de estos colegios/consejos, podés mencionarlo "
-                "proactivamente como beneficio adicional sin costo. "
+                "**Cómo comunicarlo**: Si el usuario está logueado y su ficha "
+                "Zoho indica matrícula en alguno de estos colegios/consejos, "
+                "podés mencionarlo proactivamente como beneficio adicional. "
                 "Si el usuario pregunta por avales locales AR o menciona "
                 "matrícula provincial, aclarale que puede sumar la certificación "
-                "de su colegio/consejo **sin costo, si está matriculado ahí**."
+                "de su colegio/consejo **sin costo, si está matriculado ahí**. "
+                "Una línea genérica si no tenés matrícula registrada: *\"Y además, "
+                "certificaciones jurisdiccionales si estás matriculado en alguno "
+                "de los colegios provinciales como [lista].\"*"
             )
             lines.append("")
         elif is_ar:
