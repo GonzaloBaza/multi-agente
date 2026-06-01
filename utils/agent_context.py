@@ -52,6 +52,15 @@ masters_handoff_requested: ContextVar[bool] = ContextVar(
 # hace UPDATE por ID directo (evita buscar por email y pisar leads ajenos).
 current_lead_id: ContextVar[str] = ContextVar("current_lead_id", default="")
 
+# Parámetros CTWA del anuncio Meta — seteados antes de invocar el agente.
+# La tool `create_or_update_lead` los usa como fallback cuando el LLM
+# omite ad_account / lead_source / tipo_de_lead (parámetros opcionales
+# que el LLM olvida en conversaciones multi-turno).
+# Estructura: {"lead_source": "Facebook", "ad_account": "Facebook - bot",
+#              "ad_id": "...", "ad_name": "...", "tipo_de_lead": "Paid",
+#              "lead_id_social": "..."}
+current_ctwa_params: ContextVar[dict] = ContextVar("current_ctwa_params", default={})
+
 # Flag: ¿el usuario está autenticado en el sitio MSK?
 # Lo setea el endpoint del canal (widget) en función de la fuente del email:
 #   - Email vino en `req.user_email` del payload inicial (lo pasa msk-front

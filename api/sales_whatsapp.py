@@ -37,7 +37,7 @@ from agents.sales.agent import build_sales_agent
 from integrations.stt import transcribe_bytes
 from integrations.zoho.leads import ZohoLeads
 from memory.conversation_store import get_conversation_store
-from utils.agent_context import current_channel, current_lead_id
+from utils.agent_context import current_channel, current_ctwa_params, current_lead_id
 
 logger = structlog.get_logger(__name__)
 router = APIRouter(prefix="/api/v1/sales/whatsapp", tags=["sales-whatsapp"])
@@ -920,6 +920,19 @@ async def _process_message_and_respond(payload: BotmakerPayload, user_msg: str) 
     if lead_id_for_conv:
         current_lead_id.set(lead_id_for_conv)
         user_profile["lead_id"] = lead_id_for_conv
+
+    # Para CTWA: guardar params del anuncio en ContextVar para que la tool
+    # los use como fallback si el LLM olvida pasarlos.
+    if is_ctwa:
+        current_ctwa_params.set({
+            "lead_source": "Facebook",
+            "ad_account": "Facebook - bot",
+            "ad_id": payload.referralSourceId or "",
+            "ad_name": payload.referralHeadline or "",
+            "tipo_de_lead": "Paid",
+            "lead_id_social": payload.referralCtwaClid or "",
+            "lead_status": "No habilitado",
+        })
 
     # ──────────── Build + invocar agente ────────────
     try:

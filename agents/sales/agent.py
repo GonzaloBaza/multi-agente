@@ -256,7 +256,9 @@ Para orientarte mejor con la información del {curso}, ¿me indicás cuál es tu
 
 ## ⛔ REGLA DE ORO — cuándo llamar `create_or_update_lead`:
 
-**Llamá la tool en el mismo turno en que el usuario te dé su EMAIL** (no importa si falta profesión — registrá lo que tenés y completá después).
+**Si el mensaje del usuario contiene el símbolo `@` (arroba) → ES UN EMAIL → llamá `create_or_update_lead` INMEDIATAMENTE en ese turno. Obligatorio. Sin excepciones.**
+
+Más en general: llamá la tool en el mismo turno en que el usuario te dé su EMAIL (no importa si falta profesión — registrá lo que tenés y completá después).
 
 Si después recibís más datos (profesión, especialidad), llamá la tool de nuevo para actualizar — no crea duplicado, actualiza el mismo lead por ID.
 

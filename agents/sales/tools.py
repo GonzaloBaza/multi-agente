@@ -16,7 +16,7 @@ from langchain_core.tools import tool
 from integrations.payments.rebill import RebillClient
 from integrations.zoho.leads import ZohoLeads
 from integrations.zoho.sales_orders import ZohoSalesOrders
-from utils.agent_context import current_lead_id, log_to_conv, masters_handoff_requested
+from utils.agent_context import current_ctwa_params, current_lead_id, log_to_conv, masters_handoff_requested
 
 logger = structlog.get_logger(__name__)
 
@@ -537,6 +537,25 @@ async def create_or_update_lead(
 
     try:
         leads = ZohoLeads()
+
+        # Fallback CTWA: si el LLM usó los defaults (Widget) pero estamos en CTWA,
+        # sobreescribir con los params del anuncio Meta del ContextVar.
+        ctwa = current_ctwa_params.get()
+        if ctwa:
+            if ad_account in ("", "Widget"):
+                ad_account = ctwa.get("ad_account", ad_account)
+            if lead_source in ("", "Widget"):
+                lead_source = ctwa.get("lead_source", lead_source)
+            if not ad_id:
+                ad_id = ctwa.get("ad_id", "")
+            if not ad_name:
+                ad_name = ctwa.get("ad_name", "")
+            if not tipo_de_lead:
+                tipo_de_lead = ctwa.get("tipo_de_lead", "")
+            if not lead_id_social:
+                lead_id_social = ctwa.get("lead_id_social", "")
+            if lead_status in ("", "Atención BOT IA"):
+                lead_status = ctwa.get("lead_status", lead_status)
 
         profesion_zoho = _map_profesion_to_zoho(profesion) if profesion else ""
         especialidad_zoho, otra_especialidad = _map_especialidad_zoho(especialidad, profesion_zoho)
