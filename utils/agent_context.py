@@ -44,6 +44,14 @@ masters_handoff_requested: ContextVar[bool] = ContextVar(
     "masters_handoff_requested", default=False
 )
 
+# ID del lead Zoho asociado a esta conversación.
+# - HSM: seteado con `payload.leadId` antes de invocar el agente.
+# - CTWA: seteado después de la creación proactiva del lead mínimo.
+# - Vacío: no hay lead todavía.
+# La tool `create_or_update_lead` lee este ContextVar: si está seteado,
+# hace UPDATE por ID directo (evita buscar por email y pisar leads ajenos).
+current_lead_id: ContextVar[str] = ContextVar("current_lead_id", default="")
+
 # Flag: ¿el usuario está autenticado en el sitio MSK?
 # Lo setea el endpoint del canal (widget) en función de la fuente del email:
 #   - Email vino en `req.user_email` del payload inicial (lo pasa msk-front

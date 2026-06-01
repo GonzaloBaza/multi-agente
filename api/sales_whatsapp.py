@@ -37,7 +37,7 @@ from agents.sales.agent import build_sales_agent
 from integrations.stt import transcribe_bytes
 from integrations.zoho.leads import ZohoLeads
 from memory.conversation_store import get_conversation_store
-from utils.agent_context import current_channel
+from utils.agent_context import current_channel, current_lead_id
 
 logger = structlog.get_logger(__name__)
 router = APIRouter(prefix="/api/v1/sales/whatsapp", tags=["sales-whatsapp"])
@@ -753,6 +753,85 @@ async def sales_whatsapp_webhook(payload: BotmakerPayload) -> BotmakerResponse:
         await _bucket_release(payload.phone)
 
 
+async def _ensure_lead_id(payload: BotmakerPayload, user_profile: dict) -> str:
+    """
+    Garantiza que exista un lead en Zoho para esta conversación y devuelve su ID.
+
+    - HSM: el leadId ya viene en el payload → devolver directo.
+    - CTWA: crear lead mínimo (phone + país + curso del anuncio) si no existe.
+      El leadId se cachea en Redis `ctwa_data:{phone}` (TTL 7d) para no
+      duplicar en turnos siguientes.
+
+    Devuelve "" si falla (no rompe el flujo).
+    """
+    # HSM: ya tenemos el lead
+    if payload.leadId:
+        return payload.leadId
+
+    # CTWA: buscar en cache Redis primero
+    if not payload.referralHeadline and not payload.referralSourceId:
+        return ""  # no es CTWA conocido
+    try:
+        store = await get_conversation_store()
+        raw = await store._redis.get(f"ctwa_data:{payload.phone}")
+        if raw:
+            ctwa = json.loads(raw.decode() if isinstance(raw, bytes) else raw)
+            if ctwa.get("lead_id"):
+                logger.info(
+                    "sales_whatsapp_ctwa_lead_restored",
+                    phone=payload.phone,
+                    lead_id=ctwa["lead_id"],
+                )
+                return ctwa["lead_id"]
+
+        # Sin cache → crear lead mínimo en Zoho
+        from integrations.zoho.leads import ZohoLeads
+        zl = ZohoLeads()
+
+        # Buscar por teléfono primero para evitar duplicados si la sesión Redis expiró
+        existing = await zl.search_by_phone(payload.phone)
+        if existing:
+            lead_id = existing["id"]
+            logger.info("sales_whatsapp_ctwa_lead_found_by_phone", phone=payload.phone, lead_id=lead_id)
+        else:
+            result = await zl.create({
+                "name": "Lead CTWA",
+                "phone": payload.phone,
+                "email": "",
+                "country": user_profile.get("country", "AR"),
+                "curso_de_interes": payload.referralHeadline,
+                "canal_origen": "WhatsApp",
+                "lead_source": "Facebook",
+                "lead_status": "Atención BOT IA",
+                "ad_account": "Facebook",
+                "ad_id": payload.referralSourceId,
+                "ad_name": payload.referralHeadline,
+                "tipo_de_lead": "Paid",
+                "lead_id_social": payload.referralCtwaClid,
+            })
+            lead_id = result["id"]
+            logger.info("sales_whatsapp_ctwa_lead_created", phone=payload.phone, lead_id=lead_id)
+
+        # Persistir en Redis junto con los datos del anuncio
+        ctwa_data = {}
+        if raw:
+            try:
+                ctwa_data = json.loads(raw.decode() if isinstance(raw, bytes) else raw)
+            except Exception:
+                pass
+        ctwa_data["lead_id"] = lead_id
+        await store._redis.set(
+            f"ctwa_data:{payload.phone}",
+            json.dumps(ctwa_data, ensure_ascii=False),
+            ex=7 * 24 * 3600,
+        )
+        return lead_id
+
+    except Exception as e:
+        logger.warning("sales_whatsapp_ensure_lead_id_failed", phone=payload.phone, error=str(e))
+        return ""
+
+
 async def _process_message_and_respond(payload: BotmakerPayload, user_msg: str) -> BotmakerResponse:
     """Procesa el mensaje (Zoho fetch + agente + tags) y devuelve la response
     para Botmaker. Esta función asume que user_msg ya está combinado/debounceado."""
@@ -831,6 +910,17 @@ async def _process_message_and_respond(payload: BotmakerPayload, user_msg: str) 
             country=ctwa_country,
         )
 
+    # ──────────── Garantía de lead Zoho ────────────
+    # Asegurar que haya un leadId para esta conversación ANTES de invocar el agente.
+    # - HSM: payload.leadId ya existe → setearlo en ContextVar.
+    # - CTWA: crear lead mínimo proactivo (phone + país + curso del anuncio) si no existe.
+    # El ContextVar `current_lead_id` es leído por la tool `create_or_update_lead`
+    # para hacer UPDATE por ID en vez de buscar por email (evita pisar leads ajenos).
+    lead_id_for_conv = await _ensure_lead_id(payload, user_profile)
+    if lead_id_for_conv:
+        current_lead_id.set(lead_id_for_conv)
+        user_profile["lead_id"] = lead_id_for_conv
+
     # ──────────── Build + invocar agente ────────────
     try:
         agent = await build_sales_agent(
@@ -843,7 +933,7 @@ async def _process_message_and_respond(payload: BotmakerPayload, user_msg: str) 
         logger.error("sales_whatsapp_build_agent_failed", error=str(e), country=country, slug=page_slug)
         return BotmakerResponse(
             text="Tuve un problema técnico al procesar tu consulta. Te paso con un asesor académico.",
-            context={"derivarConAsesor": True},
+            context={"derivarConAsesor": True, "leadId": lead_id_for_conv, "leadCreado": bool(lead_id_for_conv)},
         )
 
     history = await _load_history(payload.phone)
@@ -921,6 +1011,13 @@ async def _process_message_and_respond(payload: BotmakerPayload, user_msg: str) 
     invoke_ms = round((_time.perf_counter() - invoke_start) * 1000)
 
     clean_text, ctx = _parse_tags(raw_response)
+
+    # Agregar lead info al context para que Botmaker pueda setearlo como
+    # variable de usuario: `user.set('zohoLeadId', context.leadId)` y
+    # `user.set('zohoLeadCreado', context.leadCreado)`.
+    final_lead_id = current_lead_id.get() or lead_id_for_conv
+    ctx["leadId"] = final_lead_id
+    ctx["leadCreado"] = bool(final_lead_id)
 
     # Historial Redis (memoria conversacional rápida del agente).
     try:

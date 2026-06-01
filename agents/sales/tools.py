@@ -16,7 +16,7 @@ from langchain_core.tools import tool
 from integrations.payments.rebill import RebillClient
 from integrations.zoho.leads import ZohoLeads
 from integrations.zoho.sales_orders import ZohoSalesOrders
-from utils.agent_context import log_to_conv, masters_handoff_requested
+from utils.agent_context import current_lead_id, log_to_conv, masters_handoff_requested
 
 logger = structlog.get_logger(__name__)
 
@@ -533,24 +533,94 @@ async def create_or_update_lead(
 
     try:
         leads = ZohoLeads()
-        # 🔑 Match por EMAIL (no por teléfono).
-        # Razón: cada email distinto debe crear un lead nuevo aunque el
-        # teléfono coincida con uno viejo (mismo dispositivo, distinta persona).
-        # Search por phone generaba falsos UPDATE y perdíamos los nuevos emails.
-        existing = await leads.search_by_email(email) if email else None
 
         profesion_zoho = _map_profesion_to_zoho(profesion) if profesion else ""
         especialidad_zoho, otra_especialidad = _map_especialidad_zoho(especialidad, profesion_zoho)
+
+        # Armar notas combinando texto libre de profesión + notas del bot
+        _notas_parts = []
+        if profesion:
+            _notas_parts.append(f"Profesión declarada: {profesion}")
+        if notes:
+            _notas_parts.append(notes)
+        _notas_combined = " | ".join(_notas_parts) if _notas_parts else notes
+
+        # Armar el payload de update (compartido entre UPDATE por ID y UPDATE por email)
+        _parts = (name or "").strip().split(" ", 1)
+        _first = _parts[0] if _parts else ""
+        _last = _parts[1] if len(_parts) > 1 else (_first or "Sin nombre")
+        update_payload = {
+            "First_Name": _first,
+            "Last_Name": _last,
+            "Phone": phone or "",
+            "Email": email or "",
+            "Pais": ZohoLeads._normalize_pais(country or "Argentina"),
+            "Lead_Source": lead_source,
+            "Lead_Status": lead_status,
+            "Ad_Account": ad_account,
+            "Brand": brand or "",
+            "Description": course_name,
+            "Notas_Bot": _notas_combined,
+        }
+        if profesion_zoho:
+            update_payload["Profesion"] = profesion_zoho
+        if especialidad_zoho:
+            update_payload["Especialidad"] = especialidad_zoho
+        if otra_especialidad:
+            update_payload["Otra_especialidad"] = otra_especialidad
+        if otra_profesion:
+            update_payload["Otra_profesion"] = otra_profesion
+        if carrera_estudio:
+            update_payload["Carrera_de_estudio"] = carrera_estudio
+        if anio_estudio:
+            update_payload["Año_de_estudio"] = anio_estudio
+        if ad_id:
+            update_payload["Ad_ID"] = ad_id
+        if ad_name:
+            update_payload["Ad_Name"] = ad_name
+        if tipo_de_lead:
+            update_payload["Tipo_de_lead"] = tipo_de_lead
+        if lead_id_social:
+            update_payload["Lead_ID_social"] = lead_id_social
+
+        # ── Ruta 1: hay lead_id en el ContextVar (HSM o CTWA proactivo) ───────
+        # Actualizar por ID directo — evita buscar por email y pisar leads ajenos.
+        ctx_lead_id = current_lead_id.get()
+        if ctx_lead_id:
+            logger.info(
+                "create_or_update_lead_path_update_by_id",
+                lead_id=ctx_lead_id,
+                email=email,
+            )
+            await leads.update(ctx_lead_id, update_payload)
+            await log_to_conv(
+                "action",
+                {
+                    "action": "lead_actualizado_zoho",
+                    "detail": f"ID: {ctx_lead_id} (por ID de contexto) — curso: {course_name}",
+                    "lead_id": ctx_lead_id,
+                    "match_by": "context_id",
+                    "email": email,
+                    "course": course_name,
+                },
+            )
+            return f"Lead actualizado en Zoho. ID: {ctx_lead_id}"
+
+        # ── Ruta 2: no hay lead_id → buscar por email y crear si no existe ─────
+        # 🔑 Match por EMAIL (no por teléfono).
+        # Razón: cada email distinto debe crear un lead nuevo aunque el
+        # teléfono coincida con uno viejo (mismo dispositivo, distinta persona).
+        existing = await leads.search_by_email(email) if email else None
 
         data = {
             "name": name,
             "phone": phone,
             "email": email,
             "country": country,
-            "curso_de_interes": course_name,  # Va a `Description` en el create (ZohoLeads.create)
+            "curso_de_interes": course_name,
             "canal_origen": channel,
             "notas": notes,
-            "brand": brand,  # "Master" para Másters, "" para cursos normales
+            "brand": brand,
             "lead_status": lead_status,
             "lead_source": lead_source,
             "ad_account": ad_account,
@@ -574,56 +644,8 @@ async def create_or_update_lead(
                 email=email,
                 match_by="email",
             )
-            # Decisión: PISAR TODOS los campos del lead — datos de contacto,
-            # Lead_Source / Ad_Account / Lead_Status / país. El último contacto
-            # gana. Se pierde la atribución original pero queda 100% sincronizado
-            # con la conversación más reciente.
-            # Partir el name en First_Name / Last_Name (mismo split que `ZohoLeads.create`).
-            _parts = (name or "").strip().split(" ", 1)
-            _first = _parts[0] if _parts else ""
-            _last = _parts[1] if len(_parts) > 1 else (_first or "Sin nombre")
-            # Armar notas combinando texto libre de profesión + notas del bot
-            _notas_parts = []
-            if profesion:
-                _notas_parts.append(f"Profesión declarada: {profesion}")
-            if notes:
-                _notas_parts.append(notes)
-            _notas_combined = " | ".join(_notas_parts) if _notas_parts else notes
-
-            update_payload = {
-                "First_Name": _first,
-                "Last_Name": _last,
-                "Phone": phone or "",
-                "Email": email or "",
-                "Pais": ZohoLeads._normalize_pais(country or "Argentina"),
-                "Lead_Source": lead_source,
-                "Lead_Status": lead_status,
-                "Ad_Account": ad_account,
-                "Brand": brand or "",
-                "Description": course_name,
-                "Notas_Bot": _notas_combined,
-            }
-            if profesion_zoho:
-                update_payload["Profesion"] = profesion_zoho
-            if especialidad_zoho:
-                update_payload["Especialidad"] = especialidad_zoho
-            if otra_especialidad:
-                update_payload["Otra_especialidad"] = otra_especialidad
-            if otra_profesion:
-                update_payload["Otra_profesion"] = otra_profesion
-            if carrera_estudio:
-                update_payload["Carrera_de_estudio"] = carrera_estudio
-            if anio_estudio:
-                update_payload["Año_de_estudio"] = anio_estudio
-            if ad_id:
-                update_payload["Ad_ID"] = ad_id
-            if ad_name:
-                update_payload["Ad_Name"] = ad_name
-            if tipo_de_lead:
-                update_payload["Tipo_de_lead"] = tipo_de_lead
-            if lead_id_social:
-                update_payload["Lead_ID_social"] = lead_id_social
             await leads.update(existing["id"], update_payload)
+            current_lead_id.set(existing["id"])
             await log_to_conv(
                 "action",
                 {
@@ -644,6 +666,7 @@ async def create_or_update_lead(
                 reason="email_not_found_in_zoho",
             )
             result = await leads.create(data)
+            current_lead_id.set(result["id"])
             await log_to_conv(
                 "action",
                 {
