@@ -351,6 +351,10 @@ def _map_profesion_to_zoho(text: str) -> str:
     if not t:
         return "Otra profesión"
 
+    # Paramédico — va antes de médico para evitar falso match con "médico"
+    if any(w in t for w in ["paramédico", "paramedico", "para médico"]):
+        return "Fuerza pública"
+
     # Residente — va antes de médico porque "residente de cardiología" es Residente
     if "residente" in t:
         return "Residente"

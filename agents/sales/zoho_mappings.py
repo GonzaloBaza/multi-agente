@@ -110,6 +110,8 @@ _ALIASES_MEDICO: dict[str, str] = {
     "guardia": "Emergentología",
     "urgencias": "Emergentología",
     "emergencia": "Emergentología",
+    "clínica médica": "Medicina interna / clínica",
+    "clinica medica": "Medicina interna / clínica",
     "clínico": "Medicina interna / clínica",
     "clinico": "Medicina interna / clínica",
     "internista": "Medicina interna / clínica",
