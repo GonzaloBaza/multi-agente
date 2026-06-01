@@ -803,7 +803,7 @@ async def _ensure_lead_id(payload: BotmakerPayload, user_profile: dict) -> str:
                 "canal_origen": "WhatsApp",
                 "lead_source": "Facebook",
                 "lead_status": "Atención BOT IA",
-                "ad_account": "Facebook",
+                "ad_account": "Facebook - bot",
                 "ad_id": payload.referralSourceId,
                 "ad_name": payload.referralHeadline,
                 "tipo_de_lead": "Paid",

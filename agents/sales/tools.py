@@ -480,7 +480,7 @@ async def create_or_update_lead(
         lead_status: Estado del lead en Zoho. Para leads CTWA usar "No habilitado"
             (evita que Zoho dispare otra plantilla). Default "Atención BOT IA".
         lead_source: Fuente del lead. "Facebook" para CTWA, "Widget" default.
-        ad_account: Cuenta de anuncio. "Facebook" para CTWA, "Widget" default.
+        ad_account: Cuenta de anuncio. "Facebook - bot" para CTWA, "Widget" default.
         ad_id: ID del anuncio Meta (referralSourceId). Solo para CTWA.
         ad_name: Nombre/headline del anuncio Meta (referralHeadline). Solo para CTWA.
         tipo_de_lead: "Paid" para leads de campañas pagas. Vacío por defecto.
