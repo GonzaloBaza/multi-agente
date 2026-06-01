@@ -148,6 +148,7 @@ async def build_sales_agent(
         country=country,
         channel=channel,
         campaign_config=campaign_config,
+        is_ctwa=bool((user_profile or {}).get("ctwa")),
     )
     system_prompt = (priority_header + base_prompt) if priority_header else base_prompt
 

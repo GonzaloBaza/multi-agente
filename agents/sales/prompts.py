@@ -68,6 +68,7 @@ def build_sales_prompt(
     country: str = "AR",
     channel: str = "whatsapp",
     campaign_config: dict | None = None,
+    is_ctwa: bool = False,
 ) -> str:
     """
     Construye el system prompt del agente de ventas.
@@ -110,7 +111,9 @@ def build_sales_prompt(
     tone_block = _tone_block_for_country(country)
 
     channel_format = _channel_format(channel)
-    channel_intake = _channel_intake(channel)
+    # Para CTWA el bloque CTWA en agent.py ya define el flujo de recolección.
+    # Inyectar _channel_intake (HSM) generaría instrucciones contradictorias.
+    channel_intake = "" if is_ctwa else _channel_intake(channel)
 
     # ── PROMO / CUPÓN — renderizado desde campaign_config ───────────────────
     promo_block = _render_promo_block(campaign_config)
