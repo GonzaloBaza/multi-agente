@@ -19,6 +19,8 @@ import {
   Clock as ClockIcon,
   XCircle,
   Loader2,
+  ChevronLeft,
+  MoreVertical,
 } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -83,6 +85,10 @@ interface Props {
   onTakeoverHuman: () => void;
   onToggleBot:     () => void;
   onClassify:      (stage: LifecycleStage) => void;
+  /** Solo mobile: volver al listado */
+  onMobileBack?: () => void;
+  /** Solo mobile: abrir panel CRM como vista full-screen */
+  onMobileShowPanel?: () => void;
 }
 
 export function ConversationDetail({
@@ -94,6 +100,8 @@ export function ConversationDetail({
   onTakeoverHuman,
   onToggleBot,
   onClassify,
+  onMobileBack,
+  onMobileShowPanel,
 }: Props) {
   const qc = useQueryClient();
 
@@ -164,6 +172,15 @@ export function ConversationDetail({
       {/* Header */}
       <div className="px-6 py-3 border-b border-border flex items-center justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
+          {onMobileBack && (
+            <button
+              onClick={onMobileBack}
+              className="md:hidden p-1 -ml-2 rounded hover:bg-hover text-fg-muted hover:text-fg shrink-0"
+              aria-label="Volver al listado"
+            >
+              <ChevronLeft className="w-5 h-5" />
+            </button>
+          )}
           <Avatar
             initials={contact.name[0]}
             gradient="from-pink-500 to-fuchsia-600"
@@ -190,147 +207,168 @@ export function ConversationDetail({
         </div>
 
         <div className="flex items-center gap-1.5 shrink-0">
-          {/* Etiqueta IA (clasificador): caliente/tibio/frío/... */}
-          <Dropdown
-            trigger={
-              <Button
-                variant="secondary"
-                size="sm"
-                title={currentLabelMeta ? currentLabelMeta.label : "Sin clasificar aún"}
-              >
-                {currentLabelMeta ? (
-                  <>
-                    <currentLabelMeta.icon className={cn("w-3.5 h-3.5", currentLabelMeta.color)} />
-                    <span>{currentLabelMeta.label}</span>
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="w-3.5 h-3.5 text-fg-dim" />
-                    <span className="text-fg-dim">Etiqueta IA</span>
-                  </>
-                )}
-                {setLabelMutation.isPending && (
-                  <Loader2 className="w-3 h-3 animate-spin ml-1" />
-                )}
+
+          {/* ── Mobile: menú ⋮ con todas las acciones ──────────────────── */}
+          <div className="md:hidden">
+            <Dropdown align="right" trigger={
+              <Button variant="ghost" size="icon-sm" title="Acciones">
+                <MoreVertical className="w-4 h-4" />
               </Button>
-            }
-          >
-            {(close) => (
-              <>
-                <DropdownLabel>Etiqueta IA del lead</DropdownLabel>
-                {AI_LABEL_OPTIONS.map((opt) => {
-                  const OptIcon = opt.icon;
-                  return (
-                    <DropdownItem
-                      key={opt.value}
-                      onClick={() => {
-                        setLabelMutation.mutate(opt.value);
-                        close();
-                      }}
-                    >
-                      <OptIcon className={cn("w-3.5 h-3.5", opt.color)} />
-                      <span>{opt.label}</span>
-                      {currentLabel === opt.value && (
-                        <Check className="w-3 h-3 ml-auto text-accent" />
-                      )}
+            }>
+              {(close) => (
+                <>
+                  <DropdownLabel>Etiqueta IA</DropdownLabel>
+                  {AI_LABEL_OPTIONS.map((opt) => {
+                    const OptIcon = opt.icon;
+                    return (
+                      <DropdownItem key={opt.value} onClick={() => { setLabelMutation.mutate(opt.value); close(); }}>
+                        <OptIcon className={cn("w-3.5 h-3.5", opt.color)} />
+                        <span>{opt.label}</span>
+                        {currentLabel === opt.value && <Check className="w-3 h-3 ml-auto text-accent" />}
+                      </DropdownItem>
+                    );
+                  })}
+                  <DropdownSeparator />
+                  <DropdownLabel>Asignar a</DropdownLabel>
+                  {agents.length === 0 && (
+                    <div className="px-3 py-2 text-[11px] text-fg-dim">Cargando equipo…</div>
+                  )}
+                  {agents.map((a) => (
+                    <DropdownItem key={a.id} onClick={() => { onAssign(a.id); close(); }}>
+                      <div className={`w-5 h-5 rounded-full bg-gradient-to-br ${a.color} text-white text-[9px] font-bold flex items-center justify-center`}>
+                        {a.initials}
+                      </div>
+                      <span>{a.name}{a.id === meId && " (yo)"}</span>
+                      {conversation.assignedTo === a.id && <Check className="w-3 h-3 ml-auto text-accent" />}
                     </DropdownItem>
-                  );
-                })}
-                <DropdownSeparator />
-                <div className="px-3 py-1.5 text-[10px] text-fg-dim leading-snug">
-                  El agente IA reclasifica después de cada respuesta del bot.
-                  Tu cambio se mantiene hasta que el bot lo pise.
-                </div>
-              </>
-            )}
-          </Dropdown>
+                  ))}
+                  <DropdownSeparator />
+                  <DropdownItem onClick={() => { onAssign(null); close(); }}>
+                    Quitar asignación
+                  </DropdownItem>
+                  <DropdownSeparator />
+                  {conversation.botPaused ? (
+                    <DropdownItem onClick={() => { onToggleBot(); close(); }}>
+                      <Play className="w-3.5 h-3.5 text-warn" />
+                      <span>Reactivar bot</span>
+                    </DropdownItem>
+                  ) : (
+                    <DropdownItem onClick={() => { onTakeoverHuman(); close(); }}>
+                      <Pause className="w-3.5 h-3.5 text-warn" />
+                      <span>Tomar control</span>
+                    </DropdownItem>
+                  )}
+                  {onMobileShowPanel && (
+                    <>
+                      <DropdownSeparator />
+                      <DropdownItem onClick={() => { onMobileShowPanel(); close(); }}>
+                        <PanelRightClose className="w-3.5 h-3.5" />
+                        <span>Panel CRM</span>
+                      </DropdownItem>
+                    </>
+                  )}
+                </>
+              )}
+            </Dropdown>
+          </div>
 
-          {/* Lifecycle dropdown: removido en favor de "Etiqueta IA" (arriba).
-              Los dos representaban lo mismo (temperatura/estado del lead) pero
-              con granularidad distinta; el clasificador IA cubre todo lo que
-              lifecycle hacía + más (distingue "convertido" de "esperando pago").
-              El campo queda en la DB por compat con el filtro del inbox, pero
-              deja de ser user-facing hasta que migremos ese filtro también. */}
-          {false && (
+          {/* ── Desktop: botones individuales ───────────────────────────── */}
+          <div className="hidden md:flex items-center gap-1.5">
+            {/* Etiqueta IA */}
             <Dropdown
-            trigger={
-              <Button variant="secondary" size="sm">
-                <Tag className="w-3.5 h-3.5" /> Lifecycle
-              </Button>
-            }
-          >
-            {(close) => (
-              <>
-                <DropdownLabel>Etapa del funnel</DropdownLabel>
-                {LIFECYCLE_OPTIONS.map((opt) => (
-                  <DropdownItem
-                    key={opt.value}
-                    onClick={() => { onClassify(opt.value); close(); }}
-                  >
-                    <span className={`w-2 h-2 rounded-full ${opt.color}`} />
-                    <span>{opt.label}</span>
-                    {conversation?.lifecycle === opt.value && (
-                      <Check className="w-3 h-3 ml-auto text-accent" />
-                    )}
-                  </DropdownItem>
-                ))}
-                <DropdownSeparator />
-                <div className="px-3 py-1.5 text-[10px] text-fg-dim">
-                  Distinto de Etiqueta IA — esto es la etapa del funnel.
-                </div>
-              </>
-            )}
-          </Dropdown>
-          )}
+              trigger={
+                <Button variant="secondary" size="sm" title={currentLabelMeta ? currentLabelMeta.label : "Sin clasificar aún"}>
+                  {currentLabelMeta ? (
+                    <>
+                      <currentLabelMeta.icon className={cn("w-3.5 h-3.5", currentLabelMeta.color)} />
+                      <span>{currentLabelMeta.label}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-3.5 h-3.5 text-fg-dim" />
+                      <span className="text-fg-dim">Etiqueta IA</span>
+                    </>
+                  )}
+                  {setLabelMutation.isPending && <Loader2 className="w-3 h-3 animate-spin ml-1" />}
+                </Button>
+              }
+            >
+              {(close) => (
+                <>
+                  <DropdownLabel>Etiqueta IA del lead</DropdownLabel>
+                  {AI_LABEL_OPTIONS.map((opt) => {
+                    const OptIcon = opt.icon;
+                    return (
+                      <DropdownItem key={opt.value} onClick={() => { setLabelMutation.mutate(opt.value); close(); }}>
+                        <OptIcon className={cn("w-3.5 h-3.5", opt.color)} />
+                        <span>{opt.label}</span>
+                        {currentLabel === opt.value && <Check className="w-3 h-3 ml-auto text-accent" />}
+                      </DropdownItem>
+                    );
+                  })}
+                  <DropdownSeparator />
+                  <div className="px-3 py-1.5 text-[10px] text-fg-dim leading-snug">
+                    El agente IA reclasifica después de cada respuesta del bot.
+                    Tu cambio se mantiene hasta que el bot lo pise.
+                  </div>
+                </>
+              )}
+            </Dropdown>
 
-          {/* Asignar */}
-          <Dropdown
-            trigger={
-              <Button variant="secondary" size="sm">
-                <UserPlus className="w-3.5 h-3.5" /> Asignar
-              </Button>
-            }
-          >
-            {(close) => (
-              <>
-                <DropdownLabel>Asignar a</DropdownLabel>
-                {agents.length === 0 && (
-                  <div className="px-3 py-2 text-[11px] text-fg-dim">Cargando equipo…</div>
+            {/* Lifecycle: removido en favor de Etiqueta IA (campo queda en DB). */}
+            {false && (
+              <Dropdown trigger={<Button variant="secondary" size="sm"><Tag className="w-3.5 h-3.5" /> Lifecycle</Button>}>
+                {(close) => (
+                  <>
+                    <DropdownLabel>Etapa del funnel</DropdownLabel>
+                    {LIFECYCLE_OPTIONS.map((opt) => (
+                      <DropdownItem key={opt.value} onClick={() => { onClassify(opt.value); close(); }}>
+                        <span className={`w-2 h-2 rounded-full ${opt.color}`} />
+                        <span>{opt.label}</span>
+                        {conversation?.lifecycle === opt.value && <Check className="w-3 h-3 ml-auto text-accent" />}
+                      </DropdownItem>
+                    ))}
+                  </>
                 )}
-                {agents.map((a) => (
-                  <DropdownItem
-                    key={a.id}
-                    onClick={() => { onAssign(a.id); close(); }}
-                  >
-                    <div className={`w-5 h-5 rounded-full bg-gradient-to-br ${a.color} text-white text-[9px] font-bold flex items-center justify-center`}>
-                      {a.initials}
-                    </div>
-                    <span>{a.name}{a.id === meId && " (yo)"}</span>
-                    {conversation.assignedTo === a.id && <Check className="w-3 h-3 ml-auto text-accent" />}
-                  </DropdownItem>
-                ))}
-                <DropdownSeparator />
-                <DropdownItem onClick={() => { onAssign(null); close(); }}>
-                  Quitar asignación
-                </DropdownItem>
-              </>
+              </Dropdown>
             )}
-          </Dropdown>
 
-          {/* Tomar control / Reactivar bot */}
-          {conversation.botPaused ? (
-            <Button variant="warn" size="sm" onClick={onToggleBot}>
-              <Play className="w-3.5 h-3.5" /> Reactivar bot
-            </Button>
-          ) : (
-            <Button variant="warn" size="sm" onClick={onTakeoverHuman}>
-              <Pause className="w-3.5 h-3.5" /> Tomar control
-            </Button>
-          )}
+            {/* Asignar */}
+            <Dropdown trigger={<Button variant="secondary" size="sm"><UserPlus className="w-3.5 h-3.5" /> Asignar</Button>}>
+              {(close) => (
+                <>
+                  <DropdownLabel>Asignar a</DropdownLabel>
+                  {agents.length === 0 && <div className="px-3 py-2 text-[11px] text-fg-dim">Cargando equipo…</div>}
+                  {agents.map((a) => (
+                    <DropdownItem key={a.id} onClick={() => { onAssign(a.id); close(); }}>
+                      <div className={`w-5 h-5 rounded-full bg-gradient-to-br ${a.color} text-white text-[9px] font-bold flex items-center justify-center`}>{a.initials}</div>
+                      <span>{a.name}{a.id === meId && " (yo)"}</span>
+                      {conversation.assignedTo === a.id && <Check className="w-3 h-3 ml-auto text-accent" />}
+                    </DropdownItem>
+                  ))}
+                  <DropdownSeparator />
+                  <DropdownItem onClick={() => { onAssign(null); close(); }}>Quitar asignación</DropdownItem>
+                </>
+              )}
+            </Dropdown>
 
-          <Button variant="ghost" size="icon-sm" onClick={onToggleContactPanel} title="Mostrar/ocultar panel">
-            <PanelRightClose className="w-3.5 h-3.5" />
-          </Button>
+            {/* Tomar control / Reactivar bot */}
+            {conversation.botPaused ? (
+              <Button variant="warn" size="sm" onClick={onToggleBot}>
+                <Play className="w-3.5 h-3.5" /> Reactivar bot
+              </Button>
+            ) : (
+              <Button variant="warn" size="sm" onClick={onTakeoverHuman}>
+                <Pause className="w-3.5 h-3.5" /> Tomar control
+              </Button>
+            )}
+
+            {/* Panel toggle */}
+            <Button variant="ghost" size="icon-sm" onClick={onToggleContactPanel} title="Mostrar/ocultar panel">
+              <PanelRightClose className="w-3.5 h-3.5" />
+            </Button>
+          </div>
+
         </div>
       </div>
 

@@ -6,7 +6,7 @@ import {
   ChevronDown, ChevronUp, FileText, Calendar, CreditCard, TrendingUp,
   Phone as PhoneIcon, Activity, Bot, User as UserIcon, Wrench, Tag, Link2,
   MessageSquare, Mic, Image as ImageIcon, ShieldAlert, Send, ClipboardCheck,
-  UserCheck, PauseCircle, PlayCircle, Ticket, Percent,
+  UserCheck, PauseCircle, PlayCircle, Ticket, Percent, ChevronLeft,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Avatar } from "@/components/ui/avatar";
@@ -35,9 +35,10 @@ function formatMoney(amount: number, currency: string): string {
 interface Props {
   contact: ContactDetail | null;
   conversationId?: string | null;
+  onMobileBack?: () => void;
 }
 
-export function ContactPanel({ contact, conversationId = null }: Props) {
+export function ContactPanel({ contact, conversationId = null, onMobileBack }: Props) {
   const [insightsOpen, setInsightsOpen] = useState(false);
 
   if (!contact) return null;
@@ -65,10 +66,19 @@ export function ContactPanel({ contact, conversationId = null }: Props) {
   };
 
   return (
-    <aside className="w-80 bg-panel border-l border-border overflow-y-auto scroll-thin shrink-0">
+    <aside className="w-full md:w-80 bg-panel border-l border-border overflow-y-auto scroll-thin shrink-0">
       {/* HEADER */}
       <div className="p-4 border-b border-border">
         <div className="flex items-center gap-3">
+          {onMobileBack && (
+            <button
+              onClick={onMobileBack}
+              className="md:hidden p-1 -ml-1 rounded hover:bg-hover text-fg-muted hover:text-fg shrink-0"
+              aria-label="Volver a la conversación"
+            >
+              <ChevronLeft className="w-5 h-5" />
+            </button>
+          )}
           <Avatar
             initials={contact.name[0]}
             gradient="from-pink-500 to-fuchsia-600"

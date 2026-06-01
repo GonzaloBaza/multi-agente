@@ -135,7 +135,7 @@ export function ConversationList({
   const { data: agents = [] } = useAgents();
 
   return (
-    <div className="w-[340px] bg-panel border-r border-border flex flex-col shrink-0">
+    <div className="w-full md:w-[340px] bg-panel border-r border-border flex flex-col shrink-0">
       {/* ===== BULK ACTIONS BAR (cuando hay selección) ===== */}
       {bulkMode && (
         <div className="border-b border-accent/40 bg-accent/10 px-3 py-2">

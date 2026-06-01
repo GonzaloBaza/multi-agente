@@ -4,6 +4,7 @@ import { Suspense, useMemo, useState, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import { cn } from "@/lib/utils";
 import { ConversationList } from "@/components/inbox/conversation-list";
 import { ConversationDetail } from "@/components/inbox/conversation-detail";
 import { ContactPanel } from "@/components/inbox/contact-panel";
@@ -68,6 +69,9 @@ function InboxPageInner() {
   }, [urlConvId]);
 
   // state → URL: cuando el user clickea otra conv, reflejamos en el querystring.
+  // Mobile: alterna entre lista, detalle y panel CRM (master-detail-contact)
+  const [mobileView, setMobileView] = useState<"list" | "detail" | "contact">("list");
+
   const handleSelectConv = useCallback(
     (id: string) => {
       setSelectedId(id);
@@ -78,6 +82,15 @@ function InboxPageInner() {
       router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
     },
     [pathname, router, searchParams],
+  );
+
+  // Versión con cambio de panel para clicks explícitos del usuario en mobile
+  const handleClickConv = useCallback(
+    (id: string) => {
+      handleSelectConv(id);
+      setMobileView("detail");
+    },
+    [handleSelectConv],
   );
 
   const [view, setView] = useState<InboxView>("all");
@@ -238,44 +251,74 @@ function InboxPageInner() {
     setBulkSelected(new Set());
   };
 
+  const listPanel = (
+    <ConversationList
+      items={items}
+      selectedId={effectiveSelectedId}
+      onSelect={handleClickConv}
+      bulkSelected={bulkSelected}
+      onBulkToggle={handleBulkToggle}
+      onBulkSelectAll={handleBulkSelectAll}
+      onBulkClear={handleBulkClear}
+      onBulkAssign={handleBulkAssign}
+      onBulkResolve={handleBulkResolve}
+      view={view}
+      onViewChange={setView}
+      lifecycle={lifecycle}
+      onLifecycleChange={setLifecycle}
+      channel={channel}
+      onChannelChange={setChannel}
+      queue={queue}
+      onQueueChange={setQueue}
+      country={country}
+      onCountryChange={setCountry}
+      queueStats={queueStatsQ.data}
+      search={search}
+      onSearchChange={setSearch}
+      counts={counts}
+    />
+  );
+
+  const detailPanel = (
+    <ConversationDetail
+      contact={contactWithInsights}
+      conversation={selected}
+      messages={messagesQ.data ?? []}
+      onToggleContactPanel={() => setShowContactPanel((s) => !s)}
+      onAssign={handleAssign}
+      onTakeoverHuman={handleTakeover}
+      onToggleBot={handleToggleBot}
+      onClassify={handleClassify}
+      onMobileBack={() => setMobileView("list")}
+      onMobileShowPanel={() => setMobileView("contact")}
+    />
+  );
+
+  const contactPanelMobile = (
+    <ContactPanel
+      contact={contactWithInsights}
+      conversationId={selected?.id ?? null}
+      onMobileBack={() => setMobileView("detail")}
+    />
+  );
+
   return (
     <>
-      <ConversationList
-        items={items}
-        selectedId={effectiveSelectedId}
-        onSelect={handleSelectConv}
-        bulkSelected={bulkSelected}
-        onBulkToggle={handleBulkToggle}
-        onBulkSelectAll={handleBulkSelectAll}
-        onBulkClear={handleBulkClear}
-        onBulkAssign={handleBulkAssign}
-        onBulkResolve={handleBulkResolve}
-        view={view}
-        onViewChange={setView}
-        lifecycle={lifecycle}
-        onLifecycleChange={setLifecycle}
-        channel={channel}
-        onChannelChange={setChannel}
-        queue={queue}
-        onQueueChange={setQueue}
-        country={country}
-        onCountryChange={setCountry}
-        queueStats={queueStatsQ.data}
-        search={search}
-        onSearchChange={setSearch}
-        counts={counts}
-      />
-      <ConversationDetail
-        contact={contactWithInsights}
-        conversation={selected}
-        messages={messagesQ.data ?? []}
-        onToggleContactPanel={() => setShowContactPanel((s) => !s)}
-        onAssign={handleAssign}
-        onTakeoverHuman={handleTakeover}
-        onToggleBot={handleToggleBot}
-        onClassify={handleClassify}
-      />
-      {showContactPanel && <ContactPanel contact={contactWithInsights} conversationId={selected?.id ?? null} />}
+      {/* Mobile (<768 px): un panel a la vez, renderizado condicional real */}
+      <div className="flex flex-1 min-w-0 md:hidden overflow-hidden">
+        {mobileView === "list"
+          ? listPanel
+          : mobileView === "contact"
+          ? contactPanelMobile
+          : detailPanel}
+      </div>
+
+      {/* Desktop (≥768 px): tres columnas, siempre montadas */}
+      <div className="hidden md:flex flex-1 min-w-0 overflow-hidden">
+        {listPanel}
+        <div className="flex-1 flex min-w-0">{detailPanel}</div>
+        {showContactPanel && <ContactPanel contact={contactWithInsights} conversationId={selected?.id ?? null} />}
+      </div>
     </>
   );
 }
