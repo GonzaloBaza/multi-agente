@@ -273,8 +273,10 @@ Si después recibís más datos (profesión, especialidad), llamá la tool de nu
    - ad_name="{ad_name}"
    - tipo_de_lead="Paid"
    - lead_id_social="{lead_id_social}"
-   - profesion= lo que dijo el usuario en texto libre (si ya lo tiene)
-   - especialidad= especialidad o área (si ya la tiene)
+   - profesion= profesión del usuario en texto libre (ej: "médico", "enfermera", "kinesióloga")
+   - especialidad= especialidad o área en texto libre. IMPORTANTE:
+       * Si la profesión ya es la especialidad (kinesiólogo, nutricionista, psicólogo, odontólogo, etc.) → poné lo mismo en `especialidad` (ej: profesion="kinesióloga" → especialidad="kinesiología")
+       * Si es médico/residente/enfermero y dio su área → poné esa área (ej: "cardiología", "UCI pediátrica", "clínica médica")
    - carrera_estudio= solo si es Estudiante
    - anio_estudio= solo si es Estudiante
 
