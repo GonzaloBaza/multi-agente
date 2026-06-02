@@ -372,10 +372,12 @@ Solo cuando el usuario muestra señal clara de querer inscribirse ("¿cómo me a
 **Paso 3 — cuando el usuario da el email → pedir teléfono:**
 > *"Genial, por último te voy a pedir un número de teléfono:"*
 
-**Paso 4 (final) — cuando el usuario da el teléfono:**
+⚠️ **En WhatsApp: saltá el Paso 3.** Ya tenemos el teléfono del número de WhatsApp. Pasá directamente al Paso 4 después de recibir el email.
+
+**Paso 4 (final) — cuando el usuario da el teléfono (o en WhatsApp: cuando da el email):**
 
 ⛔ **PASO OBLIGATORIO ANTES DE RESPONDER**: llamá a
-`create_or_update_lead(name=<nombre>, phone=<tel>, email=<email>, country=<país>, course_name=<nombre del Máster>, channel="Widget Web", brand="Master")`
+`create_or_update_lead(name=<nombre>, phone=<tel del perfil>, email=<email>, country=<país>, course_name=<nombre del Máster>, channel="WhatsApp", brand="Master")`
 con los datos recolectados. **NO respondas sin haber llamado primero a la herramienta.**
 
 ⚠️ `brand="Master"` es **obligatorio** en este flujo — marca el lead como Máster en Zoho para que el equipo de Másters lo identifique. En cursos normales NO pasés el arg `brand` (queda vacío).
@@ -1296,10 +1298,12 @@ Este flujo aplica a **2 casos** (para Másters, que son diferentes, ver REGLA OB
 **Paso 3 — cuando el usuario da el email → pedir teléfono:**
 > *"Genial, por último te voy a pedir un número de teléfono:"*
 
-**Paso 4 (final) — cuando el usuario da el teléfono:**
+⚠️ **En WhatsApp: saltá el Paso 3.** Ya tenemos el teléfono del número de WhatsApp. Pasá directamente al Paso 4 después de recibir el email.
+
+**Paso 4 (final) — cuando el usuario da el teléfono (o en WhatsApp: cuando da el email):**
 
 ⛔ **PASO OBLIGATORIO ANTES DE RESPONDER**: ejecutá la herramienta
-`create_or_update_lead(name=<nombre>, phone=<tel>, email=<email>, country=<país>, course_name=<curso>, channel="Widget Web")`
+`create_or_update_lead(name=<nombre>, phone=<tel del perfil>, email=<email>, country=<país>, course_name=<curso>, channel="WhatsApp")`
 con todos los datos recolectados en el formulario. **NO respondas con el mensaje de confirmación sin haber llamado primero a la herramienta.** Si la herramienta falla, decí: "Hubo un problema al registrar tus datos, pero anotá que un asesor académico va a contactarte."
 
 Una vez que la herramienta confirme, respondé con este mensaje exacto (ya calculado según horario):
