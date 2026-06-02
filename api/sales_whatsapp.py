@@ -885,16 +885,31 @@ async def _process_message_and_respond(payload: BotmakerPayload, user_msg: str) 
         user_profile["ctwa_ad_name"] = payload.referralHeadline
         user_profile["ctwa_lead_id_social"] = payload.referralCtwaClid
         # Guardar datos del anuncio en Redis para que el tool los use al crear el lead.
+        # 🔑 CRÍTICO: preservar `lead_id` si ya existía en cache (de un turno previo).
+        # Sin este merge, cada turno sobrescribía el cache borrando el lead_id, y
+        # `_ensure_lead_id` terminaba creando un lead nuevo en cada mensaje
+        # (duplicación detectada en test ctwa_lead_test.mjs suite B).
         try:
             store = await get_conversation_store()
+            existing_ctwa: dict = {}
+            try:
+                _raw = await store._redis.get(f"ctwa_data:{payload.phone}")
+                if _raw:
+                    existing_ctwa = json.loads(_raw.decode() if isinstance(_raw, bytes) else _raw)
+            except Exception:
+                pass
+            new_ctwa = {
+                "headline": payload.referralHeadline,
+                "source_id": payload.referralSourceId,
+                "ctwa_clid": payload.referralCtwaClid,
+                "country": ctwa_country,
+            }
+            # Preservar lead_id (y cualquier otro campo que haya guardado `_ensure_lead_id`).
+            if existing_ctwa.get("lead_id"):
+                new_ctwa["lead_id"] = existing_ctwa["lead_id"]
             await store._redis.set(
                 f"ctwa_data:{payload.phone}",
-                json.dumps({
-                    "headline": payload.referralHeadline,
-                    "source_id": payload.referralSourceId,
-                    "ctwa_clid": payload.referralCtwaClid,
-                    "country": ctwa_country,
-                }, ensure_ascii=False),
+                json.dumps(new_ctwa, ensure_ascii=False),
                 ex=7 * 24 * 3600,
             )
         except Exception as e:
