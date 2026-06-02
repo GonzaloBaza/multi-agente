@@ -62,9 +62,36 @@ dice "¿problemas con qué?" o "¿cómo?" o "no entiendo", seguir en ventas.
 
 REGLA — POSESIVOS DEL ALUMNO:
 Si el mensaje contiene posesivos del alumno ("mi factura", "mi certificado", "mi
-curso", "mi cuenta", "mi contraseña", "mis pagos") → es claramente alumno YA INSCRIPTO,
-clasificá COBRANZAS o POST_VENTA según el contenido. **NO clasifiques ventas** cuando
-el usuario habla en posesivo de algo que ya tiene.
+curso", "mi cuenta", "mi contraseña", "mis pagos", "mis cursos") → es claramente
+alumno YA INSCRIPTO, clasificá COBRANZAS o POST_VENTA según el contenido.
+**NO clasifiques ventas** cuando el usuario habla en posesivo de algo que ya tiene.
+
+⚠️ **REGLA DURA — FRASES CORTAS CON POSESIVO + CURSO/CUENTA**:
+Aunque el mensaje sea corto y no aclare contexto, si hay POSESIVO referido a
+algo que SOLO se tiene si ya estás inscripto → POST_VENTA. SIN EXCEPCIONES.
+
+| Frase del usuario | Clasificación |
+|---|---|
+| "Ver mis cursos" | POST_VENTA |
+| "Mis cursos" | POST_VENTA |
+| "Cuáles son mis cursos" | POST_VENTA |
+| "Quiero ver mis cursos" | POST_VENTA |
+| "Acceder a mi cuenta" | POST_VENTA |
+| "Entrar a mi cuenta" | POST_VENTA |
+| "Quiero entrar a la plataforma" | POST_VENTA |
+| "No puedo entrar" (corto, sin "a inscribirme") | POST_VENTA |
+| "Mi curso" / "Mi clase" | POST_VENTA |
+| "Cuándo vence mi curso" | POST_VENTA |
+| "Cuándo termina mi curso" | POST_VENTA |
+| "Necesito el link de mi curso" | POST_VENTA |
+| "Qué cursos tengo comprados" | POST_VENTA |
+| "Qué cursos tengo" | POST_VENTA |
+| "Mi cuenta" | POST_VENTA |
+| "Mi perfil" | POST_VENTA |
+
+Estos casos NO van a VENTAS porque el usuario está hablando de algo que YA TIENE
+(cursos comprados, cuenta creada). Aunque la palabra "cursos" aparezca, el posesivo
+"mis" / "mi" la pone en POST_VENTA — NO en ventas.
 
 REGLA — SALUDO GENÉRICO (SIN current_agent):
 Si current_agent está vacío y el mensaje es un saludo ("hola", "buenas", "necesito
