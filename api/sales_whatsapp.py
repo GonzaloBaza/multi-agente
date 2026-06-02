@@ -784,33 +784,30 @@ async def _ensure_lead_id(payload: BotmakerPayload, user_profile: dict) -> str:
                 )
                 return ctwa["lead_id"]
 
-        # Sin cache → crear lead mínimo en Zoho
+        # Sin cache → crear lead nuevo en Zoho.
+        # ⚠️ No hacer search_by_phone: podría encontrar leads viejos no relacionados
+        # con esta campaña (mismo teléfono, distinto anuncio/curso) y reutilizarlos,
+        # contaminando el contexto con datos equivocados.
         from integrations.zoho.leads import ZohoLeads
         zl = ZohoLeads()
 
-        # Buscar por teléfono primero para evitar duplicados si la sesión Redis expiró
-        existing = await zl.search_by_phone(payload.phone)
-        if existing:
-            lead_id = existing["id"]
-            logger.info("sales_whatsapp_ctwa_lead_found_by_phone", phone=payload.phone, lead_id=lead_id)
-        else:
-            result = await zl.create({
-                "name": "Lead CTWA",
-                "phone": payload.phone,
-                "email": "",
-                "country": user_profile.get("country", "AR"),
-                "curso_de_interes": payload.referralHeadline,
-                "canal_origen": "WhatsApp",
-                "lead_source": "Facebook",
-                "lead_status": "Atención BOT IA",
-                "ad_account": "Facebook - bot",
-                "ad_id": payload.referralSourceId,
-                "ad_name": payload.referralHeadline,
-                "tipo_de_lead": "Paid",
-                "lead_id_social": payload.referralCtwaClid,
-            })
-            lead_id = result["id"]
-            logger.info("sales_whatsapp_ctwa_lead_created", phone=payload.phone, lead_id=lead_id)
+        result = await zl.create({
+            "name": "Lead CTWA",
+            "phone": payload.phone,
+            "email": "",
+            "country": user_profile.get("country", "AR"),
+            "curso_de_interes": payload.referralHeadline,
+            "canal_origen": "WhatsApp",
+            "lead_source": "Facebook",
+            "lead_status": "Atención BOT IA",
+            "ad_account": "Facebook - bot",
+            "ad_id": payload.referralSourceId,
+            "ad_name": payload.referralHeadline,
+            "tipo_de_lead": "Paid",
+            "lead_id_social": payload.referralCtwaClid,
+        })
+        lead_id = result["id"]
+        logger.info("sales_whatsapp_ctwa_lead_created", phone=payload.phone, lead_id=lead_id)
 
         # Persistir en Redis junto con los datos del anuncio
         ctwa_data = {}
