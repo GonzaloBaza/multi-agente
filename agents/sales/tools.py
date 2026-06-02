@@ -464,6 +464,7 @@ async def create_or_update_lead(
     otra_profesion: str = "",
     carrera_estudio: str = "",
     anio_estudio: str = "",
+    lugar_trabajo: str = "",
 ) -> str:
     """
     Crea o actualiza un Lead en Zoho CRM.
@@ -497,6 +498,9 @@ async def create_or_update_lead(
             Otra_profesion de Zoho.
         carrera_estudio: Solo para Estudiante — carrera que está cursando.
         anio_estudio: Solo para Estudiante — año o nivel de cursada.
+        lugar_trabajo: Lugar de trabajo del usuario en texto libre (hospital,
+            clínica, consultorio, posta de salud, etc.). Si el usuario menciona
+            dónde trabaja, pasalo acá. Va al campo `Lugar_de_trabajo` de Zoho.
     """
     # Log de entrada — visibilidad cuándo el LLM dispara la tool.
     logger.info(
@@ -597,6 +601,8 @@ async def create_or_update_lead(
             update_payload["Carrera_de_estudio"] = carrera_estudio
         if anio_estudio:
             update_payload["Año_de_estudio"] = anio_estudio
+        if lugar_trabajo:
+            update_payload["Lugar_de_trabajo"] = lugar_trabajo
         if ad_id:
             update_payload["Ad_ID"] = ad_id
         if ad_name:
@@ -658,6 +664,7 @@ async def create_or_update_lead(
             "otra_profesion": otra_profesion,
             "carrera_estudio": carrera_estudio,
             "anio_estudio": anio_estudio,
+            "lugar_trabajo": lugar_trabajo,
         }
 
         if existing:

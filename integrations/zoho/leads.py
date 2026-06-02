@@ -145,6 +145,8 @@ class ZohoLeads:
                     "Otra_especialidad": data.get("otra_especialidad", ""),
                     "Otra_profesion": data.get("otra_profesion", ""),
                     "Carrera_de_estudio": data.get("carrera_estudio", ""),
+                    "Año_de_estudio": data.get("anio_estudio", ""),
+                    "Lugar_de_trabajo": data.get("lugar_trabajo", ""),
                     "Notas_Bot": self._build_notas(data),
                 }
             ]
