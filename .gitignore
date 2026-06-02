@@ -31,6 +31,17 @@ media/
 # Scripts de debug / testing local
 scripts/
 
+# Tests E2E ad-hoc (sales_test.mjs, wa_sales_test.mjs, etc.) y sus outputs.
+# Útiles para probar contra prod, pero no se versionan — cada PC tiene los suyos.
+*_test.mjs
+*_test_quick.mjs
+*_diag.mjs
+*_test_results.txt
+_tmp_*.json
+
+# Claude Code lock files (scheduler local)
+.claude/scheduled_tasks.lock
+
 # Deploy scripts with credentials
 deploy_*.py
 
