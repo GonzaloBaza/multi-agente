@@ -145,7 +145,8 @@ class ZohoLeads:
                     "Otra_especialidad": data.get("otra_especialidad", ""),
                     "Otra_profesion": data.get("otra_profesion", ""),
                     "Carrera_de_estudio": data.get("carrera_estudio", ""),
-                    "Año_de_estudio": data.get("anio_estudio", ""),
+                    # ⚠️ API name real en Zoho: `A_o_de_estudio` (la `ñ` se traduce a `_`).
+                    "A_o_de_estudio": data.get("anio_estudio", ""),
                     "Lugar_de_trabajo": data.get("lugar_trabajo", ""),
                     "Notas_Bot": self._build_notas(data),
                 }

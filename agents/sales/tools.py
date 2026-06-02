@@ -600,7 +600,8 @@ async def create_or_update_lead(
         if carrera_estudio:
             update_payload["Carrera_de_estudio"] = carrera_estudio
         if anio_estudio:
-            update_payload["Año_de_estudio"] = anio_estudio
+            # ⚠️ API name real en Zoho es `A_o_de_estudio` (la `ñ` se traduce a `_`).
+            update_payload["A_o_de_estudio"] = anio_estudio
         if lugar_trabajo:
             update_payload["Lugar_de_trabajo"] = lugar_trabajo
         if ad_id:
