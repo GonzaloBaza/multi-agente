@@ -299,12 +299,30 @@ _TAGS_PATTERN = re.compile(
 # que la negrita se renderice bien.
 _WA_BOLD_PATTERN = re.compile(r"\*\*([^*\n]+?)\*\*")
 
+# Links markdown `[texto](url)` → WhatsApp no los renderiza, el usuario ve
+# los corchetes literales. Los convertimos a la URL plana sola.
+_WA_MD_LINK_PATTERN = re.compile(r"\[([^\]]+)\]\((https?://[^)]+)\)")
+
+# Headers markdown `### Título`, `## Título`, `# Título` al inicio de línea →
+# WhatsApp no los renderiza. Los pasamos a negrita WA (`*Título*`).
+_WA_HEADER_PATTERN = re.compile(r"^#{1,6}\s+(.+?)\s*$", re.MULTILINE)
+
 
 def _format_for_whatsapp(text: str) -> str:
-    """Adapta el texto del LLM al formato que WhatsApp interpreta correctamente."""
+    """Adapta el texto del LLM al formato que WhatsApp interpreta correctamente.
+
+    Garantías (independiente de lo que emita el LLM):
+    - `**negrita**` → `*negrita*`
+    - `[texto](url)` → `url` (plana)
+    - `### Header` → `*Header*`
+    """
     if not text:
         return ""
-    # Doble asterisco → single asterisco (negrita WhatsApp).
+    # 1. Links markdown → URL plana (antes que el resto, para no romper).
+    text = _WA_MD_LINK_PATTERN.sub(r"\2", text)
+    # 2. Headers markdown → negrita WA.
+    text = _WA_HEADER_PATTERN.sub(r"*\1*", text)
+    # 3. Doble asterisco → single asterisco (negrita WhatsApp).
     text = _WA_BOLD_PATTERN.sub(r"*\1*", text)
     return text
 
