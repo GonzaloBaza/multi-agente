@@ -43,6 +43,28 @@ WIDGET_AR: dict[str, Any] = {
     "name": "Hot Sale",
 }
 
+# Cyber CL/UY — Semana de ciber (1 al 7 de junio 2026), 30% off con HOY30.
+# El nombre de la campaña es DISTINTO por país (CyberDay en Chile, CiberLunes
+# en Uruguay). `country_name` parametriza el render para que NO diga "Argentina".
+CYBER_CL: dict[str, Any] = {
+    "promo_type": "hot_sale_block",
+    "code": "HOY30",
+    "pct": 30,
+    "factor": 0.70,
+    "until": "7 de junio",
+    "name": "CyberDay",
+    "country_name": "Chile",
+}
+CYBER_UY: dict[str, Any] = {
+    "promo_type": "hot_sale_block",
+    "code": "HOY30",
+    "pct": 30,
+    "factor": 0.70,
+    "until": "7 de junio",
+    "name": "CiberLunes",
+    "country_name": "Uruguay",
+}
+
 # WhatsApp AR/LATAM — cupones permanentes del bot vendedor, escalado por objeción
 WHATSAPP_DEFAULT: dict[str, Any] = {
     "promo_type": "scaled_coupons",
@@ -62,13 +84,16 @@ NO_PROMO: dict[str, Any] = {"promo_type": "none"}
 _CONFIGS: dict[tuple[str, str], dict[str, Any]] = {
     # Widget
     ("AR", "widget"): WHATSAPP_DEFAULT,  # Hot Sale finalizado 17/5/2026 — vuelve a BOT15/BOT20
-    # WhatsApp (todos los países usan el mismo BOT15/BOT20 por ahora)
+    # Cyber CL/UY (1-7 jun 2026) — ambos canales mencionan la promo en apertura.
+    ("CL", "widget"): CYBER_CL,
+    ("CL", "whatsapp"): CYBER_CL,
+    ("UY", "widget"): CYBER_UY,
+    ("UY", "whatsapp"): CYBER_UY,
+    # WhatsApp (resto de países usan el BOT15/BOT20 escalado por objeción)
     ("AR", "whatsapp"): WHATSAPP_DEFAULT,
     ("MX", "whatsapp"): WHATSAPP_DEFAULT,
-    ("CL", "whatsapp"): WHATSAPP_DEFAULT,
     ("CO", "whatsapp"): WHATSAPP_DEFAULT,
     ("PE", "whatsapp"): WHATSAPP_DEFAULT,
-    ("UY", "whatsapp"): WHATSAPP_DEFAULT,
     ("BO", "whatsapp"): WHATSAPP_DEFAULT,
     ("PY", "whatsapp"): WHATSAPP_DEFAULT,
     ("EC", "whatsapp"): WHATSAPP_DEFAULT,

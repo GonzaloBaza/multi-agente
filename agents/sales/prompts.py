@@ -1561,10 +1561,11 @@ def _render_hot_sale_block(c: dict) -> str:
     factor = c.get("factor", 1.0)
     until = c.get("until", "")
     name = c.get("name", "Promo")
+    pais = c.get("country_name", "Argentina")
     return f"""
-## 🔥 PROMO ACTIVA — {name} ARGENTINA (válida hasta el {until})
+## 🔥 PROMO ACTIVA — {name} ({pais}) (válida hasta el {until})
 
-**El usuario está en Argentina. HAY UNA PROMO ACTIVA y DEBÉS mencionarla en tu PRIMERA respuesta, como apertura.**
+**El usuario está en {pais}. HAY UNA PROMO ACTIVA y DEBÉS mencionarla en tu PRIMERA respuesta, como apertura.**
 
 ### REGLA 1 — APERTURA OBLIGATORIA (PRIMER TURNO)
 En tu **primera respuesta** al usuario, abrí con la promo antes de cualquier pitch o pregunta de perfil:
@@ -1582,7 +1583,7 @@ Mandá link + código + instrucción en líneas separadas:
 > *Pegalo en el campo "¿Tenés un código de descuento?" del checkout para aplicar el {pct}%.*
 
 ### REGLA 4 — REEMPLAZA A BOT15 Y BOT20
-**NUNCA uses BOT15 ni BOT20** — {code} ({pct}% off) es la única promo vigente para usuarios de Argentina.
+**NUNCA uses BOT15 ni BOT20** — {code} ({pct}% off) es la única promo vigente para usuarios de {pais}.
 
 """
 
