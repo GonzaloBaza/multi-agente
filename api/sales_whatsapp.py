@@ -62,6 +62,9 @@ DEBOUNCE_WAIT_S = 2.0
 DEBOUNCE_MAX_S = 12.0
 DEBOUNCE_LOCK_TTL = 30  # max secs que un request puede tener el lock
 
+# Regex para detectar un email en el texto libre del usuario (back-fill CTWA).
+_EMAIL_RE = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
+
 
 # Mapa país (Zoho lo guarda como string) → ISO-2.
 _COUNTRY_TO_ISO2 = {
@@ -847,6 +850,81 @@ async def _ensure_lead_id(payload: BotmakerPayload, user_profile: dict) -> str:
         return ""
 
 
+def _looks_like_name(text: str) -> bool:
+    """Heurística conservadora: ¿este texto parece un nombre? 1-4 palabras,
+    solo letras/espacios/puntos/guiones, al menos una letra, sin '?' ni '@'."""
+    t = (text or "").strip()
+    if not t or "?" in t or "@" in t:
+        return False
+    words = t.split()
+    if not (1 <= len(words) <= 4):
+        return False
+    return bool(re.fullmatch(r"[A-Za-zÁÉÍÓÚÜÑáéíóúüñ.\-\s]+", t)) and any(c.isalpha() for c in t)
+
+
+async def _ctwa_backfill_contact(lead_id: str, phone: str, user_msg: str) -> None:
+    """Back-fill determinístico del contacto en un lead CTWA.
+
+    El lead CTWA se crea sin nombre ni email (todavía no los tenemos). Cuando el
+    usuario los da en el chat, el LLM *debería* llamar `create_or_update_lead`,
+    pero a veces no lo hace y el lead queda con `Last_Name="Lead CTWA"` y sin
+    email (bug reproducido 2026-06-04). Acá lo escribimos directo en Zoho, sin
+    depender del LLM.
+
+    - Si el turno trae email → update Email (+ nombre del turno o el stasheado).
+    - Si el turno parece un nombre y todavía no hay email → stashea el nombre.
+    - Idempotente: el update corre una sola vez por conversación (flag en Redis).
+    """
+    try:
+        store = await get_conversation_store()
+        raw = await store._redis.get(f"ctwa_data:{phone}")
+        ctwa: dict = {}
+        if raw:
+            ctwa = json.loads(raw.decode() if isinstance(raw, bytes) else raw)
+        if ctwa.get("backfilled"):
+            return  # ya escribimos el contacto en este lead
+
+        m = _EMAIL_RE.search(user_msg or "")
+        email = m.group(0).strip().rstrip(".") if m else ""
+
+        # Texto del turno sin el email → candidato a nombre.
+        name_text = " ".join(_EMAIL_RE.sub(" ", user_msg or "").split()).strip(" .")
+
+        if not email:
+            # Sin email: si parece nombre, stashearlo para el turno del email.
+            if _looks_like_name(name_text) and not ctwa.get("pending_name"):
+                ctwa["pending_name"] = name_text
+                await store._redis.set(
+                    f"ctwa_data:{phone}", json.dumps(ctwa, ensure_ascii=False), ex=7 * 24 * 3600
+                )
+            return
+
+        update: dict = {"Email": email}
+        name = name_text if _looks_like_name(name_text) else (ctwa.get("pending_name") or "")
+        if name:
+            parts = name.split(" ", 1)
+            update["First_Name"] = parts[0]
+            update["Last_Name"] = (parts[1] if len(parts) > 1 else parts[0]).rstrip(".")
+
+        leads = ZohoLeads()
+        await leads.update(lead_id, update)
+
+        ctwa["backfilled"] = True
+        ctwa.pop("pending_name", None)
+        await store._redis.set(
+            f"ctwa_data:{phone}", json.dumps(ctwa, ensure_ascii=False), ex=7 * 24 * 3600
+        )
+        logger.info(
+            "sales_whatsapp_ctwa_backfill",
+            phone=phone,
+            lead_id=lead_id,
+            has_email=bool(email),
+            has_name=bool(name),
+        )
+    except Exception as e:
+        logger.warning("sales_whatsapp_ctwa_backfill_failed", phone=phone, error=str(e))
+
+
 async def _process_message_and_respond(payload: BotmakerPayload, user_msg: str) -> BotmakerResponse:
     """Procesa el mensaje (Zoho fetch + agente + tags) y devuelve la response
     para Botmaker. Esta función asume que user_msg ya está combinado/debounceado."""
@@ -963,6 +1041,12 @@ async def _process_message_and_respond(payload: BotmakerPayload, user_msg: str) 
             "lead_id_social": payload.referralCtwaClid or "",
             "lead_status": "No habilitado",
         })
+
+    # Back-fill determinístico de contacto (CTWA): el lead se crea sin nombre/email
+    # y el LLM no siempre llama `create_or_update_lead`. Si el usuario ya dio su
+    # email en el chat, lo escribimos directo en Zoho (idempotente por conversación).
+    if is_ctwa and lead_id_for_conv:
+        await _ctwa_backfill_contact(lead_id_for_conv, payload.phone, user_msg)
 
     # ──────────── Build + invocar agente ────────────
     try:
