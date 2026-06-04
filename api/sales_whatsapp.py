@@ -925,9 +925,16 @@ async def _ctwa_backfill_contact(lead_id: str, phone: str, user_msg: str) -> Non
         logger.warning("sales_whatsapp_ctwa_backfill_failed", phone=phone, error=str(e))
 
 
-async def _process_message_and_respond(payload: BotmakerPayload, user_msg: str) -> BotmakerResponse:
+async def _process_message_and_respond(
+    payload: BotmakerPayload, user_msg: str, agent_builder=None
+) -> BotmakerResponse:
     """Procesa el mensaje (Zoho fetch + agente + tags) y devuelve la response
-    para Botmaker. Esta función asume que user_msg ya está combinado/debounceado."""
+    para Botmaker. Esta función asume que user_msg ya está combinado/debounceado.
+
+    `agent_builder` (opcional): factory del agente. Default = `build_sales_agent`
+    (comportamiento v1 idéntico). El endpoint v2 pasa `build_sales_agent_v2` para
+    testear prompt podado + modelo configurable, reusando exactamente esta misma
+    orquestación (garantiza paridad de comportamiento salvo prompt/modelo)."""
     import time as _time
 
     # ──────────── Fetch lead Zoho ────────────
@@ -1049,8 +1056,9 @@ async def _process_message_and_respond(payload: BotmakerPayload, user_msg: str) 
         await _ctwa_backfill_contact(lead_id_for_conv, payload.phone, user_msg)
 
     # ──────────── Build + invocar agente ────────────
+    _builder = agent_builder or build_sales_agent
     try:
-        agent = await build_sales_agent(
+        agent = await _builder(
             country=country,
             channel="whatsapp",
             page_slug=page_slug,
