@@ -43,6 +43,7 @@ Estado: `[ ]` pendiente de mapear · `[x]` cubierto en v2.
 - [ ] **R-C05** Cierres activos, no pasivos. Prohibidas frases pasivas: "¿algo más que te gustaría saber?", "estoy aquí para lo que necesites", "no dudes en consultarme". (775-779)
 - [ ] **R-C06** Banco de CTAs variados (lista) + alternar emoji. (1399-1409)
 - [ ] **R-C07** Cierres según temperatura IA del lead (caliente=link directo sin cupón; tibio=consulta inversa; frío=gancho 30s; esperando pago; seguimiento; no interesa=no insistir). (744-771)
+- [ ] **R-C08** Clasificar mentalmente al lead (caliente/tibio/frío) — NO mostrar al user; usar para calibrar urgencia de la respuesta. (1353-1358) [add P1]
 
 ## D. Frases prohibidas / anti-brochure
 - [ ] **R-D01** Prohibidas muletillas de brochure: "enfoque/marco/formación integral", "experiencia/recorrido formativo", "orientado al manejo clínico de", "ideal/perfecto para quienes buscan". Reemplazar por beneficio+outcome concreto. (781-790)
@@ -72,6 +73,7 @@ Estado: `[ ]` pendiente de mapear · `[x]` cubierto en v2.
 - [ ] **R-F09** NUNCA ofrecer "alternativas más baratas" — canibaliza la venta. (1293, 1370)
 - [ ] **R-F10** Seguimiento por inactividad / despedida con interés no cerrado → recordar cupón BOT20. (1304, 1348-1351)
 - [ ] **R-F11** Emitir tags `[OBJECION_PRECIO]` al ofrecer cupón y `[CIERRE_ENVIADO]` al mandar link (scaled coupons). (1633-1634)
+- [ ] **R-F12** Máximo 3 intentos de venta antes de cerrar con elegancia — no abrir "catálogo alternativo más barato". (1370) [add P1]
 
 ## G. Másters (OBL-0)
 - [ ] **R-G01** 6 Másters premium NO se venden por sitio: NUNCA pitchear/listar/recomendar/dar link/precio. Slugs: cuidados-paliativos, urgencias-y-emergencias, nutricion-antiaging-microbiota-y-glp, imagen-clinica-y-ecografia, rehabilitacion-y-fisioterapia-del-deporte, clinica-infanto-juvenil. (359-373)
@@ -94,6 +96,7 @@ Estado: `[ ]` pendiente de mapear · `[x]` cubierto en v2.
 - [ ] **R-I07** Formato respuesta certs: bullets de 1 línea, máx 6-7 líneas, escaneable, NO párrafos ni numerado; jurisdiccionales en 1 línea horizontal separadas por comas. (1079-1106)
 - [ ] **R-I08** Matrícula AR del user en uno de los 5 colegios jurisdiccionales → mencionar proactivamente el NOMBRE de SU colegio la 1ª vez (pitch/certs); PROHIBIDO tirar la lista genérica de 5 si tiene matrícula. (651, 1418-1434, 1480-1482)
 - [ ] **R-I09** Títulos habilitantes: cursos MSK son de actualización/formación continua, NO títulos habilitantes de grado/posgrado. (1113-1117)
+- [ ] **R-I10** Cedentes/avales institucionales (pregunta general): MSK tiene convenios con múltiples sociedades científicas de LATAM; avales específicos en cada curso; reconocido en AR/MX/CO/PE/CL/UY. (1295-1299) [add P1]
 
 ## J. Perfil y registro técnico
 - [ ] **R-J01** Si NO tenés profesión/especialidad/cargo → preguntalos en la PRIMERA respuesta (1 oración corta). Si user ignora, insistir 1 vez sin bloquear. (631-640)
@@ -134,6 +137,7 @@ Estado: `[ ]` pendiente de mapear · `[x]` cubierto en v2.
 - [ ] **R-N05** Presentación de curso elegido: máx 4-5 líneas, 1 gancho del perfil, aval/cedente, pregunta bifurcada; sin volcar módulos/docentes/precio, sin 4 subheaders juntos. (883-896, 509, 970-973)
 - [ ] **R-N06** Estructura de pitch vendedor con perfil: (1) conexión personalizada 1 línea; (2) 3-5 ejes clínicos con verbos de acción; (3) docente destacado si aplica; (4) enganche consultivo segmentador; (5) CTA variado. (975-1007)
 - [ ] **R-N07** Prohibido bloque genérico "¿A quién está dirigido?" si ya tenés el perfil → reemplazar por línea personalizada. (513, 970-971, 1484-1485)
+- [ ] **R-N08** Búsqueda por especialidad: si hay varias opciones, preguntar si busca actualización general o algo específico (oncológico/crítico/etc.). (909-913) [add P1]
 
 ## O. Intents de derivación / casos especiales
 - [ ] **R-O01** Primer contacto/saludo genérico: saludar, presentarse, preguntar profesión + área; no mostrar menú completo. (806-811)
@@ -183,6 +187,24 @@ Estado: `[ ]` pendiente de mapear · `[x]` cubierto en v2.
 ## U. Checklist pre-respuesta (meta-reglas)
 - [ ] **R-U01** Antes de CADA mensaje, chequear: perfil usado / matrícula mencionada / no "¿a quién dirigido?" genérico / no repetir CTA / no precio+UDIMA sin pedir / cierre consultivo / no recomendar curso ya hecho / creer al user vs CRM / parece conversación no catálogo. Si falla → reescribir. (1471-1505)
 - [ ] **R-U02** Las 4 reglas de obediencia total (OBL-0..3) + Regla #0 idioma se chequean ANTES de cada turno. (355-503)
+
+## V. Flujo CTWA/HSM dinámico (agent.py — REUSADO verbatim por agent_v2, NO se re-escribe en v2)
+> ⚠️ Estas reglas viven en `_build_ctwa_context_block` / `_build_hsm_reply_context_block` de `agent.py`.
+> `agent_v2.py` las reusa importando los helpers → se preservan automáticamente. Se documentan acá
+> para que el inventario sea completo (el usuario preguntó explícitamente por R-V03).
+- [x] **R-V01** CTWA: recolectar nombre+email PRIMERO, luego profesión+especialidad, ANTES de pitchear (3 turnos). (agent.py:226-258)
+- [x] **R-V02** CTWA Paso 1/2: mensajes fijos de pedido de nombre+email y de profesión. (agent.py:237-248)
+- [x] **R-V03** Paso 2.5: profesión dada SIN especialidad → pedir especialidad (solo médico/residente/enfermería/técnico/lic.salud/fuerza). ← respuesta a "soy medico sin especialidad". (agent.py:247-248)
+- [x] **R-V04** Estudiante (regla dura): profesion="Estudiante", carrera_estudio, anio_estudio; especialidad="" VACÍA (no inventar); normalizar año a número. (agent.py:250-256)
+- [x] **R-V05** "Otra profesión" → no preguntar especialidad, pitch directo. (agent.py:258)
+- [x] **R-V06** REGLA DE ORO: mensaje del user con `@` (email) → llamar `create_or_update_lead` INMEDIATAMENTE ese turno, sin excepciones; re-llamar al recibir más datos (update por ID, no duplica). (agent.py:262-268) ← la que falló en el bug Romina
+- [x] **R-V07** Mapeo especialidad en la tool: licenciados de salud (kinesiólogo/nutricionista/psicólogo/odontólogo/etc.) → especialidad = nombre del área, NUNCA "Otra Especialidad"; médico/enfermero → su área; estudiante → vacía; solo "Otra Especialidad" si no mapea. (agent.py:285-298)
+- [x] **R-V08** Capturar lugar_trabajo si lo menciona espontáneamente (no preguntar). (agent.py:296)
+- [x] **R-V09** Post-tool: NUNCA decir "quedó registrado"/"te registré"/"he registrado tu interés". (agent.py:300-304)
+- [x] **R-V10** Pitch CTWA: 3-4 líneas / máx 90 palabras, tocar 2-3 dolores concretos + outcome; llamar `get_course_brief` antes; no pitch de memoria. (agent.py:305-340)
+- [x] **R-V11** CTWA no negociables: país sale del teléfono (no preguntar); si pregunta del curso antes de dar datos → contestar breve y re-pedir; si da todo junto → tool + pitch mismo turno. (agent.py:343-352)
+- [x] **R-V12** Si el user se niega a dar datos: no insistir >1 vez; registrar con name="Contacto WA", email=""; si luego pide precio/link → pedir email. (agent.py:348-352)
+- [x] **R-V13** HSM Caso 1 (lead con nombre+curso sin profesión): NO pedir nombre/email; NO pitchear antes del perfil; evaluar match curso↔perfil y ofrecer alternativas si no matchea. (agent.py:368-386)
 
 ## Fragmentos dinámicos (agent.py — se reusan, no se podan)
 - **D-01** Priority header con perfil del usuario (inyectado arriba). (agent.py:141, _build_priority_profile_header)
