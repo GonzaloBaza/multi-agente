@@ -41,6 +41,15 @@ def _v2_model() -> str:
     return os.environ.get("SALES_V2_MODEL", SALES_V2_MODEL_DEFAULT).strip() or SALES_V2_MODEL_DEFAULT
 
 
+def _v2_temperature() -> float:
+    """Temperatura del agente v2. Más alta que v1 (0.3) → más variedad/persuasión.
+    Configurable por env SALES_V2_TEMPERATURE (default 0.7)."""
+    try:
+        return float(os.environ.get("SALES_V2_TEMPERATURE", "0.7"))
+    except (TypeError, ValueError):
+        return 0.7
+
+
 async def build_sales_agent_v2(
     country: str = "AR",
     channel: str = "whatsapp",
@@ -57,7 +66,7 @@ async def build_sales_agent_v2(
     llm = ChatOpenAI(
         model=model_name,
         api_key=settings.openai_api_key,
-        temperature=0.3,
+        temperature=_v2_temperature(),
     )
 
     # --- STEP 1: resolver curso (idéntico a v1) ---
