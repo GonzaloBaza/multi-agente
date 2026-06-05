@@ -69,20 +69,27 @@ class BotmakerClient:
                 "refreshToken": self._refresh_token,
                 "grantType": "refresh_token",
             }
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(
-                    f"{self._base}/oauth2/token",
-                    json=payload,
-                    timeout=15,
-                )
-                resp.raise_for_status()
-                data = resp.json()
-
-            self._access_token = data["accessToken"]
-            expires_in = data.get("expiresIn", 3600)
-            self._token_expires_at = time.time() + expires_in
-            logger.info("botmaker_token_refreshed", expires_in=expires_in)
-            return self._access_token
+            try:
+                async with httpx.AsyncClient() as client:
+                    resp = await client.post(
+                        f"{self._base}/oauth2/token",
+                        json=payload,
+                        timeout=15,
+                    )
+                    resp.raise_for_status()
+                    data = resp.json()
+                self._access_token = data["accessToken"]
+                expires_in = data.get("expiresIn", 3600)
+                self._token_expires_at = time.time() + expires_in
+                logger.info("botmaker_token_refreshed", expires_in=expires_in)
+                return self._access_token
+            except Exception as e:
+                # OAuth caído (visto 500 en /oauth2/token) → usar el token estático
+                # si está configurado (BOTMAKER_API_KEY), igual que el Custom Code.
+                if self._static_api_key:
+                    logger.warning("botmaker_oauth_failed_using_static", error=str(e))
+                    return self._static_api_key
+                raise
 
     async def _headers(self) -> dict:
         token = await self._get_access_token()
