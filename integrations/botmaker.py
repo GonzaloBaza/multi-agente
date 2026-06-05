@@ -91,6 +91,31 @@ class BotmakerClient:
             "Content-Type": "application/json",
         }
 
+    async def get_customer_id(self, phone: str) -> str:
+        """Resuelve el customerId interno de Botmaker por teléfono.
+
+        Sirve para armar el link a la conversación en la consola de Botmaker:
+        `https://go.botmaker.com/#/chats/{customerId}`. Devuelve "" si no lo
+        encuentra (el caller reintenta en el próximo turno)."""
+        p = (phone or "").lstrip("+").strip()
+        if not p:
+            return ""
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(
+                    f"{self._base}/customer/{p}",
+                    headers=await self._headers(),
+                    timeout=10,
+                )
+                if resp.status_code != 200:
+                    logger.debug("botmaker_get_customer_non200", phone=p, status=resp.status_code)
+                    return ""
+                data = resp.json()
+            return str(data.get("_id") or data.get("id") or data.get("customerId") or "")
+        except Exception as e:
+            logger.warning("botmaker_get_customer_failed", phone=p, error=str(e))
+            return ""
+
     def verify_signature(self, payload: bytes, signature: str) -> bool:
         if not self._webhook_secret:
             return True
