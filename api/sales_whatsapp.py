@@ -147,6 +147,13 @@ class BotmakerPayload(BaseModel):
     referralSourceId: str = ""
     referralCtwaClid: str = ""
 
+    # ID/URL de la conversación en Botmaker. Botmaker REST (/customer, /oauth2)
+    # devuelve 500 desde el backend, así que el Custom Code (que SÍ tiene el
+    # contexto vivo del chat) puede mandar el customerId o la URL completa y el
+    # backend la escribe en el lead (Link_Botmaker). Cualquiera de los dos sirve.
+    botmakerCustomerId: str = ""
+    botmakerChatUrl: str = ""
+
 
 class BotmakerResponse(BaseModel):
     """Response que el Custom Code de Botmaker espera."""
@@ -925,13 +932,17 @@ async def _ctwa_backfill_contact(lead_id: str, phone: str, user_msg: str) -> Non
         logger.warning("sales_whatsapp_ctwa_backfill_failed", phone=phone, error=str(e))
 
 
-async def _ctwa_set_botmaker_link(lead_id: str, phone: str) -> None:
+async def _ctwa_set_botmaker_link(lead_id: str, payload: BotmakerPayload) -> None:
     """Escribe en el lead CTWA el link a la conversación en la consola de Botmaker
     (`https://go.botmaker.com/#/chats/{customerId}`). Idempotente por conversación.
 
     Tapa el gap: los leads CTWA NO pasan por el Custom Code de HSM que setea
-    `Link_Botmaker`, así que lo escribimos acá cuando el backend crea/gestiona el
-    lead. Para HSM lo sigue poniendo el Custom Code (no se toca)."""
+    `Link_Botmaker`. Fuente del id, en orden de preferencia:
+      1) `payload.botmakerChatUrl` — URL completa que manda el Custom Code (Block B).
+      2) `payload.botmakerCustomerId` — el id del contexto vivo del Custom Code.
+      3) API REST de Botmaker (fallback — hoy devuelve 500, queda por si se arregla).
+    Para HSM lo sigue poniendo el Custom Code de plantillas (no se toca)."""
+    phone = payload.phone
     try:
         store = await get_conversation_store()
         raw = await store._redis.get(f"ctwa_data:{phone}")
@@ -939,20 +950,24 @@ async def _ctwa_set_botmaker_link(lead_id: str, phone: str) -> None:
         if ctwa.get("link_set"):
             return
 
-        from integrations.botmaker import BotmakerClient
+        link = (payload.botmakerChatUrl or "").strip()
+        if not link and (payload.botmakerCustomerId or "").strip():
+            link = f"https://go.botmaker.com/#/chats/{payload.botmakerCustomerId.strip()}"
+        if not link:
+            from integrations.botmaker import BotmakerClient
 
-        customer_id = await BotmakerClient().get_customer_id(phone)
-        if not customer_id:
-            return  # sin customerId todavía → reintenta el próximo turno
+            cid = await BotmakerClient().get_customer_id(phone)
+            if cid:
+                link = f"https://go.botmaker.com/#/chats/{cid}"
+        if not link:
+            return  # sin id todavía → reintenta el próximo turno
 
-        link = f"https://go.botmaker.com/#/chats/{customer_id}"
         await ZohoLeads().update(lead_id, {"Link_Botmaker": link})
-
         ctwa["link_set"] = True
         await store._redis.set(
             f"ctwa_data:{phone}", json.dumps(ctwa, ensure_ascii=False), ex=7 * 24 * 3600
         )
-        logger.info("sales_whatsapp_ctwa_botmaker_link_set", phone=phone, lead_id=lead_id)
+        logger.info("sales_whatsapp_ctwa_botmaker_link_set", phone=phone, lead_id=lead_id, link=link)
     except Exception as e:
         logger.warning("sales_whatsapp_ctwa_botmaker_link_failed", phone=phone, error=str(e))
 
@@ -1086,7 +1101,7 @@ async def _process_message_and_respond(
     # email en el chat, lo escribimos directo en Zoho (idempotente por conversación).
     if is_ctwa and lead_id_for_conv:
         await _ctwa_backfill_contact(lead_id_for_conv, payload.phone, user_msg)
-        await _ctwa_set_botmaker_link(lead_id_for_conv, payload.phone)
+        await _ctwa_set_botmaker_link(lead_id_for_conv, payload)
 
     # ──────────── Build + invocar agente ────────────
     _builder = agent_builder or build_sales_agent
