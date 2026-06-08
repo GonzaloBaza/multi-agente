@@ -274,7 +274,7 @@ Si después recibís más datos (profesión, especialidad), llamá la tool de nu
    - country= país del usuario (ya lo tenemos del teléfono, NO preguntar)
    - course_name="{curso}"
    - channel="WhatsApp"
-   - lead_status="No habilitado"  ← OBLIGATORIO, evita que Zoho dispare otra plantilla
+   - lead_status="Atención BOT IA"  ← el bot ya está atendiendo al lead (no usar "No habilitado")
    - lead_source="Facebook"
    - ad_account="Facebook - bot"
    - ad_id="{ad_id}"

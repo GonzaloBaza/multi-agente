@@ -482,8 +482,9 @@ async def create_or_update_lead(
             Paliativos, Imagen Clínica/Ecografía, Rehabilitación/Fisioterapia,
             Salud Familiar, Medicina Estética) pasar brand="Master". Para
             cursos normales dejar vacío.
-        lead_status: Estado del lead en Zoho. Para leads CTWA usar "No habilitado"
-            (evita que Zoho dispare otra plantilla). Default "Atención BOT IA".
+        lead_status: Estado del lead en Zoho. Default "Atención BOT IA". Para leads
+            CTWA el backend fuerza "Atención BOT IA" (el bot ya está atendiendo);
+            no usar "No habilitado".
         lead_source: Fuente del lead. "Facebook" para CTWA, "Widget" default.
         ad_account: Cuenta de anuncio. "Facebook - bot" para CTWA, "Widget" default.
         ad_id: ID del anuncio Meta (referralSourceId). Solo para CTWA.
@@ -558,8 +559,11 @@ async def create_or_update_lead(
                 tipo_de_lead = ctwa.get("tipo_de_lead", "")
             if not lead_id_social:
                 lead_id_social = ctwa.get("lead_id_social", "")
-            if lead_status in ("", "Atención BOT IA"):
-                lead_status = ctwa.get("lead_status", lead_status)
+            # El status del lead CTWA lo decide el backend (Atención BOT IA), NO el
+            # LLM. Si el LLM mandó otro valor (ej. "No habilitado" por una instrucción
+            # vieja del prompt), lo ignoramos para CTWA y forzamos el del backend.
+            if ctwa.get("lead_status"):
+                lead_status = ctwa["lead_status"]
 
         profesion_zoho = _map_profesion_to_zoho(profesion) if profesion else ""
         especialidad_zoho, otra_especialidad = _map_especialidad_zoho(especialidad, profesion_zoho)
