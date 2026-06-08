@@ -1079,7 +1079,11 @@ async def _process_message_and_respond(
             "ad_name": payload.referralHeadline or "",
             "tipo_de_lead": "Paid",
             "lead_id_social": payload.referralCtwaClid or "",
-            "lead_status": "No habilitado",
+            # Consistente con la creación del lead CTWA (_ensure_lead_id usa
+            # "Atención BOT IA"). El "No habilitado" anterior no prevenía nada:
+            # el lead ya nacía en "Atención BOT IA", así que cualquier disparo
+            # on-create ya había ocurrido.
+            "lead_status": "Atención BOT IA",
         })
 
     # Back-fill determinístico de contacto (CTWA): el lead se crea sin nombre/email
