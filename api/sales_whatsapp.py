@@ -255,7 +255,13 @@ def _build_user_profile(lead: dict, fallback_payload: BotmakerPayload) -> dict:
         "full_name": pick("Full_Name", "Full_Name"),
         "email": pick("Email", "Email"),
         "phone": pick("Phone") or fallback_payload.phone,
-        "country": _iso2_from_pais(pick("Pais", "Pais")),
+        # País: Zoho `Pais` si mapea; si no, deducir del prefijo del teléfono
+        # (+57→CO, etc.); recién si todo falla, AR. Evita que un inbound sin
+        # `Pais` (orgánico o referral solo con source_url) caiga a precios AR.
+        "country": (
+            _iso2_from_pais(pick("Pais", "Pais"), fallback="")
+            or _country_from_phone(pick("Phone") or fallback_payload.phone)
+        ),
         "country_name": pick("Pais", "Pais"),
         "city": pick("City"),
         "state": pick("State"),
