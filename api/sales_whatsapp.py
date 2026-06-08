@@ -938,46 +938,6 @@ async def _ctwa_backfill_contact(lead_id: str, phone: str, user_msg: str) -> Non
         logger.warning("sales_whatsapp_ctwa_backfill_failed", phone=phone, error=str(e))
 
 
-async def _ctwa_set_botmaker_link(lead_id: str, payload: BotmakerPayload) -> None:
-    """Escribe en el lead CTWA el link a la conversación en la consola de Botmaker
-    (`https://go.botmaker.com/#/chats/{customerId}`). Idempotente por conversación.
-
-    Tapa el gap: los leads CTWA NO pasan por el Custom Code de HSM que setea
-    `Link_Botmaker`. Fuente del id, en orden de preferencia:
-      1) `payload.botmakerChatUrl` — URL completa que manda el Custom Code (Block B).
-      2) `payload.botmakerCustomerId` — el id del contexto vivo del Custom Code.
-      3) API REST de Botmaker (fallback — hoy devuelve 500, queda por si se arregla).
-    Para HSM lo sigue poniendo el Custom Code de plantillas (no se toca)."""
-    phone = payload.phone
-    try:
-        store = await get_conversation_store()
-        raw = await store._redis.get(f"ctwa_data:{phone}")
-        ctwa = json.loads(raw.decode() if isinstance(raw, bytes) else raw) if raw else {}
-        if ctwa.get("link_set"):
-            return
-
-        link = (payload.botmakerChatUrl or "").strip()
-        if not link and (payload.botmakerCustomerId or "").strip():
-            link = f"https://go.botmaker.com/#/chats/{payload.botmakerCustomerId.strip()}"
-        if not link:
-            from integrations.botmaker import BotmakerClient
-
-            cid = await BotmakerClient().get_customer_id(phone)
-            if cid:
-                link = f"https://go.botmaker.com/#/chats/{cid}"
-        if not link:
-            return  # sin id todavía → reintenta el próximo turno
-
-        await ZohoLeads().update(lead_id, {"Link_Botmaker": link})
-        ctwa["link_set"] = True
-        await store._redis.set(
-            f"ctwa_data:{phone}", json.dumps(ctwa, ensure_ascii=False), ex=7 * 24 * 3600
-        )
-        logger.info("sales_whatsapp_ctwa_botmaker_link_set", phone=phone, lead_id=lead_id, link=link)
-    except Exception as e:
-        logger.warning("sales_whatsapp_ctwa_botmaker_link_failed", phone=phone, error=str(e))
-
-
 async def _process_message_and_respond(
     payload: BotmakerPayload, user_msg: str, agent_builder=None
 ) -> BotmakerResponse:
@@ -1010,27 +970,47 @@ async def _process_message_and_respond(
     # Condición secundaria: leadId vacío + sin referralHeadline pero hay ctwa_data
     # guardado en Redis de un turno anterior (Botmaker solo manda referral en el
     # primer mensaje del usuario — los siguientes llegan sin ese campo).
-    is_ctwa = not payload.leadId and bool(payload.referralHeadline)
-    if not is_ctwa and not payload.leadId:
-        try:
-            _store = await get_conversation_store()
-            _ctwa_raw = await _store._redis.get(f"ctwa_data:{payload.phone}")
-            if _ctwa_raw:
-                _ctwa_stored = json.loads(
-                    _ctwa_raw.decode() if isinstance(_ctwa_raw, bytes) else _ctwa_raw
-                )
-                if _ctwa_stored.get("headline"):
-                    is_ctwa = True
-                    payload.referralHeadline = _ctwa_stored["headline"]
-                    payload.referralSourceId = _ctwa_stored.get("source_id", "")
-                    payload.referralCtwaClid = _ctwa_stored.get("ctwa_clid", "")
-                    logger.info(
-                        "sales_whatsapp_ctwa_restored_from_redis",
-                        phone=payload.phone,
-                        headline=payload.referralHeadline,
-                    )
-        except Exception as _e:
-            logger.debug("sales_whatsapp_ctwa_redis_restore_failed", error=str(_e))
+    # CTWA si viene referral (el Custom Code reenvía el headline en cada turno via
+    # user.get('ctwa_headline')), o si hay ctwa_data en Redis de un turno previo.
+    # NO depende de que falte leadId: el backend mismo crea el lead CTWA y el Custom
+    # Code lo reenvía después → la conversación SIGUE siendo CTWA (turno 2+).
+    is_ctwa = bool(payload.referralHeadline)
+    _ctwa_stored = None
+    try:
+        _store = await get_conversation_store()
+        _ctwa_raw = await _store._redis.get(f"ctwa_data:{payload.phone}")
+        if _ctwa_raw:
+            _ctwa_stored = json.loads(
+                _ctwa_raw.decode() if isinstance(_ctwa_raw, bytes) else _ctwa_raw
+            )
+    except Exception as _e:
+        logger.debug("sales_whatsapp_ctwa_redis_read_failed", error=str(_e))
+    # Restaurar referral de turnos previos si no vino en el payload.
+    if not is_ctwa and _ctwa_stored and _ctwa_stored.get("headline"):
+        is_ctwa = True
+        payload.referralHeadline = _ctwa_stored["headline"]
+        payload.referralSourceId = _ctwa_stored.get("source_id", "")
+        payload.referralCtwaClid = _ctwa_stored.get("ctwa_clid", "")
+        logger.info(
+            "sales_whatsapp_ctwa_restored_from_redis",
+            phone=payload.phone,
+            headline=payload.referralHeadline,
+        )
+    # Guard: si llega un leadId DISTINTO al que creó el flujo CTWA, es un lead HSM
+    # real (otra campaña) → tratarlo como HSM, no CTWA.
+    if (
+        is_ctwa
+        and payload.leadId
+        and _ctwa_stored
+        and _ctwa_stored.get("lead_id")
+        and payload.leadId != _ctwa_stored.get("lead_id")
+    ):
+        is_ctwa = False
+        logger.info(
+            "sales_whatsapp_ctwa_overridden_by_hsm_lead",
+            phone=payload.phone,
+            lead_id=payload.leadId,
+        )
     if is_ctwa:
         ctwa_country = _country_from_phone(payload.phone)
         country = ctwa_country
@@ -1107,7 +1087,6 @@ async def _process_message_and_respond(
     # email en el chat, lo escribimos directo en Zoho (idempotente por conversación).
     if is_ctwa and lead_id_for_conv:
         await _ctwa_backfill_contact(lead_id_for_conv, payload.phone, user_msg)
-        await _ctwa_set_botmaker_link(lead_id_for_conv, payload)
 
     # ──────────── Build + invocar agente ────────────
     _builder = agent_builder or build_sales_agent
