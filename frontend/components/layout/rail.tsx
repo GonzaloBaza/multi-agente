@@ -12,6 +12,7 @@ import {
   Settings,
   MessageSquare,
   Kanban,
+  Percent,
   Sun,
   Moon,
 } from "lucide-react";
@@ -39,6 +40,7 @@ const NAV: RailLink[] = [
   { href: "/templates", label: "Plantillas HSM",      icon: MessageSquare, min: "admin" },
   { href: "/agents",    label: "Agentes IA",          icon: Bot,          min: "admin" },
   { href: "/prompts",   label: "Editor de prompts",   icon: FileCode,     min: "admin" },
+  { href: "/promos",    label: "Cupones / Promos",    icon: Percent,      min: "admin" },
   { href: "/channels",  label: "Canales",             icon: Plug,         min: "admin" },
 ];
 

@@ -1093,6 +1093,16 @@ async def _process_message_and_respond(
         await _ctwa_backfill_contact(lead_id_for_conv, payload.phone, user_msg)
 
     # ──────────── Build + invocar agente ────────────
+    # Resolver el campaign_config CON override Redis (editable desde /promos
+    # en el admin). Si no hay override, cae al hardcoded del channel_configs.py.
+    try:
+        from agents.sales.channel_configs import get_campaign_config_async
+
+        campaign_config = await get_campaign_config_async(country, "whatsapp")
+    except Exception as e:
+        logger.warning("sales_whatsapp_campaign_config_failed", error=str(e))
+        campaign_config = None  # build_sales_agent resuelve solo si es None
+
     _builder = agent_builder or build_sales_agent
     try:
         agent = await _builder(
@@ -1100,6 +1110,7 @@ async def _process_message_and_respond(
             channel="whatsapp",
             page_slug=page_slug,
             user_profile=user_profile,
+            campaign_config=campaign_config,
         )
     except Exception as e:
         logger.error("sales_whatsapp_build_agent_failed", error=str(e), country=country, slug=page_slug)

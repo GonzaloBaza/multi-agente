@@ -303,11 +303,22 @@ async def run_sales_node(state: SupervisorState) -> dict:
         except Exception as e:
             logger.debug("sales_profile_cache_miss", error=str(e))
 
+    # Resolver campaign_config CON override Redis (editable desde /promos en
+    # admin). Si no hay override, build_sales_agent cae al hardcoded del .py.
+    try:
+        from agents.sales.channel_configs import get_campaign_config_async
+
+        campaign_config = await get_campaign_config_async(country, channel)
+    except Exception as e:
+        logger.debug("campaign_config_async_failed", error=str(e))
+        campaign_config = None
+
     agent = await build_sales_agent(
         country=country,
         channel=channel,
         page_slug=page_slug,
         user_profile=user_profile,
+        campaign_config=campaign_config,
     )
     result = await agent.ainvoke({"messages": state["messages"]})
 
