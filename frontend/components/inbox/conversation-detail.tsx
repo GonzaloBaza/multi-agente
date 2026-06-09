@@ -21,6 +21,7 @@ import {
   Loader2,
   ChevronLeft,
   MoreVertical,
+  Download,
 } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -37,6 +38,7 @@ import { MessageBubble } from "./message-bubble";
 import { useAgents } from "@/lib/api/inbox";
 import { useAuth } from "@/lib/auth";
 import { api } from "@/lib/api";
+import { downloadTranscript } from "@/lib/conversation-export";
 import { cn } from "@/lib/utils";
 import type { ContactDetail, ConversationListItem, LifecycleStage, Message } from "@/lib/mock-data";
 
@@ -167,6 +169,14 @@ export function ConversationDetail({
     ? agents.find((a) => a.id === conversation.assignedTo)
     : null;
 
+  const handleDownload = () =>
+    downloadTranscript({
+      contact,
+      conversation,
+      messages,
+      assignedAgentName: assignedAgent?.name ?? null,
+    });
+
   return (
     <div className="flex-1 flex flex-col bg-bg min-w-0">
       {/* Header */}
@@ -257,6 +267,15 @@ export function ConversationDetail({
                       <Pause className="w-3.5 h-3.5 text-warn" />
                       <span>Tomar control</span>
                     </DropdownItem>
+                  )}
+                  {messages.length > 0 && (
+                    <>
+                      <DropdownSeparator />
+                      <DropdownItem onClick={() => { handleDownload(); close(); }}>
+                        <Download className="w-3.5 h-3.5" />
+                        <span>Descargar conversación</span>
+                      </DropdownItem>
+                    </>
                   )}
                   {onMobileShowPanel && (
                     <>
@@ -362,6 +381,17 @@ export function ConversationDetail({
                 <Pause className="w-3.5 h-3.5" /> Tomar control
               </Button>
             )}
+
+            {/* Descargar conversación (.txt) */}
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={handleDownload}
+              disabled={messages.length === 0}
+              title="Descargar conversación (.txt)"
+            >
+              <Download className="w-3.5 h-3.5" />
+            </Button>
 
             {/* Panel toggle */}
             <Button variant="ghost" size="icon-sm" onClick={onToggleContactPanel} title="Mostrar/ocultar panel">
