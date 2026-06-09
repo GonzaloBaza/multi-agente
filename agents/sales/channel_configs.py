@@ -126,8 +126,10 @@ _CONFIGS: dict[tuple[str, str], dict[str, Any]] = {
 
 
 # Fallbacks por canal (cuando no hay match exacto país+canal).
+# Política actual: BOT15/BOT20 escalado en AMBOS canales para todos los países.
+# Para apagarlo en un país específico, usar el panel /promos (override Redis).
 _DEFAULTS_BY_CHANNEL: dict[str, dict[str, Any]] = {
-    "widget": NO_PROMO,  # widget sin Hot Sale activa → sin promo
+    "widget": WHATSAPP_DEFAULT,  # cualquier país en widget → BOT15/BOT20
     "whatsapp": WHATSAPP_DEFAULT,  # cualquier país en WA → BOT15/BOT20
 }
 
