@@ -259,20 +259,25 @@ function HotSaleModal({
   onCancel: () => void;
   onSave: (config: PromoConfig) => void;
 }) {
+  // Convertir el `until` legacy (texto libre) a un date ISO si se puede,
+  // o dejarlo vacío para que el user lo elija. El backend recibe el texto
+  // legible en español ("7 de junio 2026") al guardar — ver isoToHumanDate.
   const [code, setCode]       = useState(initial.code || "PROMO");
   const [pct, setPct]         = useState(initial.pct ?? 20);
-  const [factor, setFactor]   = useState(initial.factor ?? 0.80);
-  const [until, setUntil]     = useState(initial.until || "");
+  const [untilDate, setUntilDate] = useState(humanDateToIso(initial.until || ""));
   const [name, setName]       = useState(initial.name || "Promo");
   const [countryName, setCountryName] = useState(initial.country_name || "");
+
+  // Factor cuota auto-derivado del % (1 − pct/100, 2 decimales).
+  const factor = Math.max(0.01, Math.min(1, Number((1 - pct / 100).toFixed(2))));
 
   function handleSave() {
     const cfg: PromoConfig = {
       promo_type: "hot_sale_block",
       code: code.trim().toUpperCase(),
       pct: Number(pct),
-      factor: Number(factor),
-      until: until.trim(),
+      factor,
+      until: isoToHumanDate(untilDate),
       name: name.trim(),
       country_name: countryName.trim() || undefined,
     };
@@ -300,12 +305,24 @@ function HotSaleModal({
             <Field label="% descuento" hint="Entero, ej 30">
               <input type="number" min={1} max={99} value={pct} onChange={(e) => setPct(Number(e.target.value))} className="bg-bg border border-border rounded px-2 py-1 w-full text-xs" />
             </Field>
-            <Field label="Factor cuota" hint="1 - pct/100. Ej 30% → 0.70">
-              <input type="number" step={0.01} min={0.01} max={1} value={factor} onChange={(e) => setFactor(Number(e.target.value))} className="bg-bg border border-border rounded px-2 py-1 w-full text-xs" />
+            <Field label="Factor cuota (auto)" hint={`Se calcula como 1 − ${pct || 0}/100`}>
+              <div className="bg-bg/50 border border-border rounded px-2 py-1 w-full text-xs text-fg-dim tabular-nums select-none">
+                {factor.toFixed(2)}
+              </div>
             </Field>
           </div>
-          <Field label="Hasta cuándo (texto libre)" hint="Ej: 7 de junio, 31 de diciembre 2026">
-            <input value={until} onChange={(e) => setUntil(e.target.value)} className="bg-bg border border-border rounded px-2 py-1 w-full text-xs" />
+          <Field label="Hasta cuándo" hint="Fecha de cierre de la campaña">
+            <input
+              type="date"
+              value={untilDate}
+              onChange={(e) => setUntilDate(e.target.value)}
+              className="bg-bg border border-border rounded px-2 py-1 w-full text-xs"
+            />
+            {untilDate && (
+              <div className="text-[10px] text-fg-dim mt-0.5">
+                El bot va a decir: <em>"hasta el {isoToHumanDate(untilDate)}"</em>
+              </div>
+            )}
           </Field>
           <Field label="Nombre de la campaña" hint="Ej: Hot Sale, CyberDay, Black Friday">
             <input value={name} onChange={(e) => setName(e.target.value)} className="bg-bg border border-border rounded px-2 py-1 w-full text-xs" />
@@ -324,6 +341,38 @@ function HotSaleModal({
       </div>
     </div>
   );
+}
+
+// ─── Helpers fechas ────────────────────────────────────────────────────────
+
+const _MONTHS_ES = [
+  "enero", "febrero", "marzo", "abril", "mayo", "junio",
+  "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+];
+
+// "2026-12-31" → "31 de diciembre de 2026"
+function isoToHumanDate(iso: string): string {
+  if (!iso) return "";
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  if (!m) return iso; // ya viene en texto libre legacy
+  const [, y, mo, d] = m;
+  const monthName = _MONTHS_ES[Number(mo) - 1];
+  return `${Number(d)} de ${monthName} de ${y}`;
+}
+
+// "31 de diciembre de 2026" → "2026-12-31" (best-effort para pre-fill del date picker).
+// Si no matchea el formato esperado, retorna "" (deja vacío).
+function humanDateToIso(human: string): string {
+  if (!human) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(human)) return human;
+  const m = /(\d{1,2})\s+(?:de\s+)?([a-záéíóúñ]+)(?:\s+(?:de\s+)?(\d{4}))?/i.exec(human.normalize("NFC"));
+  if (!m) return "";
+  const day = Number(m[1]);
+  const monthName = m[2].toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  const monthIdx = _MONTHS_ES.findIndex(mn => mn.normalize("NFD").replace(/[̀-ͯ]/g, "") === monthName);
+  if (monthIdx < 0) return "";
+  const year = m[3] ? Number(m[3]) : new Date().getFullYear();
+  return `${year}-${String(monthIdx + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
