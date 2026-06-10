@@ -670,15 +670,33 @@ async def _describe_image_url(image_url: str) -> str:
         return ""
 
 
-async def _is_duplicate_msgid(msg_id: str) -> bool:
-    """Anti-doble-procesamiento por msgId. TTL 24h."""
+async def _msgid_already_done(msg_id: str) -> bool:
+    """True si este msgId ya fue procesado Y ENTREGADO con éxito. TTL 24h.
+
+    OJO: la marca se setea al FINAL del handler (_mark_msgid_done), no al
+    entrar. Así, si el primer intento se cae / lo matan a mitad de camino
+    (timeout de Botmaker, cap de plataforma) antes de devolver la respuesta,
+    un reintento de Botmaker RE-PROCESA y entrega — en vez de quedar
+    silenciado como 'duplicado'. Ese silencio era el bug que dejaba la
+    respuesta guardada en Redis pero sin llegar al lead.
+    """
     if not msg_id:
         return False
     store = await get_conversation_store()
     r = store._redis
-    # SET NX: gana solo si la key no existía.
-    ok = await r.set(f"sales_wa_seen:{msg_id}", "1", nx=True, ex=DEDUP_TTL_SECONDS)
-    return not ok  # si NO se pudo setear, es porque ya estaba → duplicado
+    return bool(await r.get(f"sales_wa_done:{msg_id}"))
+
+
+async def _mark_msgid_done(msg_id: str) -> None:
+    """Marca el msgId como entregado con éxito. TTL 24h."""
+    if not msg_id:
+        return
+    store = await get_conversation_store()
+    r = store._redis
+    try:
+        await r.set(f"sales_wa_done:{msg_id}", "1", ex=DEDUP_TTL_SECONDS)
+    except Exception:
+        pass
 
 
 # ── Endpoint principal ───────────────────────────────────────────────────────
@@ -708,8 +726,13 @@ async def sales_whatsapp_webhook(payload: BotmakerPayload) -> BotmakerResponse:
         has_template_text=bool(payload.templateText),
     )
 
-    # 0. Dedup por msgId (anti-bucle si Botmaker reintenta el webhook).
-    if await _is_duplicate_msgid(payload.msgId or ""):
+    import time as _time
+    _handler_start = _time.perf_counter()
+
+    # 0. Dedup por msgId — SOLO si ya fue procesado Y ENTREGADO con éxito.
+    # La marca se pone al final (_mark_msgid_done). Un reintento de un msg que
+    # nunca llegó a entregarse RE-PROCESA en vez de devolver skip_response.
+    if await _msgid_already_done(payload.msgId or ""):
         logger.info("sales_whatsapp_duplicate_msgid", msg_id=payload.msgId)
         return BotmakerResponse(skip_response=True)
 
@@ -782,7 +805,16 @@ async def sales_whatsapp_webhook(payload: BotmakerPayload) -> BotmakerResponse:
                 combined_chars=len(user_msg),
             )
 
-        return await _process_message_and_respond(payload, user_msg)
+        resp = await _process_message_and_respond(payload, user_msg)
+        logger.info(
+            "sales_whatsapp_handler_done",
+            msg_id=payload.msgId,
+            phone=payload.phone,
+            skip=bool(resp.skip_response),
+            text_len=len(resp.text or ""),
+            total_handler_ms=round((_time.perf_counter() - _handler_start) * 1000),
+        )
+        return resp
     finally:
         await _bucket_release(payload.phone)
 
@@ -1207,6 +1239,10 @@ async def _process_message_and_respond(
         await _append_history(payload.phone, user_msg, clean_text)
     except Exception as e:
         logger.debug("sales_whatsapp_history_save_failed", error=str(e))
+
+    # Marca de ENTREGA: recién acá el msgId queda como "done". Si el request
+    # muere antes de este punto, un reintento re-procesa y entrega.
+    await _mark_msgid_done(payload.msgId or "")
 
     tags_active = [k for k in ("derivarConAsesor", "cierreEnviado", "objecionPrecio", "cargarTicket") if ctx.get(k)]
     logger.info(

@@ -29,7 +29,7 @@ from api.sales_whatsapp import (
     _bucket_try_lock,
     _debounce_wait,
     _describe_image_url,
-    _is_duplicate_msgid,
+    _msgid_already_done,
     _process_message_and_respond,
     _transcribe_audio_url,
 )
@@ -74,8 +74,9 @@ async def sales_whatsapp_webhook_v2(payload: BotmakerPayload) -> BotmakerRespons
 
         raise HTTPException(status_code=400, detail="missing phone")
 
-    # Dedup por msgId (anti-bucle) — mismo store que v1.
-    if await _is_duplicate_msgid(payload.msgId or ""):
+    # Dedup por msgId — solo si ya fue ENTREGADO (marca al final, vía
+    # _process_message_and_respond → _mark_msgid_done). Mismo criterio que v1.
+    if await _msgid_already_done(payload.msgId or ""):
         logger.info("sales_v2_duplicate_msgid", msg_id=payload.msgId)
         return BotmakerResponse(skip_response=True)
 
