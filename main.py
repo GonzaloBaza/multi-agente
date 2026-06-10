@@ -62,6 +62,7 @@ from api.widget_config import router as widget_config_router
 # backend — previene que passwords/tokens/emails aparezcan en stdout,
 # Sentry o cualquier destino futuro (Loki/Datadog). Ver utils/log_processors.
 from utils.log_processors import pii_scrubber  # noqa: E402
+from utils.tee_log import TeeRotatingWriter  # noqa: E402
 
 # Rate limiter global — usa `user_or_ip` como key_func para dar cuota
 # separada a cada sesión autenticada (no solo IP agregada). Los límites
@@ -77,7 +78,9 @@ structlog.configure(
         structlog.processors.JSONRenderer(),
     ],
     wrapper_class=structlog.make_filtering_bound_logger(20),  # INFO
-    logger_factory=structlog.PrintLoggerFactory(),
+    # Tee: stdout (Docker logs) + archivo por worker en /app/logs (named volume
+    # que sobrevive al --force-recreate). Sin esto, cada deploy borra los logs.
+    logger_factory=structlog.PrintLoggerFactory(file=TeeRotatingWriter("/app/logs/api-{pid}.log")),
     cache_logger_on_first_use=True,
 )
 

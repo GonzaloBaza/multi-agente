@@ -9,6 +9,12 @@ services:
     restart: unless-stopped
     volumes:
       - media_data:/app/media
+      - api_logs:/app/logs          # logs persisten al --force-recreate (named volume = disco grande)
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"             # rota el stdout/docker-logs, no llena disco
+        max-file: "5"
 
   # Next.js 15 (consola interna en agentes.msklatam.com). En prod el nginx
   # del host rutea / → http://127.0.0.1:3000 y /api/* → http://127.0.0.1:8000
@@ -38,3 +44,4 @@ services:
 volumes:
   redis_data:
   media_data:
+  api_logs:
