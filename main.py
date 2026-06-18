@@ -305,23 +305,27 @@ def create_app() -> FastAPI:
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-    # Prometheus metrics — expone /metrics con counters por endpoint +
-    # histograma de latencia + tamaños de request/response. Scrapeado por
-    # el container Prometheus en el compose. No expone información
-    # sensible (rutas sí, valores de params no).
-    try:
-        from prometheus_fastapi_instrumentator import Instrumentator
+    # Prometheus metrics — OFF por default; se reactiva con ENABLE_METRICS=true.
+    # ⚠️ Con FastAPI 0.137 / Starlette 1.3 el instrumentator crashea iterando
+    # rutas ('_IncludedRouter' object has no attribute 'path') y tira 500 en
+    # TODA request HTTP. Hasta tener una combinación compatible, queda gateado.
+    import os as _os
 
-        Instrumentator(
-            should_group_status_codes=True,
-            should_instrument_requests_inprogress=True,
-            excluded_handlers=["/health", "/metrics"],  # evita loop de scrape
-            env_var_name="ENABLE_METRICS",
-            inprogress_labels=True,
-        ).instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
-        logger.info("prometheus_metrics_enabled")
-    except ImportError:
-        logger.warning("prometheus_instrumentator_not_installed")
+    if _os.getenv("ENABLE_METRICS", "").lower() in ("1", "true", "yes"):
+        try:
+            from prometheus_fastapi_instrumentator import Instrumentator
+
+            Instrumentator(
+                should_group_status_codes=True,
+                should_instrument_requests_inprogress=True,
+                excluded_handlers=["/health", "/metrics"],  # evita loop de scrape
+                inprogress_labels=True,
+            ).instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
+            logger.info("prometheus_metrics_enabled")
+        except Exception as _e:
+            logger.warning("prometheus_metrics_setup_failed", error=str(_e))
+    else:
+        logger.info("prometheus_metrics_disabled", reason="ENABLE_METRICS unset")
 
     # Routers — toda la UI consola consume bajo /api/* (consistencia con
     # frontend/lib/api.ts). Los públicos (widget embebible, webhooks,

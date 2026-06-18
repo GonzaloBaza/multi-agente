@@ -1,5 +1,8 @@
-# Core web framework
-fastapi>=0.115.0
+# Core web framework — PINNED. El stack se reinstala desde cero cuando el
+# build cache se limpia; con `>=` agarraba versiones nuevas incompatibles
+# (FastAPI 0.137/Starlette 1.3 rompían prometheus-fastapi-instrumentator).
+fastapi==0.137.1
+starlette==1.3.1
 uvicorn[standard]>=0.32.0
 pydantic>=2.10.0
 pydantic-settings>=2.6.0
@@ -38,7 +41,7 @@ APScheduler>=3.10.4
 # Prometheus metrics — endpoint /metrics con histogramas de latencia,
 # contadores de requests, size de responses. Scrapeable por Prometheus
 # self-hosted en el mismo droplet (ver docker-compose.yml).
-prometheus-fastapi-instrumentator>=7.0.0
+prometheus-fastapi-instrumentator==8.0.0
 
 # Alembic — migraciones versionadas de Postgres con rollback. Reemplaza
 # los scripts SQL manuales que vivían en migrations/ sin tracking.
