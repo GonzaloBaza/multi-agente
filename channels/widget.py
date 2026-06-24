@@ -198,9 +198,17 @@ async def _build_user_context(
     signals: dict = {"has_debt": False, "is_student": False, "profile_name": ""}
 
     if page_slug:
+        # OJO: page_slug es el último segmento de la URL — puede ser un curso
+        # real (/curso/X, /checkout/X) PERO también una sección del sitio
+        # (/instituciones, /tienda, home). NO afirmamos que es un curso acá:
+        # el título de curso confirmado se inyecta aparte y SOLO si existe en
+        # el catálogo (greeting → _resolve_course_mini_brief; ventas → brief del
+        # agente). Sin esa validación, el LLM inventaba "el curso Instituciones".
         lines.append(
-            f"Página actual del usuario: curso «{page_slug}» — "
-            "puede estar interesado en este curso específico."
+            f"El usuario está navegando la página «{page_slug}» del sitio. "
+            "Esto puede ser un curso o una sección del sitio — NO asumas que es "
+            "un curso ni lo menciones como tal salvo que tengas su ficha/título "
+            "de curso confirmado en el contexto."
         )
         await _log_event(
             session_id,
