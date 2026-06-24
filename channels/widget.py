@@ -1556,11 +1556,11 @@ async def process_widget_message(
             ]
             # Contador atómico en Redis → alterna de forma estable entre los 2
             # workers de uvicorn (sin race). Cada lead Máster suma 1.
-            from memory.conversation_store import get_conversation_store
-
+            # Reusamos `store` (ya creado al inicio de process_widget_message).
+            # OJO: NO importar get_conversation_store local acá — lo volvería
+            # variable local de toda la función y rompería el uso de arriba.
             try:
-                _rr_store = await get_conversation_store()
-                _rr_n = int(await _rr_store._redis.incr("masters_rr"))
+                _rr_n = int(await store._redis.incr("masters_rr"))
             except Exception:
                 _rr_n = 0
             _rr_start = _rr_n % len(_MASTERS_ADVISORS)
