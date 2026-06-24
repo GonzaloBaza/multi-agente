@@ -1548,9 +1548,33 @@ async def process_widget_message(
             from integrations.supabase_client import get_profile
             from memory import conversation_meta as cm
 
-            # Email del asesor de Másters — config interna, NO se muestra al user.
-            masters_advisor_email = "vanessahernandez@msklatam.com"
-            advisor_profile = await get_profile(masters_advisor_email)
+            # Asesoras de Másters — round-robin estricto 1-2-1-2 entre las dos.
+            # Emails internos, NO se muestran al user.
+            _MASTERS_ADVISORS = [
+                "vanessahernandez@msklatam.com",
+                "pamelarivero@msklatam.com",
+            ]
+            # Contador atómico en Redis → alterna de forma estable entre los 2
+            # workers de uvicorn (sin race). Cada lead Máster suma 1.
+            from memory.conversation_store import get_conversation_store
+
+            try:
+                _rr_store = await get_conversation_store()
+                _rr_n = int(await _rr_store._redis.incr("masters_rr"))
+            except Exception:
+                _rr_n = 0
+            _rr_start = _rr_n % len(_MASTERS_ADVISORS)
+            # Resolver el perfil de la que toca; si no se resuelve (raro),
+            # caer a la otra → ningún lead Máster queda sin asignar.
+            masters_advisor_email = _MASTERS_ADVISORS[_rr_start]
+            advisor_profile = None
+            for _off in range(len(_MASTERS_ADVISORS)):
+                _cand = _MASTERS_ADVISORS[(_rr_start + _off) % len(_MASTERS_ADVISORS)]
+                _p = await get_profile(_cand)
+                if _p and _p.get("id"):
+                    masters_advisor_email = _cand
+                    advisor_profile = _p
+                    break
             advisor_id = (advisor_profile or {}).get("id")
             advisor_name = (advisor_profile or {}).get("name") or ""
 
