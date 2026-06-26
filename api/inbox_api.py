@@ -101,6 +101,45 @@ class MessageOut(BaseModel):
     agent: str | None = None
 
 
+# ─── Export CSV (helpers puros) ──────────────────────────────────────────────
+
+CSV_HEADER = [
+    "id", "creada", "ultima_actividad", "canal", "nombre", "email", "telefono",
+    "pais", "area", "lifecycle", "estado", "asignada_a", "needs_human",
+    "bot_paused", "mensajes", "ultimo_mensaje",
+]
+
+_AREA_LABEL = {
+    "sales": "Ventas",
+    "billing": "Cobranzas",
+    "post-sales": "Post-venta",
+    "support": "Soporte",
+}
+
+
+def conversation_csv_row(c: dict, agent_name: str = "") -> list[str]:
+    """Mapea una conversación normalizada (dict) a una fila CSV alineada con
+    CSV_HEADER. Pura — el endpoint arma el dict desde la fila de Postgres."""
+    return [
+        c["id"],
+        c.get("created") or "",
+        c.get("last_activity") or "",
+        c.get("channel") or "",
+        c.get("name") or "",
+        c.get("email") or "",
+        c.get("phone") or "",
+        c.get("country") or "",
+        _AREA_LABEL.get(c.get("queue") or "sales", c.get("queue") or ""),
+        c.get("lifecycle") or "",
+        c.get("status") or "",
+        agent_name or "",
+        "Sí" if c.get("needs_human") else "No",
+        "Sí" if c.get("bot_paused") else "No",
+        str(c.get("message_count") or 0),
+        (c.get("last_message") or "").replace("\n", " ").replace("\r", " ").strip(),
+    ]
+
+
 # ─── Reads ───────────────────────────────────────────────────────────────────
 
 
