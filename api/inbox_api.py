@@ -860,6 +860,128 @@ async def queue_stats():
     return out
 
 
+def _build_conversations_where(
+    *,
+    user: dict | None,
+    view: str | None,
+    lifecycle: str | None,
+    channel: str | None,
+    queue: str | None,
+    country: str | None,
+    assigned_to: str | None,
+    search: str | None,
+    date_from: str | None,
+    date_to: str | None,
+) -> tuple[str, list]:
+    """Arma el WHERE (scope por rol + filtros + vista) del listado de
+    conversaciones. Devuelve (where_clause, params): where_clause incluye el
+    prefijo 'WHERE ' (o '' si no hay condiciones) con placeholders $1..$N;
+    params son los valores posicionales. Si el agente no tiene visibilidad,
+    devuelve ('WHERE FALSE', []) para que la query no traiga filas.
+
+    Pura (no toca DB) — reusada por list_conversations y export_conversations_csv.
+    """
+    where_parts: list[str] = []
+    params: list = []
+    idx = 1
+
+    if user and user.get("role") == "agente":
+        agent_id = user.get("id")
+        queue_scope = _agent_queue_scope_sql(user.get("queues") or [])
+        scope_parts = []
+        if agent_id:
+            scope_parts.append(f"cm.assigned_agent_id = ${idx}::uuid")
+            params.append(agent_id)
+            idx += 1
+        if queue_scope:
+            scope_parts.append(f"(cm.assigned_agent_id IS NULL AND {queue_scope})")
+        if scope_parts:
+            where_parts.append("(" + " OR ".join(scope_parts) + ")")
+        else:
+            return "WHERE FALSE", []
+
+    if date_from:
+        where_parts.append(f"c.updated_at >= ${idx}::timestamptz")
+        params.append(date_from + "T00:00:00Z")
+        idx += 1
+    if date_to:
+        where_parts.append(f"c.updated_at <= ${idx}::timestamptz")
+        params.append(date_to + "T23:59:59Z")
+        idx += 1
+    if channel:
+        where_parts.append(f"c.channel = ${idx}")
+        params.append(channel)
+        idx += 1
+    if assigned_to:
+        where_parts.append(f"cm.assigned_agent_id = ${idx}::uuid")
+        params.append(assigned_to)
+        idx += 1
+    if queue:
+        where_parts.append(f"cm.queue = ${idx}")
+        params.append(queue)
+        idx += 1
+    if country:
+        if country.upper() == "MP":
+            primary_list = ",".join(f"'{c}'" for c in sorted(PRIMARY_COUNTRIES))
+            where_parts.append(
+                f"upper(coalesce(c.user_profile->>'country', 'AR')) NOT IN ({primary_list})"
+            )
+        else:
+            where_parts.append(
+                f"upper(coalesce(c.user_profile->>'country', 'AR')) = upper(${idx})"
+            )
+            params.append(country)
+            idx += 1
+    if lifecycle:
+        where_parts.append(f"coalesce(cm.lifecycle_override, cm.lifecycle_auto, 'new') = ${idx}")
+        params.append(lifecycle)
+        idx += 1
+    if search:
+        where_parts.append(
+            f"(c.user_profile->>'name' ilike ${idx} OR c.user_profile->>'email' ilike ${idx} OR lm.content ilike ${idx})"
+        )
+        params.append(f"%{search}%")
+        idx += 1
+
+    if view == "unread":
+        if user and user.get("id"):
+            where_parts.append(
+                f"""(cm.bot_paused = true AND EXISTS (
+                    SELECT 1 FROM public.messages m2
+                    LEFT JOIN public.inbox_read_state rs2
+                        ON rs2.conversation_id = m2.conversation_id
+                        AND rs2.user_id = ${idx}::uuid
+                    WHERE m2.conversation_id = c.id
+                      AND m2.role = 'user'
+                      AND (rs2.last_read_at IS NULL OR m2.created_at > rs2.last_read_at)
+                ))"""
+            )
+            params.append(user["id"])
+            idx += 1
+        else:
+            where_parts.append("FALSE")
+    elif view == "mine":
+        if user and user.get("id"):
+            where_parts.append(f"cm.assigned_agent_id = ${idx}::uuid")
+            params.append(user["id"])
+            idx += 1
+        else:
+            where_parts.append("FALSE")
+    elif view == "queue":
+        where_parts.append("cm.assigned_agent_id is null AND cm.needs_human = true")
+    elif view == "human-attn":
+        where_parts.append("(cm.bot_paused = true OR cm.assigned_agent_id is not null)")
+    elif view == "with-bot":
+        where_parts.append("(cm.bot_paused = false AND coalesce(cm.needs_human,false) = false)")
+    elif view == "resolved":
+        where_parts.append("cm.status = 'resolved'")
+    elif view in (None, "all"):
+        where_parts.append("(cm.status is null OR cm.status != 'resolved')")
+
+    where = ("WHERE " + " AND ".join(where_parts)) if where_parts else ""
+    return where, params
+
+
 @router.get("/conversations", response_model=list[ConversationOut])
 async def list_conversations(
     limit: int = Query(50, le=1000),
@@ -885,129 +1007,16 @@ async def list_conversations(
     """
     pool = await postgres_store.get_pool()
 
-    where_parts = []
-    params: list = []
-    idx = 1
-
-    # Scope por rol — ANTES de los filtros del user, para que la query base
-    # ya vuelva solo lo que el agente puede ver. Admin key (scripts) y roles
-    # admin/supervisor pasan sin restricción.
     user = (auth or {}).get("user") if (auth or {}).get("auth") == "session" else None
-    if user and user.get("role") == "agente":
-        agent_id = user.get("id")
-        queue_scope = _agent_queue_scope_sql(user.get("queues") or [])
-        scope_parts = []
-        if agent_id:
-            scope_parts.append(f"cm.assigned_agent_id = ${idx}::uuid")
-            params.append(agent_id)
-            idx += 1
-        if queue_scope:
-            # Un agente ve las conversaciones de sus colas que estén SIN
-            # asignar (libres para tomar). Si ya las asignó otro agente,
-            # ese otro las gestiona. Esto reproduce el filtro de la UI
-            # vieja (widget/inbox.html:2497).
-            scope_parts.append(f"(cm.assigned_agent_id IS NULL AND {queue_scope})")
-        if scope_parts:
-            where_parts.append("(" + " OR ".join(scope_parts) + ")")
-        else:
-            # Sin id ni colas → no ve nada. Retornamos lista vacía para evitar
-            # un SELECT sin scope.
-            return []
+    where, params = _build_conversations_where(
+        user=user, view=view, lifecycle=lifecycle, channel=channel, queue=queue,
+        country=country, assigned_to=assigned_to, search=search,
+        date_from=date_from, date_to=date_to,
+    )
 
-    if date_from:
-        where_parts.append(f"c.updated_at >= ${idx}::timestamptz")
-        params.append(date_from + "T00:00:00Z")
-        idx += 1
-    if date_to:
-        where_parts.append(f"c.updated_at <= ${idx}::timestamptz")
-        params.append(date_to + "T23:59:59Z")
-        idx += 1
-    if channel:
-        where_parts.append(f"c.channel = ${idx}")
-        params.append(channel)
-        idx += 1
-    if assigned_to:
-        # cm.assigned_agent_id es uuid (FK a profiles.id) — cast explícito necesario
-        # porque asyncpg pasa el query param como text y postgres no infiere uuid=text
-        where_parts.append(f"cm.assigned_agent_id = ${idx}::uuid")
-        params.append(assigned_to)
-        idx += 1
-    if queue:
-        where_parts.append(f"cm.queue = ${idx}")
-        params.append(queue)
-        idx += 1
-    if country:
-        # Filtro especial: "MP" = multi-país (todo país NO primario)
-        if country.upper() == "MP":
-            primary_list = ",".join(f"'{c}'" for c in sorted(PRIMARY_COUNTRIES))
-            where_parts.append(f"upper(coalesce(c.user_profile->>'country', 'AR')) NOT IN ({primary_list})")
-        else:
-            where_parts.append(f"upper(coalesce(c.user_profile->>'country', 'AR')) = upper(${idx})")
-            params.append(country)
-            idx += 1
-    if lifecycle:
-        where_parts.append(f"coalesce(cm.lifecycle_override, cm.lifecycle_auto, 'new') = ${idx}")
-        params.append(lifecycle)
-        idx += 1
-    if search:
-        where_parts.append(
-            f"(c.user_profile->>'name' ilike ${idx} OR c.user_profile->>'email' ilike ${idx} OR lm.content ilike ${idx})"
-        )
-        params.append(f"%{search}%")
-        idx += 1
-
-    # vistas
-    if view == "unread":
-        # "No leídas" = convs con bot_paused=true (humano atendiendo) Y al menos
-        # 1 mensaje role='user' posterior al last_read_at del agente (o sin row
-        # de read_state, o sea nunca abierta). Si el bot IA está atendiendo
-        # solo, no contamos como "no leído" — el bot maneja el flujo.
-        if user and user.get("id"):
-            where_parts.append(
-                f"""(cm.bot_paused = true AND EXISTS (
-                    SELECT 1 FROM public.messages m2
-                    LEFT JOIN public.inbox_read_state rs2
-                        ON rs2.conversation_id = m2.conversation_id
-                        AND rs2.user_id = ${idx}::uuid
-                    WHERE m2.conversation_id = c.id
-                      AND m2.role = 'user'
-                      AND (rs2.last_read_at IS NULL OR m2.created_at > rs2.last_read_at)
-                ))"""
-            )
-            params.append(user["id"])
-            idx += 1
-        else:
-            # Sin user (admin key): no aplicamos filtro real.
-            where_parts.append("FALSE")
-    elif view == "mine":
-        # Mías = conversaciones asignadas al user logueado.
-        # Sin esto el filtro no aplicaba y devolvía todas las convs (bug
-        # histórico: el branch "mine" nunca existió en el backend, solo en
-        # el frontend que lo envía como ?view=mine sin que nada lo procese).
-        if user and user.get("id"):
-            where_parts.append(f"cm.assigned_agent_id = ${idx}::uuid")
-            params.append(user["id"])
-            idx += 1
-        else:
-            # admin/supervisor sin user.id (caller con admin_key) → sin convs propias.
-            # Mejor devolver vacío que mostrar todas como bug.
-            where_parts.append("FALSE")
-    elif view == "queue":
-        where_parts.append("cm.assigned_agent_id is null AND cm.needs_human = true")
-    elif view == "human-attn":
-        where_parts.append("(cm.bot_paused = true OR cm.assigned_agent_id is not null)")
-    elif view == "with-bot":
-        where_parts.append("(cm.bot_paused = false AND coalesce(cm.needs_human,false) = false)")
-    elif view == "resolved":
-        where_parts.append("cm.status = 'resolved'")
-    elif view in (None, "all"):
-        # default: ocultar resueltas
-        where_parts.append("(cm.status is null OR cm.status != 'resolved')")
-
-    where = ("WHERE " + " AND ".join(where_parts)) if where_parts else ""
-
+    limit_idx = len(params) + 1
+    offset_idx = len(params) + 2
     params.append(limit)
-    idx += 1
     params.append(offset)
 
     sql = f"""
@@ -1037,8 +1046,8 @@ async def list_conversations(
             SELECT count(*)::int AS cnt FROM public.messages WHERE conversation_id = c.id
         ) mc ON true
         {where}
-        ORDER BY c.updated_at DESC
-        LIMIT ${idx - 1} OFFSET ${idx}
+        ORDER BY c.updated_at DESC, c.id
+        LIMIT ${limit_idx} OFFSET ${offset_idx}
     """
 
     async with pool.acquire() as conn:
