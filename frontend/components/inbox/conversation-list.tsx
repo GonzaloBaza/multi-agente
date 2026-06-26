@@ -1,6 +1,6 @@
 "use client";
 
-import { Search, Filter, RefreshCw, Bot, MessageSquare, Smartphone, X, Inbox as InboxIcon, Mail, UserCheck, Hourglass, User, CheckCircle2 } from "lucide-react";
+import { Search, Filter, RefreshCw, Download, Bot, MessageSquare, Smartphone, X, Inbox as InboxIcon, Mail, UserCheck, Hourglass, User, CheckCircle2 } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -19,7 +19,7 @@ import {
   QUEUE_COLOR,
 } from "@/lib/mock-data";
 import { useAgents } from "@/lib/api/inbox";
-import { useRole } from "@/lib/auth";
+import { useRole, RoleGate } from "@/lib/auth";
 
 interface Props {
   items: ConversationListItem[];
@@ -53,6 +53,19 @@ interface Props {
 
   search: string;
   onSearchChange: (s: string) => void;
+
+  dateFrom: string;
+  onDateFromChange: (v: string) => void;
+  dateTo: string;
+  onDateToChange: (v: string) => void;
+
+  /** Export CSV (solo supervisor+ lo ve) */
+  onExportCsv: () => void;
+
+  /** Paginación incremental */
+  hasMore: boolean;
+  loadingMore: boolean;
+  onLoadMore: () => void;
 
   counts: {
     total: number;
@@ -120,6 +133,14 @@ export function ConversationList({
   queueStats,
   search,
   onSearchChange,
+  dateFrom,
+  onDateFromChange,
+  dateTo,
+  onDateToChange,
+  onExportCsv,
+  hasMore,
+  loadingMore,
+  onLoadMore,
   counts,
 }: Props) {
   // Bulk actions solo para supervisor+. Para un agente común ocultamos los
@@ -392,6 +413,34 @@ export function ConversationList({
                     </div>
                   </CollapsibleSection>
 
+                  {/* === FECHAS — collapsible === */}
+                  <CollapsibleSection
+                    title="Fechas"
+                    defaultOpen={false}
+                    rightAccessory={(dateFrom || dateTo) ? <span className="text-[9px] text-accent">{dateFrom || "…"} → {dateTo || "…"}</span> : null}
+                  >
+                    <div className="flex flex-col gap-2 px-9 py-1.5">
+                      <label className="text-xs text-fg-muted">
+                        Desde
+                        <input
+                          type="date"
+                          value={dateFrom}
+                          onChange={(e) => onDateFromChange(e.target.value)}
+                          className="mt-1 w-full rounded border border-border bg-bg px-2 py-1 text-sm"
+                        />
+                      </label>
+                      <label className="text-xs text-fg-muted">
+                        Hasta
+                        <input
+                          type="date"
+                          value={dateTo}
+                          onChange={(e) => onDateToChange(e.target.value)}
+                          className="mt-1 w-full rounded border border-border bg-bg px-2 py-1 text-sm"
+                        />
+                      </label>
+                    </div>
+                  </CollapsibleSection>
+
                   <DropdownSeparator />
                   <DropdownItem onClick={() => { onViewChange("all"); onLifecycleChange(null); onChannelChange(null); onQueueChange(null); onCountryChange(null); close(); }} variant="danger">
                     <X className="w-3 h-3" /> Limpiar todos los filtros
@@ -402,6 +451,16 @@ export function ConversationList({
             <Button variant="ghost" size="icon-sm" title="Refrescar">
               <RefreshCw className="w-3.5 h-3.5" />
             </Button>
+            <RoleGate min="supervisor">
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                title="Descargar CSV (conversaciones filtradas)"
+                onClick={onExportCsv}
+              >
+                <Download className="w-3.5 h-3.5" />
+              </Button>
+            </RoleGate>
           </div>
         </div>
 
@@ -551,6 +610,15 @@ export function ConversationList({
               </div>
             );
           })
+        )}
+        {hasMore && (
+          <button
+            onClick={onLoadMore}
+            disabled={loadingMore}
+            className="w-full py-3 text-sm text-fg-muted hover:text-fg disabled:opacity-50"
+          >
+            {loadingMore ? "Cargando…" : "Cargar más"}
+          </button>
         )}
       </div>
     </div>

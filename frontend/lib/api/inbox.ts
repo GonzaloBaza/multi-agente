@@ -1,7 +1,7 @@
 /**
  * Cliente del backend /api/inbox/* — todas las queries y mutations del inbox.
  */
-import { useMutation, useQuery, useQueryClient, type QueryKey } from "@tanstack/react-query";
+import { useMutation, useQuery, useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import type {
   ConversationListItem,
@@ -215,32 +215,45 @@ export type ConversationsParams = {
   queue?: Queue | null;
   country?: string | null;
   search?: string;
+  dateFrom?: string | null;
+  dateTo?: string | null;
   limit?: number;
 };
 
 export function useConversations(params: ConversationsParams) {
-  const qs = new URLSearchParams();
-  if (params.view && params.view !== "all") qs.set("view", params.view);
-  if (params.lifecycle) qs.set("lifecycle", params.lifecycle);
-  if (params.channel)   qs.set("channel", params.channel);
-  if (params.queue)     qs.set("queue", params.queue);
-  if (params.country)   qs.set("country", params.country);
-  if (params.search)    qs.set("search", params.search);
-  // 500 cubre el caso real actual (MSK tiene <200 convs activas). Si crecemos
-  // habrá que pasar a paginación con un endpoint /count separado.
-  qs.set("limit", String(params.limit ?? 500));
+  const PAGE = params.limit ?? 500;
 
-  const key: QueryKey = ["inbox", "conversations", Object.fromEntries(qs)];
+  const buildQs = () => {
+    const qs = new URLSearchParams();
+    if (params.view && params.view !== "all") qs.set("view", params.view);
+    if (params.lifecycle) qs.set("lifecycle", params.lifecycle);
+    if (params.channel)   qs.set("channel", params.channel);
+    if (params.queue)     qs.set("queue", params.queue);
+    if (params.country)   qs.set("country", params.country);
+    if (params.search)    qs.set("search", params.search);
+    if (params.dateFrom)  qs.set("date_from", params.dateFrom);
+    if (params.dateTo)    qs.set("date_to", params.dateTo);
+    return qs;
+  };
 
-  return useQuery({
-    queryKey: key,
-    queryFn: async () => {
+  const q = useInfiniteQuery({
+    queryKey: ["inbox", "conversations", Object.fromEntries(buildQs())],
+    initialPageParam: 0,
+    queryFn: async ({ pageParam }) => {
+      const qs = buildQs();
+      qs.set("limit", String(PAGE));
+      qs.set("offset", String(pageParam));
       const data = await api.get<ApiConversation[]>(`/inbox/conversations?${qs}`);
       return data.map(apiToListItem);
     },
+    getNextPageParam: (lastPage, allPages) =>
+      lastPage.length < PAGE ? undefined : allPages.length * PAGE,
     staleTime: 5_000,
-    refetchInterval: 15_000, // polling de 15s para nuevas conversaciones
+    refetchInterval: 15_000,
   });
+
+  const items = (q.data?.pages ?? []).flat();
+  return Object.assign(q, { items });
 }
 
 export function useMessages(conversationId: string | null) {

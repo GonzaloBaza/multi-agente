@@ -99,7 +99,22 @@ function InboxPageInner() {
   const [queue, setQueue] = useState<Queue | null>(null);
   const [country, setCountry] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [dateFrom, setDateFrom] = useState<string>("");
+  const [dateTo, setDateTo] = useState<string>("");
   const [bulkSelected, setBulkSelected] = useState<Set<string>>(new Set());
+
+  const downloadCsv = useCallback(() => {
+    const qs = new URLSearchParams();
+    if (view !== "all") qs.set("view", view);
+    if (lifecycle) qs.set("lifecycle", lifecycle);
+    if (channel)   qs.set("channel", channel);
+    if (queue)     qs.set("queue", queue);
+    if (country)   qs.set("country", country);
+    if (search)    qs.set("search", search);
+    if (dateFrom)  qs.set("date_from", dateFrom);
+    if (dateTo)    qs.set("date_to", dateTo);
+    window.open(`/api/v1/inbox/conversations.csv?${qs.toString()}`, "_blank");
+  }, [view, lifecycle, channel, queue, country, search, dateFrom, dateTo]);
 
   // ── SSE: refetch en tiempo real cuando llegan eventos del backend ────
   useInboxSSE(selectedId || null);
@@ -122,8 +137,11 @@ function InboxPageInner() {
   }, [selectedId, qcMain]);
 
   // ── Queries ────────────────────────────────────────────────────────────
-  const convsQ = useConversations({ view, lifecycle, channel, queue, country, search });
-  const items = convsQ.data ?? [];
+  const convsQ = useConversations({
+    view, lifecycle, channel, queue, country, search,
+    dateFrom: dateFrom || null, dateTo: dateTo || null,
+  });
+  const items = convsQ.items;
   const queueStatsQ = useQueueStats();
 
   // Auto-seleccionar la primera cuando carga
@@ -275,6 +293,14 @@ function InboxPageInner() {
       queueStats={queueStatsQ.data}
       search={search}
       onSearchChange={setSearch}
+      dateFrom={dateFrom}
+      onDateFromChange={setDateFrom}
+      dateTo={dateTo}
+      onDateToChange={setDateTo}
+      onExportCsv={downloadCsv}
+      hasMore={!!convsQ.hasNextPage}
+      loadingMore={convsQ.isFetchingNextPage}
+      onLoadMore={() => convsQ.fetchNextPage()}
       counts={counts}
     />
   );
