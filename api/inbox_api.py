@@ -120,26 +120,43 @@ _AREA_LABEL = {
 }
 
 
+def _csv_safe(v: str) -> str:
+    """Anti CSV/formula injection. Si una celda empieza con un caracter que
+    Excel/Sheets interpretan como fórmula (`= + - @`, tab, CR), le antepone una
+    comilla simple para neutralizarla. Los campos de la fila vienen de datos de
+    usuarios externos (nombre, email, teléfono, último mensaje del
+    widget/WhatsApp) y el CSV lo abre staff en Excel — así que TODO campo string
+    atacable tiene que pasar por acá."""
+    if v and v[:1] in ("=", "+", "-", "@", "\t", "\r"):
+        return "'" + v
+    return v
+
+
 def conversation_csv_row(c: dict, agent_name: str = "") -> list[str]:
     """Mapea una conversación normalizada (dict) a una fila CSV alineada con
-    CSV_HEADER. Pura — el endpoint arma el dict desde la fila de Postgres."""
+    CSV_HEADER. Pura — el endpoint arma el dict desde la fila de Postgres.
+
+    ⚠️ Todo campo string pasa por `_csv_safe` (anti formula injection) porque el
+    CSV lo abre staff en Excel y varios campos vienen de usuarios externos. Si
+    agregás una columna nueva a CSV_HEADER, envolvé su valor en `_csv_safe`."""
+    last_message = (c.get("last_message") or "").replace("\n", " ").replace("\r", " ").strip()
     return [
-        c["id"],
-        c.get("created") or "",
-        c.get("last_activity") or "",
-        c.get("channel") or "",
-        c.get("name") or "",
-        c.get("email") or "",
-        c.get("phone") or "",
-        c.get("country") or "",
-        _AREA_LABEL.get(c.get("queue") or "sales", c.get("queue") or ""),
-        c.get("lifecycle") or "",
-        c.get("status") or "",
-        agent_name or "",
+        _csv_safe(c["id"]),
+        _csv_safe(c.get("created") or ""),
+        _csv_safe(c.get("last_activity") or ""),
+        _csv_safe(c.get("channel") or ""),
+        _csv_safe(c.get("name") or ""),
+        _csv_safe(c.get("email") or ""),
+        _csv_safe(c.get("phone") or ""),
+        _csv_safe(c.get("country") or ""),
+        _csv_safe(_AREA_LABEL.get(c.get("queue") or "sales", c.get("queue") or "")),
+        _csv_safe(c.get("lifecycle") or ""),
+        _csv_safe(c.get("status") or ""),
+        _csv_safe(agent_name or ""),
         "Sí" if c.get("needs_human") else "No",
         "Sí" if c.get("bot_paused") else "No",
         str(c.get("message_count") or 0),
-        (c.get("last_message") or "").replace("\n", " ").replace("\r", " ").strip(),
+        _csv_safe(last_message),
     ]
 
 

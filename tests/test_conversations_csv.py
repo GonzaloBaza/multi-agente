@@ -60,3 +60,20 @@ def test_last_message_newlines_flattened():
 def test_message_count_is_string():
     row = conversation_csv_row(_sample(message_count=7))
     assert row[CSV_HEADER.index("mensajes")] == "7"
+
+
+def test_formula_injection_is_neutralized():
+    # Campos atacables (nombre/último mensaje vienen de usuarios externos): si
+    # empiezan con =, +, -, @, tab o CR se les antepone ' para que Excel no los
+    # ejecute como fórmula.
+    row = conversation_csv_row(
+        _sample(name='=HYPERLINK("http://evil","click")', last_message="@SUM(1+1)")
+    )
+    assert row[CSV_HEADER.index("nombre")] == '\'=HYPERLINK("http://evil","click")'
+    assert row[CSV_HEADER.index("ultimo_mensaje")] == "'@SUM(1+1)"
+
+
+def test_plain_text_is_unchanged():
+    row = conversation_csv_row(_sample(name="Juan Pérez", last_message="hola"))
+    assert row[CSV_HEADER.index("nombre")] == "Juan Pérez"
+    assert row[CSV_HEADER.index("ultimo_mensaje")] == "hola"
