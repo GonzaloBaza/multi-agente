@@ -24,12 +24,15 @@ Endpoints:
 
 from __future__ import annotations
 
+import csv
+import io
 import uuid
 from datetime import datetime
 from typing import Literal
 
 import structlog
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from api.admin import require_role_or_admin, verify_admin_or_session  # admin key + session + role gate
@@ -1163,6 +1166,123 @@ async def list_conversations(
             )
         )
     return out
+
+
+@router.get("/conversations.csv")
+async def export_conversations_csv(
+    view: str | None = None,
+    lifecycle: str | None = None,
+    channel: str | None = None,
+    queue: str | None = None,
+    country: str | None = None,
+    assigned_to: str | None = None,
+    search: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    auth: dict = Depends(require_role_or_admin("admin", "supervisor")),
+):
+    """Exporta a CSV las conversaciones que matchean los mismos filtros del
+    inbox (sin paginar, tope duro de seguridad). Sólo supervisor+ — es bajada
+    masiva de datos de contacto. Respeta el scope por rol vía el mismo helper
+    que el listado."""
+    EXPORT_CAP = 50000
+    pool = await postgres_store.get_pool()
+    user = (auth or {}).get("user") if (auth or {}).get("auth") == "session" else None
+    where, params = _build_conversations_where(
+        user=user, view=view, lifecycle=lifecycle, channel=channel, queue=queue,
+        country=country, assigned_to=assigned_to, search=search,
+        date_from=date_from, date_to=date_to,
+    )
+    cap_idx = len(params) + 1
+    params.append(EXPORT_CAP)
+
+    sql = f"""
+        SELECT
+            c.id, c.channel, c.external_id, c.user_profile, c.updated_at, c.created_at,
+            lm.content    AS last_message,
+            lm.created_at AS last_message_at,
+            mc.cnt        AS message_count,
+            cm.assigned_agent_id,
+            cm.status,
+            cm.queue,
+            cm.bot_paused,
+            cm.needs_human,
+            coalesce(cm.lifecycle_override, cm.lifecycle_auto, 'new') as lifecycle
+        FROM public.conversations c
+        LEFT JOIN public.conversation_meta cm ON cm.conversation_id = c.id
+        LEFT JOIN LATERAL (
+            SELECT content, created_at FROM public.messages
+            WHERE conversation_id = c.id ORDER BY created_at DESC LIMIT 1
+        ) lm ON true
+        LEFT JOIN LATERAL (
+            SELECT count(*)::int AS cnt FROM public.messages WHERE conversation_id = c.id
+        ) mc ON true
+        {where}
+        ORDER BY c.updated_at DESC, c.id
+        LIMIT ${cap_idx}
+    """
+
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(sql, *params)
+        agent_ids = list({str(r["assigned_agent_id"]) for r in rows if r["assigned_agent_id"]})
+        agent_names: dict[str, str] = {}
+        if agent_ids:
+            arows = await conn.fetch(
+                "SELECT id::text AS id, name FROM public.profiles WHERE id = ANY($1::uuid[])",
+                agent_ids,
+            )
+            agent_names = {a["id"]: (a["name"] or "") for a in arows}
+
+    if len(rows) >= EXPORT_CAP:
+        logger.warning("csv_export_truncated", cap=EXPORT_CAP, where=where)
+
+    def _normalize(r) -> dict:
+        profile = r["user_profile"] or {}
+        if isinstance(profile, str):
+            import json as _json
+            try:
+                profile = _json.loads(profile)
+            except Exception:
+                profile = {}
+        phone = profile.get("phone") or (r["external_id"] if r["channel"] == "whatsapp" else "") or ""
+        last_act = r["last_message_at"] or r["updated_at"]
+        return {
+            "id": str(r["id"]),
+            "created": r["created_at"].isoformat() if r["created_at"] else "",
+            "last_activity": last_act.isoformat() if last_act else "",
+            "channel": r["channel"],
+            "name": profile.get("name") or "",
+            "email": profile.get("email") or "",
+            "phone": phone,
+            "country": _infer_country_from_phone(phone) or profile.get("country") or "AR",
+            "queue": r["queue"] or "sales",
+            "lifecycle": r["lifecycle"] or "new",
+            "status": r["status"] or "open",
+            "assigned_agent_id": str(r["assigned_agent_id"]) if r["assigned_agent_id"] else "",
+            "needs_human": bool(r["needs_human"]),
+            "bot_paused": bool(r["bot_paused"]),
+            "message_count": r["message_count"] or 0,
+            "last_message": r["last_message"] or "",
+        }
+
+    def _iter():
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow(CSV_HEADER)
+        yield "\ufeff" + buf.getvalue()  # BOM para que Excel respete acentos
+        buf.seek(0); buf.truncate(0)
+        for r in rows:
+            c = _normalize(r)
+            writer.writerow(conversation_csv_row(c, agent_names.get(c["assigned_agent_id"], "")))
+            yield buf.getvalue()
+            buf.seek(0); buf.truncate(0)
+
+    filename = f"conversaciones_{datetime.utcnow().date().isoformat()}.csv"
+    return StreamingResponse(
+        _iter(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.post("/conversations/{conv_id}/read")
