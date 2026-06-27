@@ -109,7 +109,7 @@ class MessageOut(BaseModel):
 CSV_HEADER = [
     "id", "creada", "ultima_actividad", "canal", "nombre", "email", "telefono",
     "pais", "area", "lifecycle", "estado", "asignada_a", "needs_human",
-    "bot_paused", "mensajes", "ultimo_mensaje",
+    "bot_paused", "mensajes", "ultimo_mensaje", "conversacion",
 ]
 
 _AREA_LABEL = {
@@ -118,6 +118,38 @@ _AREA_LABEL = {
     "post-sales": "Post-venta",
     "support": "Soporte",
 }
+
+
+def _who_label(role: str, metadata: dict | None) -> str:
+    """Quién emitió el mensaje, para la transcripción del CSV.
+    `user` → Cliente; `assistant` con agente humano → Asesor; resto → Bot."""
+    if role == "user":
+        return "Cliente"
+    if role == "assistant":
+        agent = (metadata or {}).get("agent")
+        if agent and agent != "bot":
+            return "Asesor" if agent == "humano" else f"Asesor ({agent})"
+        return "Bot"
+    return role
+
+
+def conversation_transcript(messages: list[dict]) -> str:
+    """Arma la transcripción completa de una conversación (un mensaje por línea)
+    para la columna `conversacion` del CSV. `messages` ordenados por created_at;
+    cada uno con role/content/metadata/created_at (created_at datetime, str ISO o
+    None). Se omiten mensajes `system`/`tool`."""
+    lines: list[str] = []
+    for m in messages:
+        role = m.get("role") or ""
+        if role in ("system", "tool"):
+            continue
+        who = _who_label(role, m.get("metadata"))
+        ts = m.get("created_at")
+        ts_str = ts.strftime("%Y-%m-%d %H:%M") if hasattr(ts, "strftime") else (str(ts)[:16] if ts else "")
+        content = (m.get("content") or "").replace("\r", " ").strip()
+        prefix = f"[{ts_str}] " if ts_str else ""
+        lines.append(f"{prefix}{who}: {content}")
+    return "\n".join(lines)
 
 
 def _csv_safe(v: str) -> str:
@@ -157,6 +189,7 @@ def conversation_csv_row(c: dict, agent_name: str = "") -> list[str]:
         "Sí" if c.get("bot_paused") else "No",
         str(c.get("message_count") or 0),
         _csv_safe(last_message),
+        _csv_safe(c.get("conversacion") or ""),
     ]
 
 
@@ -1250,8 +1283,40 @@ async def export_conversations_csv(
             )
             agent_names = {a["id"]: (a["name"] or "") for a in arows}
 
+        # Transcripción completa: traemos TODOS los mensajes de las convs del
+        # resultado en una sola query (sin N+1) y los agrupamos por conversación.
+        conv_ids = [r["id"] for r in rows]
+        msg_rows = []
+        if conv_ids:
+            msg_rows = await conn.fetch(
+                """SELECT conversation_id, role, content, metadata, created_at
+                   FROM public.messages
+                   WHERE conversation_id = ANY($1::uuid[])
+                   ORDER BY conversation_id, created_at""",
+                conv_ids,
+            )
+
     if len(rows) >= EXPORT_CAP:
         logger.warning("csv_export_truncated", cap=EXPORT_CAP, where=where)
+
+    from collections import defaultdict
+
+    _grouped: dict[str, list] = defaultdict(list)
+    for m in msg_rows:
+        md = m["metadata"]
+        if isinstance(md, str):
+            import json as _json
+            try:
+                md = _json.loads(md)
+            except Exception:
+                md = {}
+        _grouped[str(m["conversation_id"])].append({
+            "role": m["role"],
+            "content": m["content"],
+            "metadata": md,
+            "created_at": m["created_at"],
+        })
+    transcripts = {cid: conversation_transcript(msgs) for cid, msgs in _grouped.items()}
 
     def _normalize(r) -> dict:
         profile = r["user_profile"] or {}
@@ -1280,6 +1345,7 @@ async def export_conversations_csv(
             "bot_paused": bool(r["bot_paused"]),
             "message_count": r["message_count"] or 0,
             "last_message": r["last_message"] or "",
+            "conversacion": transcripts.get(str(r["id"]), ""),
         }
 
     def _iter():

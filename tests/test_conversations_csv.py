@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from api.inbox_api import CSV_HEADER, conversation_csv_row
+from api.inbox_api import CSV_HEADER, conversation_csv_row, conversation_transcript
 
 
 def _sample(**kw):
@@ -31,7 +31,8 @@ def test_header_has_expected_columns():
     assert CSV_HEADER[0] == "id"
     assert "area" in CSV_HEADER
     assert "ultimo_mensaje" in CSV_HEADER
-    assert len(CSV_HEADER) == 16
+    assert "conversacion" in CSV_HEADER
+    assert len(CSV_HEADER) == 17
 
 
 def test_row_length_matches_header():
@@ -77,3 +78,28 @@ def test_plain_text_is_unchanged():
     row = conversation_csv_row(_sample(name="Juan Pérez", last_message="hola"))
     assert row[CSV_HEADER.index("nombre")] == "Juan Pérez"
     assert row[CSV_HEADER.index("ultimo_mensaje")] == "hola"
+
+
+def test_row_includes_full_conversation():
+    row = conversation_csv_row(_sample(conversacion="Cliente: hola\nBot: buenas"))
+    assert row[CSV_HEADER.index("conversacion")] == "Cliente: hola\nBot: buenas"
+
+
+def test_transcript_formats_who_and_skips_system():
+    msgs = [
+        {"role": "user", "content": "hola", "metadata": None, "created_at": None},
+        {"role": "assistant", "content": "buenas", "metadata": {"agent": "bot"}, "created_at": None},
+        {"role": "assistant", "content": "te ayudo yo", "metadata": {"agent": "humano"}, "created_at": None},
+        {"role": "system", "content": "ignorame", "metadata": None, "created_at": None},
+    ]
+    t = conversation_transcript(msgs)
+    assert "Cliente: hola" in t
+    assert "Bot: buenas" in t
+    assert "Asesor: te ayudo yo" in t
+    assert "ignorame" not in t          # system se omite
+    assert t.count("\n") == 2           # 3 líneas (user, bot, asesor)
+
+
+def test_transcript_named_agent():
+    msgs = [{"role": "assistant", "content": "hola", "metadata": {"agent": "Vanessa"}, "created_at": None}]
+    assert conversation_transcript(msgs) == "Asesor (Vanessa): hola"
