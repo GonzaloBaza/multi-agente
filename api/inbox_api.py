@@ -121,14 +121,15 @@ _AREA_LABEL = {
 
 
 def _who_label(role: str, metadata: dict | None) -> str:
-    """Quién emitió el mensaje, para la transcripción del CSV.
-    `user` → Cliente; `assistant` con agente humano → Asesor; resto → Bot."""
+    """Quién emitió el mensaje, para la transcripción del CSV. `user` → Cliente;
+    `assistant` con `metadata.agent == 'humano'` → Asesor (lo atendió una persona);
+    cualquier otro assistant (bienvenida/ventas/closer/etc., que son agentes IA) →
+    Bot. El marcador 'humano' es el mismo que usa analytics para detectar takeover."""
     if role == "user":
         return "Cliente"
     if role == "assistant":
-        agent = (metadata or {}).get("agent")
-        if agent and agent != "bot":
-            return "Asesor" if agent == "humano" else f"Asesor ({agent})"
+        if (metadata or {}).get("agent") == "humano":
+            return "Asesor"
         return "Bot"
     return role
 
@@ -1446,6 +1447,9 @@ async def get_messages(conv_id: str):
                 "role": r["role"],
                 "content": r["content"],
                 "agent": meta.get("agent") or meta.get("sender_name"),
+                # Nombre real de quien envió (asesor humano). El front lo muestra
+                # en mensajes humanos; cambia por mensaje si responde otro asesor.
+                "sender_name": meta.get("sender_name"),
                 "attachments": meta.get("attachments") or [],
                 "at": r["created_at"].isoformat(),
             }

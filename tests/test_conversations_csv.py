@@ -100,6 +100,8 @@ def test_transcript_formats_who_and_skips_system():
     assert t.count("\n") == 2           # 3 líneas (user, bot, asesor)
 
 
-def test_transcript_named_agent():
-    msgs = [{"role": "assistant", "content": "hola", "metadata": {"agent": "Vanessa"}, "created_at": None}]
-    assert conversation_transcript(msgs) == "Asesor (Vanessa): hola"
+def test_transcript_bot_agents_are_bot_not_asesor():
+    # metadata.agent del bot trae el nombre del agente IA (ventas/bienvenida/...),
+    # NO "humano" → debe etiquetarse Bot, no Asesor. Solo 'humano' es Asesor.
+    msgs = [{"role": "assistant", "content": "hola", "metadata": {"agent": "ventas"}, "created_at": None}]
+    assert conversation_transcript(msgs) == "Bot: hola"
