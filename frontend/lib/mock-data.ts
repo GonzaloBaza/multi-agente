@@ -80,6 +80,8 @@ export type ConversationListItem = {
   needsHuman: boolean;
   /** true si el bot está pausado en esta conversación */
   botPaused: boolean;
+  /** true si el bot/asesor mandó un link de pago (msklatam.com/checkout) */
+  checkoutSent?: boolean;
   /** estado de la conversación (abierta/pendiente/resuelta) */
   status: ConvStatus;
   /** lista de tags aplicados a la conversación (no al contacto) */

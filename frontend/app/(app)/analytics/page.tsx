@@ -55,6 +55,8 @@ type Analytics = {
     open_now: number;
     needs_human_now: number;
     stale_now: number;
+    checkout_sent: number;
+    checkout_conversion_pct: number;
   };
   sla: {
     answered_human: number;
@@ -142,12 +144,18 @@ export default function AnalyticsPage() {
           <h2 className="text-[10px] uppercase tracking-wider text-fg-muted mb-2">
             Volumen del período
           </h2>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
             <KPI icon={<MessageSquare className="w-4 h-4 text-accent" />} label="Conversaciones" value={d.totals.conversations} />
             <KPI icon={<Users className="w-4 h-4 text-info" />} label="Mensajes" value={d.totals.messages} />
             <KPI icon={<TrendingUp className="w-4 h-4 text-warn" />} label="Activas hoy" value={d.totals.active_today} />
             <KPI icon={<CheckCircle2 className="w-4 h-4 text-success" />} label="Resueltas" value={d.totals.resolved} />
             <KPI icon={<Flame className="w-4 h-4 text-danger" />} label="Hot leads" value={d.totals.hot_leads} />
+            <KPI
+              icon={<span className="text-sm leading-none">💳</span>}
+              label="Checkout enviados"
+              value={d.totals.checkout_sent}
+              sublabel={`${d.totals.checkout_conversion_pct}% se hicieron clientes`}
+            />
           </div>
         </section>
 

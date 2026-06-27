@@ -54,6 +54,10 @@ interface Props {
   assignedTo: string | null;
   onAssignedToChange: (id: string | null) => void;
 
+  /** filtro "Checkout enviado": true=sí, false=no, null=todos */
+  checkoutSent: boolean | null;
+  onCheckoutSentChange: (v: boolean | null) => void;
+
   /** stats real backend: { sales: { AR: 12, MX: 3 }, billing: {...} } */
   queueStats?: Record<string, Record<string, number>>;
 
@@ -138,6 +142,8 @@ export function ConversationList({
   onCountryChange,
   assignedTo,
   onAssignedToChange,
+  checkoutSent,
+  onCheckoutSentChange,
   queueStats,
   search,
   onSearchChange,
@@ -422,6 +428,32 @@ export function ConversationList({
                     })}
                   </CollapsibleSection>
 
+                  {/* === CHECKOUT ENVIADO — collapsible === */}
+                  <CollapsibleSection
+                    title="Checkout enviado"
+                    defaultOpen={false}
+                    rightAccessory={
+                      checkoutSent === true ? <span className="text-[9px] text-accent">Sí</span>
+                      : checkoutSent === false ? <span className="text-[9px] text-accent">No</span>
+                      : null
+                    }
+                  >
+                    <button
+                      onClick={() => { onCheckoutSentChange(checkoutSent === true ? null : true); close(); }}
+                      className={cn("w-full px-9 py-1 text-[11px] flex items-center gap-2 hover:bg-hover", checkoutSent === true && "bg-accent/10 text-accent")}
+                    >
+                      <span className="flex-1 text-left">Con link de pago enviado</span>
+                      {checkoutSent === true && <Check className="w-3 h-3 shrink-0" />}
+                    </button>
+                    <button
+                      onClick={() => { onCheckoutSentChange(checkoutSent === false ? null : false); close(); }}
+                      className={cn("w-full px-9 py-1 text-[11px] flex items-center gap-2 hover:bg-hover", checkoutSent === false && "bg-accent/10 text-accent")}
+                    >
+                      <span className="flex-1 text-left">Sin link de pago</span>
+                      {checkoutSent === false && <Check className="w-3 h-3 shrink-0" />}
+                    </button>
+                  </CollapsibleSection>
+
                   {/* === FECHAS — calendario de rango inline === */}
                   <CollapsibleSection
                     title="Fechas"
@@ -436,7 +468,7 @@ export function ConversationList({
                   </CollapsibleSection>
 
                   <DropdownSeparator />
-                  <DropdownItem onClick={() => { onViewChange("all"); onLifecycleChange(null); onChannelChange(null); onQueueChange(null); onCountryChange(null); onAssignedToChange(null); onDateFromChange(""); onDateToChange(""); close(); }} variant="danger">
+                  <DropdownItem onClick={() => { onViewChange("all"); onLifecycleChange(null); onChannelChange(null); onQueueChange(null); onCountryChange(null); onAssignedToChange(null); onCheckoutSentChange(null); onDateFromChange(""); onDateToChange(""); close(); }} variant="danger">
                     <X className="w-3 h-3" /> Limpiar todos los filtros
                   </DropdownItem>
                 </>
@@ -596,6 +628,14 @@ export function ConversationList({
                         <Badge variant="success">
                           <CheckCircle2 className="w-2.5 h-2.5" /> Resuelta
                         </Badge>
+                      )}
+                      {item.checkoutSent && (
+                        <span
+                          className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-accent/15 text-accent"
+                          title="El bot/asesor envió el link de pago (checkout)"
+                        >
+                          💳 Checkout
+                        </span>
                       )}
                     </div>
                   </div>

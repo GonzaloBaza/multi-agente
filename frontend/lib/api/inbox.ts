@@ -38,6 +38,7 @@ export type ApiConversation = {
   bot_paused: boolean;
   needs_human: boolean;
   tags: string[];
+  checkout_sent?: boolean;
   unread: boolean;
   unread_count: number;
   // Presencia online del visitante (solo widget — WhatsApp no aplica).
@@ -138,6 +139,7 @@ export function apiToListItem(c: ApiConversation): ConversationListItem {
     assignedTo: c.assigned_agent_id,
     needsHuman: c.needs_human,
     botPaused: c.bot_paused,
+    checkoutSent: c.checkout_sent ?? false,
     status: c.status,
     tags: c.tags,
     queue: c.queue,
@@ -219,6 +221,8 @@ export type ConversationsParams = {
   dateTo?: string | null;
   /** uuid del agente asignado (filtro "Asignado a") */
   assignedTo?: string | null;
+  /** filtro "Checkout enviado": true=sí, false=no, null/undefined=todos */
+  checkoutSent?: boolean | null;
   limit?: number;
 };
 
@@ -236,6 +240,7 @@ export function useConversations(params: ConversationsParams) {
     if (params.dateFrom)  qs.set("date_from", params.dateFrom);
     if (params.dateTo)    qs.set("date_to", params.dateTo);
     if (params.assignedTo) qs.set("assigned_to", params.assignedTo);
+    if (params.checkoutSent != null) qs.set("checkout_sent", String(params.checkoutSent));
     return qs;
   };
 

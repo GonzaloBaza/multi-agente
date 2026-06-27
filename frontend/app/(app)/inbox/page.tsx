@@ -102,6 +102,7 @@ function InboxPageInner() {
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
   const [assignedTo, setAssignedTo] = useState<string | null>(null);
+  const [checkoutSent, setCheckoutSent] = useState<boolean | null>(null);
   const [bulkSelected, setBulkSelected] = useState<Set<string>>(new Set());
 
   const downloadCsv = useCallback(() => {
@@ -115,8 +116,9 @@ function InboxPageInner() {
     if (dateFrom)  qs.set("date_from", dateFrom);
     if (dateTo)    qs.set("date_to", dateTo);
     if (assignedTo) qs.set("assigned_to", assignedTo);
+    if (checkoutSent != null) qs.set("checkout_sent", String(checkoutSent));
     window.open(`/api/v1/inbox/conversations.csv?${qs.toString()}`, "_blank");
-  }, [view, lifecycle, channel, queue, country, search, dateFrom, dateTo, assignedTo]);
+  }, [view, lifecycle, channel, queue, country, search, dateFrom, dateTo, assignedTo, checkoutSent]);
 
   // ── SSE: refetch en tiempo real cuando llegan eventos del backend ────
   useInboxSSE(selectedId || null);
@@ -141,7 +143,7 @@ function InboxPageInner() {
   // ── Queries ────────────────────────────────────────────────────────────
   const convsQ = useConversations({
     view, lifecycle, channel, queue, country, search,
-    dateFrom: dateFrom || null, dateTo: dateTo || null, assignedTo,
+    dateFrom: dateFrom || null, dateTo: dateTo || null, assignedTo, checkoutSent,
   });
   const items = convsQ.items;
   const queueStatsQ = useQueueStats();
@@ -294,6 +296,8 @@ function InboxPageInner() {
       onCountryChange={setCountry}
       assignedTo={assignedTo}
       onAssignedToChange={setAssignedTo}
+      checkoutSent={checkoutSent}
+      onCheckoutSentChange={setCheckoutSent}
       queueStats={queueStatsQ.data}
       search={search}
       onSearchChange={setSearch}
