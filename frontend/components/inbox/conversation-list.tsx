@@ -223,7 +223,7 @@ export function ConversationList({
                   <Filter className="w-3.5 h-3.5" />
                 </Button>
               }
-              className="w-72"
+              className="w-72 max-w-[calc(100vw-4rem)] max-h-[75vh] overflow-y-auto overflow-x-hidden"
             >
               {(close) => (
                 <>
@@ -419,23 +419,23 @@ export function ConversationList({
                     defaultOpen={false}
                     rightAccessory={(dateFrom || dateTo) ? <span className="text-[9px] text-accent">{dateFrom || "…"} → {dateTo || "…"}</span> : null}
                   >
-                    <div className="flex flex-col gap-2 px-9 py-1.5">
-                      <label className="text-xs text-fg-muted">
+                    <div className="flex flex-col gap-2 px-3 py-1.5 min-w-0">
+                      <label className="text-xs text-fg-muted flex flex-col">
                         Desde
                         <input
                           type="date"
                           value={dateFrom}
                           onChange={(e) => onDateFromChange(e.target.value)}
-                          className="mt-1 w-full rounded border border-border bg-bg px-2 py-1 text-sm"
+                          className="mt-1 w-full min-w-0 box-border rounded border border-border bg-bg px-2 py-1 text-sm"
                         />
                       </label>
-                      <label className="text-xs text-fg-muted">
+                      <label className="text-xs text-fg-muted flex flex-col">
                         Hasta
                         <input
                           type="date"
                           value={dateTo}
                           onChange={(e) => onDateToChange(e.target.value)}
-                          className="mt-1 w-full rounded border border-border bg-bg px-2 py-1 text-sm"
+                          className="mt-1 w-full min-w-0 box-border rounded border border-border bg-bg px-2 py-1 text-sm"
                         />
                       </label>
                     </div>
