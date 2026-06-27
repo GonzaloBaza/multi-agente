@@ -88,6 +88,8 @@ class ConversationOut(BaseModel):
     bot_paused: bool = False
     needs_human: bool = False
     tags: list[str] = []
+    # true si el bot/asesor mandó un link de pago (msklatam.com/checkout) en la conv
+    checkout_sent: bool = False
     unread: bool = False  # true si unread_count > 0
     unread_count: int = 0  # cantidad de mensajes user no leídos por este agente
     # Presencia online del visitante (solo widget — WhatsApp no aplica).
@@ -109,7 +111,7 @@ class MessageOut(BaseModel):
 CSV_HEADER = [
     "id", "creada", "ultima_actividad", "canal", "nombre", "email", "telefono",
     "pais", "area", "lifecycle", "estado", "asignada_a", "needs_human",
-    "bot_paused", "mensajes", "ultimo_mensaje", "conversacion",
+    "bot_paused", "checkout_enviado", "mensajes", "ultimo_mensaje", "conversacion",
 ]
 
 _AREA_LABEL = {
@@ -188,6 +190,7 @@ def conversation_csv_row(c: dict, agent_name: str = "") -> list[str]:
         _csv_safe(agent_name or ""),
         "Sí" if c.get("needs_human") else "No",
         "Sí" if c.get("bot_paused") else "No",
+        "Sí" if c.get("checkout_sent") else "No",
         str(c.get("message_count") or 0),
         _csv_safe(last_message),
         _csv_safe(c.get("conversacion") or ""),
@@ -561,6 +564,28 @@ async def analytics(days: int = 30):
             group by 1
             """
         )
+        # Checkout enviados en la ventana + conversión. "Convertido" se aproxima
+        # por lifecycle 'customer' (señal SQL; el label IA 'convertido' vive en
+        # Redis y no se cruza acá).
+        checkout_row = await conn.fetchrow(
+            f"""
+            select
+              count(*) filter (where {_CHECKOUT_SENT_SQL})::int as sent,
+              count(*) filter (
+                where {_CHECKOUT_SENT_SQL}
+                  and coalesce(cm.lifecycle_override, cm.lifecycle_auto, 'new') = 'customer'
+              )::int as converted
+            from public.conversations c
+            left join public.conversation_meta cm on cm.conversation_id = c.id
+            where c.created_at > now() - interval '{d} days'
+            """
+        )
+        checkout_sent_count = (checkout_row["sent"] if checkout_row else 0) or 0
+        checkout_converted = (checkout_row["converted"] if checkout_row else 0) or 0
+        checkout_conversion_pct = (
+            round(100.0 * checkout_converted / checkout_sent_count, 1)
+            if checkout_sent_count else 0.0
+        )
 
     return {
         "totals": {
@@ -572,6 +597,8 @@ async def analytics(days: int = 30):
             "open_now": open_convs_now or 0,
             "needs_human_now": needs_human_now or 0,
             "stale_now": stale_now or 0,
+            "checkout_sent": checkout_sent_count,
+            "checkout_conversion_pct": checkout_conversion_pct,
         },
         "sla": {
             "answered_human": answered_human,
@@ -953,6 +980,16 @@ async def queue_stats():
     return out
 
 
+# Detección de "checkout enviado": existe algún mensaje del bot/asesor en la conv
+# con un link de pago. Por contenido (exacto, sin depender del clasificador).
+# Reusado en _build_conversations_where (filtro), list_conversations y el export
+# (columna calculada). Referencia c.id del query externo.
+_CHECKOUT_SENT_SQL = (
+    "EXISTS (SELECT 1 FROM public.messages mco WHERE mco.conversation_id = c.id "
+    "AND mco.role = 'assistant' AND mco.content ILIKE '%msklatam.com/checkout%')"
+)
+
+
 def _build_conversations_where(
     *,
     user: dict | None,
@@ -965,6 +1002,7 @@ def _build_conversations_where(
     search: str | None,
     date_from: str | None,
     date_to: str | None,
+    checkout_sent: bool | None = None,
 ) -> tuple[str, list]:
     """Arma el WHERE (scope por rol + filtros + vista) del listado de
     conversaciones. Devuelve (where_clause, params): where_clause incluye el
@@ -1049,6 +1087,8 @@ def _build_conversations_where(
         )
         params.append(f"%{search}%")
         idx += 1
+    if checkout_sent is not None:
+        where_parts.append(_CHECKOUT_SENT_SQL if checkout_sent else f"NOT {_CHECKOUT_SENT_SQL}")
 
     if view == "unread":
         if user and user.get("id"):
@@ -1102,6 +1142,7 @@ async def list_conversations(
     search: str | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    checkout_sent: bool | None = None,
     auth: dict = Depends(verify_admin_or_session),
 ):
     """Lista de conversaciones con todos los filtros del inbox.
@@ -1118,7 +1159,7 @@ async def list_conversations(
     where, params = _build_conversations_where(
         user=user, view=view, lifecycle=lifecycle, channel=channel, queue=queue,
         country=country, assigned_to=assigned_to, search=search,
-        date_from=date_from, date_to=date_to,
+        date_from=date_from, date_to=date_to, checkout_sent=checkout_sent,
     )
 
     limit_idx = len(params) + 1
@@ -1139,7 +1180,8 @@ async def list_conversations(
             cm.needs_human,
             cm.tags,
             coalesce(cm.lifecycle_override, cm.lifecycle_auto, 'new') as lifecycle,
-            (cm.lifecycle_override is not null) as lifecycle_is_manual
+            (cm.lifecycle_override is not null) as lifecycle_is_manual,
+            {_CHECKOUT_SENT_SQL} as checkout_sent
         FROM public.conversations c
         LEFT JOIN public.conversation_meta cm ON cm.conversation_id = c.id
         LEFT JOIN LATERAL (
@@ -1222,6 +1264,7 @@ async def list_conversations(
                 bot_paused=bool(r["bot_paused"]),
                 needs_human=bool(r["needs_human"]),
                 tags=list(r["tags"] or []),
+                checkout_sent=bool(r["checkout_sent"]),
                 unread_count=unread_map.get(str(r["id"]), 0),
                 unread=unread_map.get(str(r["id"]), 0) > 0,
                 online=(
@@ -1244,6 +1287,7 @@ async def export_conversations_csv(
     search: str | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    checkout_sent: bool | None = None,
     auth: dict = Depends(require_role_or_admin("admin", "supervisor")),
 ):
     """Exporta a CSV las conversaciones que matchean los mismos filtros del
@@ -1256,7 +1300,7 @@ async def export_conversations_csv(
     where, params = _build_conversations_where(
         user=user, view=view, lifecycle=lifecycle, channel=channel, queue=queue,
         country=country, assigned_to=assigned_to, search=search,
-        date_from=date_from, date_to=date_to,
+        date_from=date_from, date_to=date_to, checkout_sent=checkout_sent,
     )
     cap_idx = len(params) + 1
     params.append(EXPORT_CAP)
@@ -1272,7 +1316,8 @@ async def export_conversations_csv(
             cm.queue,
             cm.bot_paused,
             cm.needs_human,
-            coalesce(cm.lifecycle_override, cm.lifecycle_auto, 'new') as lifecycle
+            coalesce(cm.lifecycle_override, cm.lifecycle_auto, 'new') as lifecycle,
+            {_CHECKOUT_SENT_SQL} as checkout_sent
         FROM public.conversations c
         LEFT JOIN public.conversation_meta cm ON cm.conversation_id = c.id
         LEFT JOIN LATERAL (
@@ -1360,6 +1405,7 @@ async def export_conversations_csv(
             "bot_paused": bool(r["bot_paused"]),
             "message_count": r["message_count"] or 0,
             "last_message": r["last_message"] or "",
+            "checkout_sent": bool(r["checkout_sent"]),
             "conversacion": transcripts.get(str(r["id"]), ""),
         }
 

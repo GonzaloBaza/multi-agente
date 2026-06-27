@@ -72,3 +72,17 @@ def test_mine_view_without_user_is_false():
     where, params = _call(view="mine", user=None)
     assert "FALSE" in where
     assert params == []
+
+
+def test_checkout_sent_filter():
+    # True → EXISTS (mensaje con link de checkout); False → NOT EXISTS; None → sin filtro.
+    where_yes, p_yes = _call(checkout_sent=True)
+    assert "msklatam.com/checkout" in where_yes
+    assert "NOT EXISTS" not in where_yes
+    assert p_yes == []  # el literal no agrega params
+
+    where_no, _ = _call(checkout_sent=False)
+    assert "NOT EXISTS" in where_no
+
+    where_none, _ = _call(checkout_sent=None)
+    assert "checkout" not in where_none

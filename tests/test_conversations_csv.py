@@ -32,7 +32,8 @@ def test_header_has_expected_columns():
     assert "area" in CSV_HEADER
     assert "ultimo_mensaje" in CSV_HEADER
     assert "conversacion" in CSV_HEADER
-    assert len(CSV_HEADER) == 17
+    assert "checkout_enviado" in CSV_HEADER
+    assert len(CSV_HEADER) == 18
 
 
 def test_row_length_matches_header():
@@ -83,6 +84,11 @@ def test_plain_text_is_unchanged():
 def test_row_includes_full_conversation():
     row = conversation_csv_row(_sample(conversacion="Cliente: hola\nBot: buenas"))
     assert row[CSV_HEADER.index("conversacion")] == "Cliente: hola\nBot: buenas"
+
+
+def test_checkout_column_si_no():
+    assert conversation_csv_row(_sample(checkout_sent=True))[CSV_HEADER.index("checkout_enviado")] == "Sí"
+    assert conversation_csv_row(_sample())[CSV_HEADER.index("checkout_enviado")] == "No"
 
 
 def test_transcript_formats_who_and_skips_system():
