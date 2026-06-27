@@ -52,9 +52,19 @@ class TwilioWhatsAppClient:
                     status=e.response.status_code,
                     body=e.response.text[:300],
                 )
+                from integrations.notifications import notify_send_failure
+
+                await notify_send_failure(
+                    channel="WhatsApp (Twilio)",
+                    destino=to,
+                    error=f"HTTP {e.response.status_code}: {e.response.text[:200]}",
+                )
                 raise
             except Exception as e:
                 logger.error("twilio_send_exception", error=str(e))
+                from integrations.notifications import notify_send_failure
+
+                await notify_send_failure(channel="WhatsApp (Twilio)", destino=to, error=str(e))
                 raise
 
     async def send_chunks(self, to: str, text: str, max_len: int = 1500) -> None:

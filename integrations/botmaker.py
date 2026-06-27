@@ -138,15 +138,23 @@ class BotmakerClient:
             "chatId": chat_id,
             "message": {"type": "TEXT", "text": text},
         }
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(
-                f"{self._base}/message/send",
-                json=payload,
-                headers=await self._headers(),
-                timeout=15,
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(
+                    f"{self._base}/message/send",
+                    json=payload,
+                    headers=await self._headers(),
+                    timeout=15,
+                )
+                resp.raise_for_status()
+            return resp.json()
+        except Exception as e:
+            from integrations.notifications import notify_send_failure
+
+            await notify_send_failure(
+                channel="WhatsApp (Botmaker)", destino=chat_id, error=str(e)
             )
-            resp.raise_for_status()
-        return resp.json()
+            raise
 
     async def send_buttons(self, chat_id: str, text: str, buttons: list[str]) -> dict:
         """Envía mensaje con botones de respuesta rápida."""

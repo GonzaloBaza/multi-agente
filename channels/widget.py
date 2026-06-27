@@ -1487,21 +1487,33 @@ async def process_widget_message(
     # ─────────────────────────────────────────────────────────────────────────
     # AGENTE IA — procesar con el supervisor
     # ─────────────────────────────────────────────────────────────────────────
-    result = await route_message(
-        user_message=message_text,
-        history=history_without_last,
-        country=country,
-        channel="widget",
-        conversation_id=conversation.id,
-        phone=conversation.user_profile.phone or "",
-        email=user_email or "",
-        user_name=user_name or user_signals.get("profile_name", "") or "",
-        page_slug=page_slug or "",
-        has_debt=bool(user_signals.get("has_debt")),
-        is_student=bool(user_signals.get("is_student")),
-        skip_flow=True,  # Drawflow desactivado para widget (usamos widget_flow)
-        forced_agent=forced_agent,
-    )
+    try:
+        result = await route_message(
+            user_message=message_text,
+            history=history_without_last,
+            country=country,
+            channel="widget",
+            conversation_id=conversation.id,
+            phone=conversation.user_profile.phone or "",
+            email=user_email or "",
+            user_name=user_name or user_signals.get("profile_name", "") or "",
+            page_slug=page_slug or "",
+            has_debt=bool(user_signals.get("has_debt")),
+            is_student=bool(user_signals.get("is_student")),
+            skip_flow=True,  # Drawflow desactivado para widget (usamos widget_flow)
+            forced_agent=forced_agent,
+        )
+    except Exception as e:
+        # El bot no pudo generar/enviar respuesta al visitante del widget.
+        from integrations.notifications import notify_send_failure
+
+        await notify_send_failure(
+            channel="Widget",
+            destino=str(conversation.id),
+            conversation_id=str(conversation.id),
+            error=f"El agente falló al generar la respuesta: {e}",
+        )
+        raise
 
     response_text = result["response"]
     # Detectar tags ANTES de strippearlos — necesario para acciones automáticas

@@ -502,8 +502,17 @@ class WhatsAppMetaClient:
     async def _post(self, payload: dict) -> dict:
         from utils.circuit_breaker import meta_breaker
 
+        from integrations.notifications import notify_send_failure
+
+        destino = str(payload.get("to") or "")
         if not meta_breaker.can_execute():
             logger.warning("whatsapp_circuit_open", state=meta_breaker.state.value)
+            await notify_send_failure(
+                channel="WhatsApp (Meta)",
+                destino=destino,
+                error="Circuit breaker abierto — WhatsApp API temporalmente inaccesible, mensaje NO enviado.",
+                throttle_key="meta_circuit_open",
+            )
             return {"error": "circuit_open", "message": "WhatsApp API temporarily unavailable"}
 
         url = f"{GRAPH_URL}/{self._phone_id}/messages"
@@ -516,10 +525,16 @@ class WhatsAppMetaClient:
             except httpx.HTTPStatusError as e:
                 meta_breaker.record_failure()
                 logger.error("whatsapp_send_error", status=e.response.status_code, body=e.response.text[:300])
+                await notify_send_failure(
+                    channel="WhatsApp (Meta)",
+                    destino=destino,
+                    error=f"HTTP {e.response.status_code}: {e.response.text[:200]}",
+                )
                 raise
             except Exception as e:
                 meta_breaker.record_failure()
                 logger.error("whatsapp_send_exception", error=str(e))
+                await notify_send_failure(channel="WhatsApp (Meta)", destino=destino, error=str(e))
                 raise
 
 
