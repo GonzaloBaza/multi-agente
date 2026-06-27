@@ -104,7 +104,13 @@ export type Message = {
   role: "user" | "bot" | "human" | "system" | "assistant";
   content: string;
   at: string;
+  /** Clave de día (para agrupar/separar por fecha en el thread) */
+  dayKey?: string;
+  /** Etiqueta de día legible: "Hoy" / "Ayer" / "05 de junio" */
+  dayLabel?: string;
   agent?: string;
+  /** Nombre real del asesor humano que envió el mensaje (si aplica) */
+  senderName?: string;
   attachments?: MessageAttachment[];
   toolCall?: {
     name: string;

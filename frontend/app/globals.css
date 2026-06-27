@@ -1,3 +1,5 @@
+@import "react-day-picker/style.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -35,6 +37,50 @@
   --c-scrollbar-thumb:       212 212 212;
   --c-scrollbar-thumb-hover: 163 163 163;
 }
+
+/* ── react-day-picker (filtro de Fechas del inbox) — tema oscuro MSK ────────
+   Override de las variables/clases de react-day-picker v10 para que el
+   calendario combine con el tema (accent violeta + tokens RGB). Se scopea a
+   `.rdp-msk`, que envuelve al DayPicker dentro del popover. */
+.rdp-msk {
+  --rdp-accent-color: #a855f7;
+  --rdp-accent-background-color: rgba(168, 85, 247, 0.18);
+  --rdp-day-width: 25px;
+  --rdp-day-height: 25px;
+  --rdp-day_button-width: 24px;
+  --rdp-day_button-height: 24px;
+  --rdp-day_button-border-radius: 5px;
+  --rdp-nav_button-width: 22px;
+  --rdp-nav_button-height: 22px;
+  --rdp-weekday-padding: 1px 0;
+  --rdp-selected-border: 0;
+  --rdp-today-color: #a855f7;
+  --rdp-range_start-color: #ffffff;
+  --rdp-range_end-color: #ffffff;
+  --rdp-range_middle-color: rgb(var(--c-fg));
+  --rdp-range_middle-background-color: rgba(168, 85, 247, 0.16);
+  --rdp-range_start-background: #a855f7;
+  --rdp-range_end-background: #a855f7;
+  margin: 0;
+  color: rgb(var(--c-fg));
+  font-size: 0.7rem;
+}
+/* Que el calendario nunca exceda el ancho del menú (si no, overflow-x-hidden
+   recorta sábado y domingo). Tabla fija = las 7 columnas se reparten el ancho. */
+.rdp-msk,
+.rdp-msk .rdp-root,
+.rdp-msk .rdp-months,
+.rdp-msk .rdp-month { width: 100%; max-width: 100%; }
+.rdp-msk .rdp-month_grid { width: 100%; table-layout: fixed; }
+.rdp-msk .rdp-day { width: auto; }
+.rdp-msk .rdp-month_caption { color: rgb(var(--c-fg)); font-size: 0.74rem; font-weight: 600; padding-left: 2px; }
+.rdp-msk .rdp-weekday { color: rgb(var(--c-fg-dim)); font-size: 0.58rem; font-weight: 500; text-transform: capitalize; }
+.rdp-msk .rdp-day_button { font-size: 0.7rem; font-weight: 400; }
+.rdp-msk .rdp-day_button:hover { background: rgb(var(--c-hover)); }
+.rdp-msk .rdp-outside { color: rgb(var(--c-fg-dim)); opacity: 0.45; }
+.rdp-msk .rdp-chevron { width: 14px; height: 14px; fill: rgb(var(--c-fg-muted)); }
+.rdp-msk .rdp-button_previous:hover,
+.rdp-msk .rdp-button_next:hover { background: rgb(var(--c-hover)); border-radius: 5px; }
 
 @layer base {
   html, body {

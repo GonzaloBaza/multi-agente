@@ -217,6 +217,8 @@ export type ConversationsParams = {
   search?: string;
   dateFrom?: string | null;
   dateTo?: string | null;
+  /** uuid del agente asignado (filtro "Asignado a") */
+  assignedTo?: string | null;
   limit?: number;
 };
 
@@ -233,6 +235,7 @@ export function useConversations(params: ConversationsParams) {
     if (params.search)    qs.set("search", params.search);
     if (params.dateFrom)  qs.set("date_from", params.dateFrom);
     if (params.dateTo)    qs.set("date_to", params.dateTo);
+    if (params.assignedTo) qs.set("assigned_to", params.assignedTo);
     return qs;
   };
 
@@ -256,6 +259,23 @@ export function useConversations(params: ConversationsParams) {
   return Object.assign(q, { items });
 }
 
+/** Etiqueta de día para separadores del thread: "Hoy" / "Ayer" / "05 de junio"
+ *  (agrega el año si la fecha no es del año actual). */
+function dayLabelFor(d: Date): string {
+  const now = new Date();
+  const sameDay = (a: Date, b: Date) =>
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate();
+  const yest = new Date(now);
+  yest.setDate(now.getDate() - 1);
+  if (sameDay(d, now)) return "Hoy";
+  if (sameDay(d, yest)) return "Ayer";
+  const opts: Intl.DateTimeFormatOptions = { day: "2-digit", month: "long" };
+  if (d.getFullYear() !== now.getFullYear()) opts.year = "numeric";
+  return d.toLocaleDateString("es-AR", opts);
+}
+
 export function useMessages(conversationId: string | null) {
   return useQuery({
     queryKey: ["inbox", "messages", conversationId],
@@ -264,19 +284,27 @@ export function useMessages(conversationId: string | null) {
       const rows = await api.get<{
         id: string; role: string; content: string;
         agent: string | null;
+        sender_name?: string | null;
         attachments?: { url: string; filename?: string; content_type?: string; size?: number }[];
         at: string;
       }[]>(
         `/inbox/conversations/${conversationId}/messages`
       );
-      return rows.map((m) => ({
-        id: m.id,
-        role: m.role as Message["role"],
-        content: m.content,
-        at: new Date(m.at).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" }),
-        agent: m.agent || undefined,
-        attachments: m.attachments || [],
-      }));
+      return rows.map((m) => {
+        const d = new Date(m.at);
+        const valid = !isNaN(d.getTime());
+        return {
+          id: m.id,
+          role: m.role as Message["role"],
+          content: m.content,
+          at: valid ? d.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" }) : "",
+          dayKey: valid ? d.toLocaleDateString("es-AR") : "",
+          dayLabel: valid ? dayLabelFor(d) : "",
+          agent: m.agent || undefined,
+          senderName: m.sender_name || undefined,
+          attachments: m.attachments || [],
+        };
+      });
     },
     enabled: !!conversationId,
   });

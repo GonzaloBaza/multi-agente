@@ -1,6 +1,6 @@
 "use client";
 
-import { Search, Filter, RefreshCw, Download, Bot, MessageSquare, Smartphone, X, Inbox as InboxIcon, Mail, UserCheck, Hourglass, User, CheckCircle2 } from "lucide-react";
+import { Search, Filter, RefreshCw, Download, Bot, MessageSquare, Smartphone, X, Inbox as InboxIcon, Mail, UserCheck, Hourglass, User, CheckCircle2, Check } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Flag } from "@/components/ui/flag";
 import { Dropdown, DropdownLabel, DropdownItem, DropdownSeparator } from "@/components/ui/dropdown";
 import { CollapsibleSection } from "@/components/ui/collapsible-section";
+import { DateRangeCalendar } from "@/components/ui/date-range-calendar";
 import { cn } from "@/lib/utils";
 import {
   type ConversationListItem,
@@ -48,6 +49,11 @@ interface Props {
 
   country: string | null;
   onCountryChange: (c: string | null) => void;
+
+  /** uuid del agente asignado (filtro "Asignado a"), o null = todos */
+  assignedTo: string | null;
+  onAssignedToChange: (id: string | null) => void;
+
   /** stats real backend: { sales: { AR: 12, MX: 3 }, billing: {...} } */
   queueStats?: Record<string, Record<string, number>>;
 
@@ -130,6 +136,8 @@ export function ConversationList({
   onQueueChange,
   country,
   onCountryChange,
+  assignedTo,
+  onAssignedToChange,
   queueStats,
   search,
   onSearchChange,
@@ -223,7 +231,7 @@ export function ConversationList({
                   <Filter className="w-3.5 h-3.5" />
                 </Button>
               }
-              className="w-72 max-w-[calc(100vw-4rem)] max-h-[75vh] overflow-y-auto overflow-x-hidden"
+              className="w-60 max-h-[75vh] overflow-y-auto overflow-x-hidden"
             >
               {(close) => (
                 <>
@@ -375,74 +383,60 @@ export function ConversationList({
                     </button>
                   </CollapsibleSection>
 
-                  {/* === ASIGNADO A — collapsible === */}
+                  {/* === ASIGNADO A — collapsible (filtra por agente, funcional) === */}
                   <CollapsibleSection
                     title="Asignado a"
                     defaultOpen={false}
-                    rightAccessory={<span className="text-[9px] text-fg-dim">{agents.length}</span>}
+                    rightAccessory={
+                      assignedTo
+                        ? <span className="text-[9px] text-accent truncate max-w-[90px]">{agents.find((a) => a.id === assignedTo)?.name ?? "1"}</span>
+                        : <span className="text-[9px] text-fg-dim">{agents.length}</span>
+                    }
                   >
-                    {agents.map((a) => (
+                    {assignedTo && (
                       <button
-                        key={a.id}
-                        onClick={() => { close(); }}
-                        className="w-full px-9 py-1 text-[11px] flex items-center gap-2 hover:bg-hover"
+                        onClick={() => { onAssignedToChange(null); close(); }}
+                        className="w-full px-9 py-1 text-[11px] text-left text-fg-dim hover:text-fg hover:bg-hover"
                       >
-                        <div className={`w-4 h-4 rounded-full bg-gradient-to-br ${a.color} text-white text-[8px] font-bold flex items-center justify-center`}>
-                          {a.initials}
-                        </div>
-                        <span className="flex-1 text-left truncate">{a.name}</span>
+                        ✕ Quitar filtro de agente
                       </button>
-                    ))}
-                  </CollapsibleSection>
-
-                  {/* === TAGS — collapsible === */}
-                  <CollapsibleSection
-                    title="Por tag"
-                    defaultOpen={false}
-                  >
-                    <div className="px-9 py-1.5 flex flex-wrap gap-1">
-                      {["cardio", "amir-interest", "italiano-staff", "residente", "primer-contacto", "urgente", "objeción-precio", "follow-up"].map((t) => (
+                    )}
+                    {agents.map((a) => {
+                      const active = assignedTo === a.id;
+                      return (
                         <button
-                          key={t}
-                          onClick={() => { close(); }}
-                          className="text-[10px] px-1.5 py-0.5 rounded bg-hover hover:bg-border text-fg-muted hover:text-fg"
+                          key={a.id}
+                          onClick={() => { onAssignedToChange(active ? null : a.id); close(); }}
+                          className={cn(
+                            "w-full px-9 py-1 text-[11px] flex items-center gap-2 hover:bg-hover",
+                            active && "bg-accent/10 text-accent",
+                          )}
                         >
-                          {t}
+                          <div className={`w-4 h-4 rounded-full bg-gradient-to-br ${a.color} text-white text-[8px] font-bold flex items-center justify-center`}>
+                            {a.initials}
+                          </div>
+                          <span className="flex-1 text-left truncate">{a.name}</span>
+                          {active && <Check className="w-3 h-3 shrink-0" />}
                         </button>
-                      ))}
-                    </div>
+                      );
+                    })}
                   </CollapsibleSection>
 
-                  {/* === FECHAS — collapsible === */}
+                  {/* === FECHAS — calendario de rango inline === */}
                   <CollapsibleSection
                     title="Fechas"
                     defaultOpen={false}
                     rightAccessory={(dateFrom || dateTo) ? <span className="text-[9px] text-accent">{dateFrom || "…"} → {dateTo || "…"}</span> : null}
                   >
-                    <div className="flex flex-col gap-2 px-3 py-1.5 min-w-0">
-                      <label className="text-xs text-fg-muted flex flex-col">
-                        Desde
-                        <input
-                          type="date"
-                          value={dateFrom}
-                          onChange={(e) => onDateFromChange(e.target.value)}
-                          className="mt-1 w-full min-w-0 box-border rounded border border-border bg-bg px-2 py-1 text-sm"
-                        />
-                      </label>
-                      <label className="text-xs text-fg-muted flex flex-col">
-                        Hasta
-                        <input
-                          type="date"
-                          value={dateTo}
-                          onChange={(e) => onDateToChange(e.target.value)}
-                          className="mt-1 w-full min-w-0 box-border rounded border border-border bg-bg px-2 py-1 text-sm"
-                        />
-                      </label>
-                    </div>
+                    <DateRangeCalendar
+                      from={dateFrom}
+                      to={dateTo}
+                      onChange={(f, t) => { onDateFromChange(f); onDateToChange(t); }}
+                    />
                   </CollapsibleSection>
 
                   <DropdownSeparator />
-                  <DropdownItem onClick={() => { onViewChange("all"); onLifecycleChange(null); onChannelChange(null); onQueueChange(null); onCountryChange(null); close(); }} variant="danger">
+                  <DropdownItem onClick={() => { onViewChange("all"); onLifecycleChange(null); onChannelChange(null); onQueueChange(null); onCountryChange(null); onAssignedToChange(null); onDateFromChange(""); onDateToChange(""); close(); }} variant="danger">
                     <X className="w-3 h-3" /> Limpiar todos los filtros
                   </DropdownItem>
                 </>

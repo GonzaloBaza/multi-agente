@@ -51,7 +51,7 @@ export function MessageBubble({ message, contactInitials }: Props) {
       <div className="max-w-xl space-y-2">
         <div className="text-[10px] text-fg-dim">
           {message.role === "assistant" && message.agent === "humano"
-            ? <>Humano · <span className="text-accent">{(message as any).sender_name || "agente"}</span> · {message.at}</>
+            ? <>Humano · <span className="text-accent">{message.senderName || "Asesor"}</span> · {message.at}</>
             : <>Bot · {message.agent || "Sales Agent"} · {message.at}</>}
         </div>
         {message.toolCall && (

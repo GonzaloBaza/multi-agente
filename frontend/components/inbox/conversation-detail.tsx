@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   PanelRightClose,
@@ -404,18 +404,26 @@ export function ConversationDetail({
 
       {/* Mensajes */}
       <div className="flex-1 overflow-y-auto scroll-thin p-6 space-y-4">
-        <div className="flex justify-center">
-          <span className="text-[10px] text-fg-dim">Hoy · 10:30</span>
-        </div>
-
         {messages.length === 0 ? (
           <div className="text-center text-fg-dim text-xs pt-10">
             Sin mensajes en esta conversación todavía.
           </div>
         ) : (
-          messages.map((m) => (
-            <MessageBubble key={m.id} message={m} contactInitials={contact.name[0]} />
-          ))
+          messages.map((m, i) => {
+            // Separador de fecha real al cambiar de día (antes estaba
+            // hardcodeado en "Hoy · 10:30" para todas las conversaciones).
+            const showDay = i === 0 || m.dayKey !== messages[i - 1]?.dayKey;
+            return (
+              <Fragment key={m.id}>
+                {showDay && m.dayLabel && (
+                  <div className="flex justify-center">
+                    <span className="text-[10px] text-fg-dim">{m.dayLabel}</span>
+                  </div>
+                )}
+                <MessageBubble message={m} contactInitials={contact.name[0]} />
+              </Fragment>
+            );
+          })
         )}
         <div ref={messagesEndRef} />
       </div>
