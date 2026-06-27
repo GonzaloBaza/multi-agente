@@ -27,7 +27,7 @@ from __future__ import annotations
 import csv
 import io
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Literal
 
 import structlog
@@ -992,14 +992,28 @@ def _build_conversations_where(
         else:
             return "WHERE FALSE", []
 
+    # Fechas: asyncpg con `$N::timestamptz` espera un datetime, NO un string —
+    # parseamos a datetime aware (UTC). Si viene malformado, ignoramos el filtro.
     if date_from:
-        where_parts.append(f"c.updated_at >= ${idx}::timestamptz")
-        params.append(date_from + "T00:00:00Z")
-        idx += 1
+        try:
+            _df = datetime.fromisoformat(date_from).replace(
+                hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc
+            )
+            where_parts.append(f"c.updated_at >= ${idx}::timestamptz")
+            params.append(_df)
+            idx += 1
+        except ValueError:
+            pass
     if date_to:
-        where_parts.append(f"c.updated_at <= ${idx}::timestamptz")
-        params.append(date_to + "T23:59:59Z")
-        idx += 1
+        try:
+            _dt = datetime.fromisoformat(date_to).replace(
+                hour=23, minute=59, second=59, microsecond=999999, tzinfo=timezone.utc
+            )
+            where_parts.append(f"c.updated_at <= ${idx}::timestamptz")
+            params.append(_dt)
+            idx += 1
+        except ValueError:
+            pass
     if channel:
         where_parts.append(f"c.channel = ${idx}")
         params.append(channel)

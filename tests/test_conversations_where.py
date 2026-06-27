@@ -39,10 +39,20 @@ def test_channel_filter_param():
 
 
 def test_date_range_params():
+    from datetime import datetime, timezone
+
     where, params = _call(date_from="2026-06-01", date_to="2026-06-30")
     assert "c.updated_at >= $1::timestamptz" in where
     assert "c.updated_at <= $2::timestamptz" in where
-    assert params == ["2026-06-01T00:00:00Z", "2026-06-30T23:59:59Z"]
+    # asyncpg necesita datetime aware (no string) para ::timestamptz
+    assert params[0] == datetime(2026, 6, 1, 0, 0, 0, tzinfo=timezone.utc)
+    assert params[1] == datetime(2026, 6, 30, 23, 59, 59, 999999, tzinfo=timezone.utc)
+
+
+def test_malformed_date_is_ignored():
+    where, params = _call(date_from="no-es-fecha")
+    assert "updated_at" not in where
+    assert params == []
 
 
 def test_queue_and_lifecycle_share_param_numbering():
