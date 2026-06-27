@@ -19,7 +19,6 @@ import {
   CheckCircle2,
   XCircle,
   MessageSquare,
-  Phone,
   CreditCard,
   Globe,
   Bot,
@@ -38,7 +37,6 @@ import { cn } from "@/lib/utils";
 type ChannelKey =
   | "whatsapp_meta"
   | "botmaker"
-  | "twilio"
   | "widget"
   | "zoho"
   | "mercadopago"
@@ -72,13 +70,6 @@ const CHANNELS: {
     label: "Botmaker",
     icon: Bot,
     description: "Proxy legacy — heredamos conversaciones históricas",
-    category: "messaging",
-  },
-  {
-    key: "twilio",
-    label: "Twilio SMS/WhatsApp",
-    icon: Phone,
-    description: "Fallback SMS + sandbox de WhatsApp para testing",
     category: "messaging",
   },
   {

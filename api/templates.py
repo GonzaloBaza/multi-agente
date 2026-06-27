@@ -93,7 +93,7 @@ async def send_template(
 
 
 async def _send_template_task(phone: str, template_name: str, template_vars: dict, pais: str):
-    """Envía la plantilla vía Meta Cloud API o Twilio según configuración."""
+    """Envía la plantilla vía Meta Cloud API según configuración."""
     from config.settings import get_settings
 
     settings = get_settings()
@@ -101,8 +101,6 @@ async def _send_template_task(phone: str, template_name: str, template_vars: dic
     try:
         if settings.whatsapp_token and settings.whatsapp_phone_number_id:
             await _send_via_meta(phone, template_name, template_vars, pais)
-        elif settings.twilio_account_sid:
-            await _send_via_twilio(phone, template_vars)
         else:
             logger.warning("template_no_channel_configured", phone=phone)
     except Exception as e:
@@ -144,28 +142,6 @@ async def _send_via_meta(phone: str, template_name: str, template_vars: dict, pa
         components=components if components else None,
     )
     logger.info("template_sent_via_meta", phone=phone, template=template_name)
-
-
-async def _send_via_twilio(phone: str, template_vars: dict):
-    """
-    Twilio sandbox no soporta templates de Meta.
-    Enviamos el mensaje de bienvenida como texto plano para testing.
-    """
-    from integrations.twilio_whatsapp import TwilioWhatsAppClient
-
-    twilio = TwilioWhatsAppClient()
-
-    nombre = template_vars.get("Nombre_completo", "")
-    operador = template_vars.get("Nombre del agente", "")
-    curso = template_vars.get("curso_nombre_plantilla", "")
-
-    msg = f"Hola {nombre}! 👋 Soy {operador} del equipo MSK."
-    if curso:
-        msg += f" Te contacto por tu interés en *{curso}*."
-    msg += " ¿Podemos hablar?"
-
-    await twilio.send_text(phone, msg)
-    logger.info("template_sent_via_twilio_text", phone=phone)
 
 
 # ─── HSM Templates para el Inbox ─────────────────────────────────────────────

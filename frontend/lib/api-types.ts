@@ -1517,28 +1517,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/webhook/twilio": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Twilio Webhook
-         * @description Recibe mensajes de WhatsApp vía Twilio Sandbox / API.
-         *     Twilio envía form-urlencoded POST por cada mensaje entrante.
-         *     No requiere verificación de firma en sandbox (opcional en producción).
-         */
-        post: operations["twilio_webhook_webhook_twilio_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/widget/chat": {
         parameters: {
             query?: never;
@@ -4858,26 +4836,6 @@ export interface operations {
         };
     };
     monitorear_pago_webhook_monitorear_pago_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
-    twilio_webhook_webhook_twilio_post: {
         parameters: {
             query?: never;
             header?: never;

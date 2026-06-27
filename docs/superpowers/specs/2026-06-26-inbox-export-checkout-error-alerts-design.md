@@ -30,7 +30,7 @@ Se implementan como **3 entregas separadas, chicas y verificables** (orden: 1 �
 - Front inbox: `useConversations` ([frontend/lib/api/inbox.ts:231](../../../frontend/lib/api/inbox.ts)) pide `limit ?? 500` en un solo fetch (react-query). La UI no expone rango de fechas (aunque el backend lo soporta).
 - `GET /api/v1/inbox/analytics` ([api/inbox_api.py:217](../../../api/inbox_api.py)) sólo filtra por `days`; devuelve agregados (KPIs, SLA, breakdowns por canal/queue/país/lifecycle, heatmap, leaderboard).
 - El bot manda el link `https://msklatam.com/checkout/{slug}/?utm_source=bot` como **texto plano** dentro del mensaje del asistente. `messages` guarda el `content` completo (`role`, `content`, `metadata`, `created_at`, `conversation_id`).
-- Paths de envío saliente: Botmaker (`channels/whatsapp.py` → `integrations/botmaker.py`), Meta Cloud API (`integrations/whatsapp_meta.py::_post`, loguea + circuit breaker + re-raise), Twilio (`channels/twilio_whatsapp.py`). Hoy los fallos se loguean con structlog y se re-lanzan; **no** se ven en UI, **no** van a Slack/Sentry, **no** hay status en `messages`.
+- Paths de envío saliente: Botmaker (`channels/whatsapp.py` → `integrations/botmaker.py`), Meta Cloud API (`integrations/whatsapp_meta.py::_post`, loguea + circuit breaker + re-raise). Hoy los fallos se loguean con structlog y se re-lanzan; **no** se ven en UI, **no** van a Slack/Sentry, **no** hay status en `messages`.
 - Helper Slack existente: `utils/inbox_jobs.slack_notify(text, blocks)` + `integrations/notifications.notify_slack()` usando `settings.slack_webhook_url` (env `SLACK_WEBHOOK_URL`).
 
 ---
@@ -87,7 +87,6 @@ Se implementan como **3 entregas separadas, chicas y verificables** (orden: 1 �
 - **Wire en los paths de salida**, capturando a nivel del handler de canal (donde hay contexto de conversación):
   - Botmaker — `channels/whatsapp.py` (envuelve `botmaker.send_message`).
   - Meta Cloud API — caller de `integrations/whatsapp_meta.py::_post` (o el handler que lo invoca).
-  - Twilio — `channels/twilio_whatsapp.py`.
   - Widget — el "envío" es in-process: alertar cuando el agente tira excepción y no devuelve respuesta al usuario.
 - **Scope del fallo**: envío al canal con error/excepción (non-200, timeout, circuit-breaker abierto). Se mantiene el logging actual. No se agrega retry.
 

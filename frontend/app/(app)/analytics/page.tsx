@@ -94,7 +94,6 @@ const CHANNEL_LABELS: Record<string, string> = {
   whatsapp: "WhatsApp",
   widget: "Widget web",
   botmaker: "Botmaker (legacy)",
-  twilio: "Twilio",
 };
 
 export default function AnalyticsPage() {

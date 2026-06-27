@@ -14,9 +14,7 @@ import json
 
 import structlog
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
-from fastapi.responses import Response
 
-from channels.twilio_whatsapp import process_twilio_message as process_wa_twilio
 from channels.whatsapp import process_whatsapp_message
 from channels.whatsapp_meta import process_whatsapp_message as process_wa_meta
 from config.settings import get_settings
@@ -539,30 +537,6 @@ async def _monitorear_pago_task(phone: str, pais: str, cobranza_id: str):
         logger.error("monitorear_pago_error", phone=phone, error=str(e))
 
 
-# ─── Twilio WhatsApp ──────────────────────────────────────────────────────────
-
-
-@router.post("/twilio")
-async def twilio_webhook(request: Request, background_tasks: BackgroundTasks):
-    """
-    Recibe mensajes de WhatsApp vía Twilio Sandbox / API.
-    Twilio envía form-urlencoded POST por cada mensaje entrante.
-    No requiere verificación de firma en sandbox (opcional en producción).
-    """
-    form_data = await request.form()
-    data = dict(form_data)
-
-    logger.info("twilio_webhook_received", from_=data.get("From", ""), body=data.get("Body", "")[:50])
-
-    # Twilio espera respuesta TwiML — respondemos vacío para no duplicar mensajes
-    # El mensaje real lo enviamos con la API REST desde el background task
-    background_tasks.add_task(process_wa_twilio, data)
-
-    # Respuesta TwiML vacía (no queremos que Twilio envíe nada por su cuenta)
-    return Response(
-        content='<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
-        media_type="application/xml",
-    )
 
 
 def _get_channel_id(pais: str) -> str:

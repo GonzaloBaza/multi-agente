@@ -18,7 +18,6 @@ originSessionId: afc9a303-de9b-483e-b191-c75bf4d36177
 **Canales** (`channels/` + `integrations/`):
 - Meta WhatsApp Cloud API (principal, `/webhook/whatsapp`)
 - Botmaker (handoff humano, HSM templates)
-- Twilio (implementado, no en producción)
 - Widget web embebible WordPress (`/widget/chat`)
 
 **Integraciones**: Zoho CRM (leads/contacts/sales orders/cobranzas), MercadoPago + Rebill (pagos + IPN), Slack (alertas handoff), Pinecone (RAG).

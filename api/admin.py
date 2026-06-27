@@ -158,11 +158,6 @@ async def channels_status(auth: dict = Depends(require_role_or_admin("admin", "s
         "botmaker": {
             "configured": _configured(getattr(settings, "botmaker_api_key", None)),
         },
-        "twilio": {
-            "configured": _configured(getattr(settings, "twilio_account_sid", None))
-            and _configured(getattr(settings, "twilio_auth_token", None)),
-            "account_sid": getattr(settings, "twilio_account_sid", "") or None,
-        },
         "widget": {
             "configured": True,  # siempre está activo (lo sirve FastAPI)
             "allowed_origins": getattr(settings, "allowed_origins", "") or "",

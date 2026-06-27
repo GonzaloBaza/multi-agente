@@ -61,11 +61,6 @@ class Settings(BaseSettings):
     whatsapp_app_secret: str = ""  # App Secret para verificar firmas
     whatsapp_app_id: str = ""  # App ID de Meta (para Resumable Upload API)
 
-    # Twilio WhatsApp Sandbox / API
-    twilio_account_sid: str = ""  # ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-    twilio_auth_token: str = ""  # Token de autenticación
-    twilio_whatsapp_from: str = "whatsapp:+14155238886"  # Sandbox number
-
     # MercadoPago
     mp_access_token: str = ""
     mp_public_key: str = ""

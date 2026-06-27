@@ -213,7 +213,7 @@ cachea el módulo). ⚠️ `docker compose build` sin pushear a git sobrescribe.
 - Dropdown en el rail (`components/layout/notifications-dropdown.tsx`)
 - SSE push real-time (`/api/v1/notifications/stream`) + polling fallback
 - Triggers wired: `conv_assigned` (assign endpoint), `new_message_mine` (WA
-  Meta + Twilio channels), `conv_stale` (cron cada 15 min, ver
+  Meta channel), `conv_stale` (cron cada 15 min, ver
   `utils/stale_conversations.py` + `utils/scheduler.py`)
 - Triggers stub (arquitectura lista, falta wire): `template_approved`
   (webhook Meta HSM status change)

@@ -1,6 +1,6 @@
 - [Deployment](deployment.md) — **Server MSK-Server-NET (16 GB)** en `root@129.212.145.193`. SSH con key `~/.ssh/msk_droplet` + `ServerAliveInterval=30`. Project name `msk-multiagente` obligatorio (server compartido con stack msklatam.net 30+ containers).
 - [Sync workflow](sync_workflow.md) — 2 PCs (escritorio + notebook) + server sincronizados vía GitHub `GonzaloBazaMSK/multi-agente`. Droplet viejo `68.183.156.122` apagado (destruir cuando se confirme estabilidad).
-- [Stack overview](stack_overview.md) — FastAPI + LangGraph + Pinecone + Redis; 4 agentes (sales, collections, post_sales, closer); canales WhatsApp Meta/Botmaker/Twilio/widget. Notifs in-app, Zoho Voice, Analytics, Pipeline kanban, widget bot kawaii.
+- [Stack overview](stack_overview.md) — FastAPI + LangGraph + Pinecone + Redis; 4 agentes (sales, collections, post_sales, closer); canales WhatsApp Meta/Botmaker/widget. Notifs in-app, Zoho Voice, Analytics, Pipeline kanban, widget bot kawaii.
 - [Sales consultive rules](sales_consultive_rules.md) — Framework venta consultiva: 6 reglas (0/0b/1/1b/1c/2-5) + 4 OBL. Bot chequea contra OBL cada turno. Score venta subió de 4.3/10 → ~7/10.
 - [Master products blocked](master_products_blocked.md) — Los 6 másters (product_id 8000000-8000005) NO se venden. Defensa 3 capas: catálogo filtrado + tools dummy + prompt OBL-0.
 - [Frontend theme system](frontend_theme_system.md) — Toggle light/dark con CSS vars RGB + script anti-flash + `useTheme` hook. Botón sun/moon en el rail.

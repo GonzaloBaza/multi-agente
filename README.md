@@ -13,7 +13,7 @@ humana para agentes, supervisores y admins.
 - **Frontend**: Next.js 15 (App Router) + React 19 + TanStack Query +
   Tailwind.
 - **Deploy**: Docker Compose en DigitalOcean, nginx con SSL (Let's Encrypt).
-- **Canales**: WhatsApp Meta Cloud API (principal), Botmaker, Twilio,
+- **Canales**: WhatsApp Meta Cloud API (principal), Botmaker,
   widget web embebible.
 - **Integraciones**: Zoho CRM, MercadoPago, Rebill, Cloudflare R2 (media),
   Sentry, Slack.
@@ -53,12 +53,10 @@ multi-agente/
 ├── channels/                     Processors por canal
 │   ├── widget.py                 Mensajes entrantes del widget web
 │   ├── whatsapp_meta.py          WhatsApp Meta Cloud API (principal)
-│   ├── whatsapp.py               Botmaker
-│   └── twilio_whatsapp.py        Twilio (sandbox)
+│   └── whatsapp.py               Botmaker
 ├── integrations/                 Clientes externos
 │   ├── whatsapp_meta.py          Cliente Meta Cloud API
 │   ├── botmaker.py               Cliente Botmaker
-│   ├── twilio_whatsapp.py        Cliente Twilio
 │   ├── zoho/                     CRM (contacts, leads, cobranzas, SO)
 │   ├── payments/                 MercadoPago, Rebill
 │   ├── supabase_client.py        Auth + profiles

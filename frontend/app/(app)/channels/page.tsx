@@ -5,7 +5,7 @@
  * widget embebible.
  *
  * Secciones:
- *   1. Canales de entrada (WhatsApp Meta/Botmaker/Twilio/widget)
+ *   1. Canales de entrada (WhatsApp Meta/Botmaker/widget)
  *   2. Integraciones externas (Zoho/MP/Rebill/OpenAI/Pinecone/R2/Sentry/Slack)
  *   3. Apariencia del widget embebible (título, color, saludo, avatar,
  *      quick replies, posición) — consumido por chat.js al cargarse en
@@ -37,7 +37,6 @@ import { cn } from "@/lib/utils";
 type ChannelKey =
   | "whatsapp_meta"
   | "botmaker"
-  | "twilio"
   | "widget"
   | "zoho"
   | "mercadopago"
@@ -68,7 +67,6 @@ type WidgetConfig = {
 const LABELS: Record<ChannelKey, { label: string; group: "canales" | "integraciones" }> = {
   whatsapp_meta: { label: "WhatsApp Cloud API (Meta)", group: "canales" },
   botmaker:      { label: "Botmaker",                  group: "canales" },
-  twilio:        { label: "Twilio WhatsApp",           group: "canales" },
   widget:        { label: "Widget web embebible",      group: "canales" },
   zoho:          { label: "Zoho CRM",                  group: "integraciones" },
   mercadopago:   { label: "MercadoPago",               group: "integraciones" },

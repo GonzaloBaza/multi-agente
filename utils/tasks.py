@@ -12,7 +12,7 @@ Qué hace y por qué:
     asincrónicamente, con backpressure real y retry.
 
 Qué se encola:
-  - Procesar mensajes de WhatsApp/Botmaker/Twilio (webhook → background).
+  - Procesar mensajes de WhatsApp/Botmaker (webhook → background).
   - Sync Zoho pesados (actualización de cursadas, histórico).
   - TTS/STT — no bloquear el UI por 3-5s mientras openai procesa.
 
@@ -97,17 +97,6 @@ def process_botmaker_task(payload: dict) -> None:
         _run_async(process_whatsapp_message(payload))
     except Exception as e:
         logger.error("botmaker_task_failed", error=str(e))
-        raise
-
-
-@dramatiq.actor(queue_name="whatsapp", max_retries=3)
-def process_twilio_task(form_data: dict) -> None:
-    from channels.twilio_whatsapp import process_twilio_message
-
-    try:
-        _run_async(process_twilio_message(form_data))
-    except Exception as e:
-        logger.error("twilio_task_failed", error=str(e))
         raise
 
 
