@@ -260,6 +260,14 @@ export function ConversationList({
                     );
                   })}
 
+                  <DropdownItem
+                    onClick={() => { onCheckoutSentChange(checkoutSent ? null : true); close(); }}
+                  >
+                    <span className="text-sm leading-none">💳</span>
+                    <span className={cn("flex-1", checkoutSent && "text-accent font-medium")}>Checkout enviado</span>
+                    {checkoutSent && <Check className="w-3.5 h-3.5 text-accent shrink-0" />}
+                  </DropdownItem>
+
                   <DropdownSeparator />
                   <DropdownLabel>
                     Por cola de atención
@@ -426,32 +434,6 @@ export function ConversationList({
                         </button>
                       );
                     })}
-                  </CollapsibleSection>
-
-                  {/* === CHECKOUT ENVIADO — collapsible === */}
-                  <CollapsibleSection
-                    title="Checkout enviado"
-                    defaultOpen={false}
-                    rightAccessory={
-                      checkoutSent === true ? <span className="text-[9px] text-accent">Sí</span>
-                      : checkoutSent === false ? <span className="text-[9px] text-accent">No</span>
-                      : null
-                    }
-                  >
-                    <button
-                      onClick={() => { onCheckoutSentChange(checkoutSent === true ? null : true); close(); }}
-                      className={cn("w-full px-9 py-1 text-[11px] flex items-center gap-2 hover:bg-hover", checkoutSent === true && "bg-accent/10 text-accent")}
-                    >
-                      <span className="flex-1 text-left">Con link de pago enviado</span>
-                      {checkoutSent === true && <Check className="w-3 h-3 shrink-0" />}
-                    </button>
-                    <button
-                      onClick={() => { onCheckoutSentChange(checkoutSent === false ? null : false); close(); }}
-                      className={cn("w-full px-9 py-1 text-[11px] flex items-center gap-2 hover:bg-hover", checkoutSent === false && "bg-accent/10 text-accent")}
-                    >
-                      <span className="flex-1 text-left">Sin link de pago</span>
-                      {checkoutSent === false && <Check className="w-3 h-3 shrink-0" />}
-                    </button>
                   </CollapsibleSection>
 
                   {/* === FECHAS — calendario de rango inline === */}

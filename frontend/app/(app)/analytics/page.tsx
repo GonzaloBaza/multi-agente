@@ -55,8 +55,8 @@ type Analytics = {
     open_now: number;
     needs_human_now: number;
     stale_now: number;
-    checkout_sent: number;
-    checkout_conversion_pct: number;
+    checkout_sent?: number;
+    checkout_conversion_pct?: number;
   };
   sla: {
     answered_human: number;
@@ -152,8 +152,8 @@ export default function AnalyticsPage() {
             <KPI
               icon={<span className="text-sm leading-none">💳</span>}
               label="Checkout enviados"
-              value={d.totals.checkout_sent}
-              sublabel={`${d.totals.checkout_conversion_pct}% se hicieron clientes`}
+              value={d.totals.checkout_sent ?? 0}
+              sublabel={`${d.totals.checkout_conversion_pct ?? 0}% se hicieron clientes`}
             />
           </div>
         </section>
