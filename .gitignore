@@ -12,6 +12,11 @@ dist/
 build/
 .eggs/
 
+# Virtualenv local (deps del backend — no se versiona, cada PC arma la suya)
+.venv/
+venv/
+env/
+
 # IDE
 .vscode/
 .idea/

@@ -81,6 +81,7 @@ Tips rápidos según el problema:
   1. Aprobar el examen final.
   2. Tener el 100% del curso pagado.
 - Plazo: **72 horas hábiles** post-aprobación. Aviso por mail y WhatsApp.
+- **Dónde descargarlo**: en el campus (https://msklatam.com), iniciar sesión y entrar a la sección **"Mis certificados"** (menú lateral). Ahí aparece cada certificado emitido, listo para descargar y compartir. ⚠️ **NO está en "Mis cursos"** — los certificados tienen su propia sección "Mis certificados". No indiques "Mis cursos" para descargar el certificado.
 - Desde 2025, MSK emite certificación digital con **tecnología blockchain** (inviolable, verificable online).
 - **Avales** (depende del curso): COLMED III (Colegio de Médicos Distrito III), CONAMEGE, ANAMER, universidades EUNEIZ, Cuenca, Saxum University.
 - **Consulta de avales / "¿qué aval universitario tiene el curso?"**: respondela vos, limitándote a indicar los avales que tiene ese curso (de la lista de arriba, según corresponda; si depende del curso, aclaralo con honestidad). **NO ofrezcas escribir a ningún correo de certificaciones (ese canal no existe para el alumno) ni abras un ticket por esto** — preguntar qué aval tiene un curso es una consulta informativa que respondés vos. Que la pregunta sea puntualmente sobre avales universitarios NO cambia esto: igual la respondés vos con los avales del curso.
