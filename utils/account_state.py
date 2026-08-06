@@ -80,6 +80,11 @@ def _money(monto: float, moneda: str = "") -> str:
     return f"{moneda} {entero.replace(',', '.')},{dec}".strip()
 
 
+def _plural(n: int, singular: str, plural: str) -> str:
+    """'1 cuota vencida' / '3 cuotas vencidas' — sin los '(s)' que el LLM copia."""
+    return f"{n} {singular if n == 1 else plural}"
+
+
 def _cuotas_equivalentes(saldo: float, valor_cuota: float, moneda: str = "") -> int | None:
     """
     Cuántas cuotas faltan, DERIVADO del saldo (`saldo ÷ valor de cuota`).
@@ -160,6 +165,14 @@ def clasificar_estado_cuenta(ficha: dict | None) -> dict:
     if not ficha or not ficha.get("cobranzaId"):
         return _insuficiente("sin_ficha")
 
+    # Ficha cacheada con el formato viejo (Redis `datos_deudor:*`, TTL 2h):
+    # no trae `importePagado`, así que la identidad contable daría falso
+    # negativo y TODO alumno caería en DATO_INSUFICIENTE hasta que expire. Se
+    # detecta por ausencia de la clave (≠ presente en 0, que es "no pagó nada")
+    # y se releen los datos en vez de emitir un veredicto a ciegas.
+    if "importePagado" not in ficha:
+        return _insuficiente("ficha_formato_viejo", ficha)
+
     moneda = str(ficha.get("moneda") or "")
     contrato = _num(ficha, "importeContrato")
     pagado = _num(ficha, "importePagado")
@@ -232,23 +245,31 @@ def clasificar_estado_cuenta(ficha: dict | None) -> dict:
             )
     elif hay_deuda_vencida:
         estado = EstadoCuenta.CON_DEUDA_VENCIDA
-        detalle = [f"deuda vencida exigible hoy: {_money(saldo_vencido, moneda)}"]
+        # Lo vencido no puede superar lo que falta del contrato entero.
+        vencido = min(saldo_vencido, saldo_total) if saldo_total > 0 else saldo_vencido
+        detalle = []
+        if vencido > tol_saldado:
+            detalle.append(f"deuda vencida exigible hoy: {_money(vencido, moneda)}")
         if c_venc > 0:
-            detalle.append(f"{c_venc} cuota(s) vencida(s)")
+            detalle.append(_plural(c_venc, "cuota vencida", "cuotas vencidas"))
         if dias > 0:
-            detalle.append(f"{dias} día(s) de atraso")
+            detalle.append(_plural(dias, "día de atraso", "días de atraso"))
+        if not detalle:
+            # El disparador fue mora sin importe: no inventamos un "ARS 0,00".
+            detalle.append(f"saldo pendiente de {_money(saldo_total, moneda)}")
         render = "TIENE DEUDA VENCIDA — " + ", ".join(detalle) + "."
-        if cuotas_confiables and c_pend > 0:
-            render += (
-                f" Además le quedan {c_pend} cuota(s) por vencer de "
-                f"{_money(valor_cuota, moneda)} (saldo total {_money(saldo_total, moneda)})."
-            )
+        # OJO: no se suma "y además le quedan N cuotas por vencer" — el
+        # contador de pendientes ya incluye las vencidas, así que sería contar
+        # la misma plata dos veces. El saldo total lo dice sin ambigüedad.
+        if saldo_total > vencido:
+            render += f" Saldo total del contrato: {_money(saldo_total, moneda)}."
     else:
         estado = EstadoCuenta.AL_DIA
         if cuotas_confiables and c_pend > 0:
             render = (
                 f"AL DÍA — no tiene deuda vencida, pero el curso NO está saldado: "
-                f"le quedan {c_pend} cuota(s) de {_money(valor_cuota, moneda)}, "
+                f"le {'queda' if c_pend == 1 else 'quedan'} "
+                f"{_plural(c_pend, 'cuota', 'cuotas')} de {_money(valor_cuota, moneda)}, "
                 f"saldo total {_money(saldo_total, moneda)}."
             )
             if prox and prox != "No registra":

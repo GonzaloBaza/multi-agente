@@ -187,7 +187,16 @@ async def generar_insta_link_rebill(
 
 
 def _formatear_ficha(ficha: dict) -> str:
-    """Formatea la ficha del alumno para que el agente la incorpore al contexto."""
+    """
+    Formatea la ficha del alumno para que el agente la incorpore al contexto.
+
+    Encabeza con el veredicto de `utils.account_state`: cuando la tool se llama
+    a mitad de conversación, el system prompt ya se armó y sus datos quedaron
+    congelados, así que este bloque es lo único que trae el estado real.
+    """
+    from utils.account_state import clasificar_estado_cuenta
+
+    veredicto = clasificar_estado_cuenta(ficha)
     pais = ficha.get("pais", "")
     moneda = ficha.get("moneda", "ARS")
 
@@ -198,6 +207,7 @@ def _formatear_ficha(ficha: dict) -> str:
 
     lines = [
         "FICHA_ALUMNO_ENCONTRADA:",
+        f"ESTADO DE CUENTA (veredicto del sistema, NO lo recalcules): {veredicto['render']}",
         f"- Nombre: {ficha.get('alumno')} (País: {pais})",
         f"- Email: {ficha.get('email')}",
         f"- ID Cobranza: {ficha.get('cobranzaId')}",

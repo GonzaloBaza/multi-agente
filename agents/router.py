@@ -26,6 +26,7 @@ from agents.post_sales.agent import build_post_sales_agent
 from agents.sales.agent import build_sales_agent
 from config.constants import HANDOFF_KEYWORDS, AgentType
 from config.settings import get_settings
+from integrations.zoho.area_cobranzas import FICHA_CACHE_PREFIX
 
 logger = structlog.get_logger(__name__)
 
@@ -335,8 +336,9 @@ async def run_sales_node(state: SupervisorState) -> dict:
 
 async def run_collections_node(state: SupervisorState) -> dict:
     # Intentar cargar ficha del alumno desde Redis. Orden de búsqueda:
-    #   1. datos_deudor:{phone}  (legacy WhatsApp)
-    #   2. datos_deudor:{email}  (widget logueado — cacheado en widget.py)
+    #   1. <prefijo>{phone}  (legacy WhatsApp)
+    #   2. <prefijo>{email}  (widget logueado — cacheado en widget.py)
+    # El prefijo está versionado en integrations.zoho.area_cobranzas.
     # Si hay email pero no hay ficha, construimos una ficha mínima para
     # que el prompt no caiga en la rama "pedir email al alumno".
     ficha = None
@@ -357,7 +359,7 @@ async def run_collections_node(state: SupervisorState) -> dict:
 
     if phone and store is not None:
         try:
-            cached = await store._redis.get(f"datos_deudor:{phone}")
+            cached = await store._redis.get(f"{FICHA_CACHE_PREFIX}{phone}")
             if cached:
                 ficha = json.loads(cached)
         except Exception:
@@ -365,7 +367,7 @@ async def run_collections_node(state: SupervisorState) -> dict:
 
     if ficha is None and email and store is not None:
         try:
-            cached = await store._redis.get(f"datos_deudor:{email}")
+            cached = await store._redis.get(f"{FICHA_CACHE_PREFIX}{email}")
             if cached:
                 data = json.loads(cached)
                 # Solo usar si es una ficha real (tiene cobranzaId).

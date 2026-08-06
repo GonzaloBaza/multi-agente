@@ -13,6 +13,14 @@ from .auth import ZohoAuth
 logger = structlog.get_logger(__name__)
 
 
+# Prefijo de la cache de fichas en Redis (widget.py escribe, router.py lee).
+# ⚠️ SUBIR LA VERSIÓN cada vez que cambie la forma del dict de `_normalizar`.
+# Sin eso, tras un deploy conviven fichas viejas sin los campos nuevos y el
+# veredicto de estado de cuenta sale mal hasta que expira el TTL (2 h).
+# v2 = se agregó `importePagado`, que es lo que valida la identidad contable.
+FICHA_CACHE_PREFIX = "datos_deudor:v2:"
+
+
 class ZohoAreaCobranzas:
     def __init__(self):
         self._auth = ZohoAuth()
@@ -102,8 +110,11 @@ class ZohoAreaCobranzas:
                 return 0.0
 
         def _ent(key: str) -> int:
+            # Vía float: Zoho devuelve algunos numéricos como "35.0" y un
+            # `int("35.0")` directo tira ValueError. Antes eso caía al 0 del
+            # except y un moroso con 35 días de atraso aparecía al día.
             try:
-                return int(raw.get(key) or 0)
+                return int(float(raw.get(key) or 0))
             except (TypeError, ValueError):
                 return 0
 

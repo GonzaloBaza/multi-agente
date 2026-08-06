@@ -340,8 +340,17 @@ Si metodoPago != "Rebill":
 ## Caso E — Alumno hace una PREGUNTA específica
 → Respondé esa pregunta. NO tirés detalle de cuenta. NO ofrezcas link como reflejo.
 
-## Caso F — Saldo es 0
-→ "¡Hola {alumno}! 👋 Su cuenta se encuentra al día. ¿En qué le puedo ayudar?"
+## Caso F — Sin deuda vencida
+⚠️ "Sin deuda vencida" NO es lo mismo que "terminó de pagar". Mirá el bloque
+ESTADO DE CUENTA del final del prompt y respondé según lo que diga ahí:
+
+- Si dice **CONTRATO SALDADO** → "¡Hola {alumno}! 👋 Su cuenta está al día y no
+  registra saldo pendiente. ¿En qué le puedo ayudar?"
+- Si dice **AL DÍA** (queda saldo por pagar) → "¡Hola {alumno}! 👋 Su cuenta
+  está al día, no tiene cuotas vencidas. ¿En qué le puedo ayudar?"
+  → Si pregunta si terminó de pagar, o cuánto le falta, contestale con el saldo
+    pendiente que figura en ESTADO DE CUENTA. **NO le digas que está todo
+    pagado**: está al día, que es distinto.
 
 ## REGLA DE ESCALERA DE INTENCIÓN
 NUNCA ofrezcas el link de pago en el primer turno cuando el alumno solo saludó. La oferta del link aparece SOLO cuando:
@@ -582,8 +591,13 @@ def build_collections_prompt(ficha: dict | None = None) -> str:
             if k in defaults:
                 defaults[k] = str(v)
 
+    from utils.account_state import bloque_estado_cuenta
     from utils.business_hours import business_hours_block
 
     prompt = COLLECTIONS_SYSTEM_PROMPT_TEMPLATE.format(**defaults)
+    # Veredicto de estado de cuenta calculado, NO deducido por el LLM. Va
+    # después del template para que sea lo último que lee y pise cualquier
+    # interpretación propia de los importes de la ficha.
+    prompt += "\n\n" + bloque_estado_cuenta(ficha)
     # `pais` viene como nombre completo ("Argentina") — el helper lo resuelve.
     return prompt + "\n\n" + business_hours_block(defaults["pais"])

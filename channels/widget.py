@@ -317,7 +317,9 @@ async def _build_user_context(
     #     - el agente de cobranzas la encuentre sin volver a llamar a Zoho.
     #     - el router pueda decidir has_debt y orientar bien (ventas vs cobranzas).
     try:
-        ficha_key = f"datos_deudor:{user_email}"
+        from integrations.zoho.area_cobranzas import FICHA_CACHE_PREFIX
+
+        ficha_key = f"{FICHA_CACHE_PREFIX}{user_email}"
         cached_ficha = await store._redis.get(ficha_key)
         ficha = None
         if cached_ficha:
@@ -374,7 +376,10 @@ async def _build_user_context(
             if not signals["profile_name"] and ficha.get("alumno"):
                 signals["profile_name"] = ficha["alumno"]
     except Exception as e:
-        logger.debug("zoho_cobranzas_lookup_failed", error=str(e))
+        # WARNING, no DEBUG: si esto falla el alumno queda SIN veredicto de
+        # estado de cuenta y el bot responde a ciegas sobre su plata. Tiene que
+        # verse en los logs, no pasar desapercibido.
+        logger.warning("zoho_cobranzas_lookup_failed", error=str(e), exc_info=True)
         await _log_error(session_id, "zoho_cobranzas", str(e)[:150])
 
     # 3. Perfil Zoho Contacts (profesión, especialidad, cursadas) — cacheado por email
