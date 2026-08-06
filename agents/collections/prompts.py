@@ -673,8 +673,13 @@ Si te encontrás escribiendo una respuesta parecida a una anterior en la misma c
 """
 
 
-def build_collections_prompt(ficha: dict | None = None) -> str:
-    """Construye el system prompt con los datos de la ficha del alumno."""
+def build_collections_prompt(ficha: dict | None = None, country: str | None = None) -> str:
+    """
+    Construye el system prompt con los datos de la ficha del alumno.
+
+    `country` (ISO-2) solo define el huso del horario de atención. Tiene
+    prioridad sobre el país de la ficha, porque la ficha puede no existir.
+    """
     defaults = {
         "pais": "No especificado",
         "moneda": "ARS",
@@ -715,4 +720,7 @@ def build_collections_prompt(ficha: dict | None = None) -> str:
     # interpretación propia de los importes de la ficha.
     prompt += "\n\n" + bloque_estado_cuenta(ficha)
     # `pais` viene como nombre completo ("Argentina") — el helper lo resuelve.
-    return prompt + "\n\n" + business_hours_block(defaults["pais"])
+    # `country` (ISO-2 del canal) tiene prioridad sobre el país de la ficha:
+    # cuando el alumno no tiene registro de cobranzas, `pais` queda en "No
+    # especificado" y el horario se evaluaría en huso de Buenos Aires.
+    return prompt + "\n\n" + business_hours_block(country or defaults["pais"])

@@ -10,6 +10,14 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_model: str = "gpt-4o"
 
+    # Unificación post-venta → agente de Atención al Alumno.
+    # CSV de canales donde el intent `post_venta` lo atiende el agente
+    # unificado (ej. "widget" o "widget,whatsapp"). Vacío = apagado: sigue
+    # respondiendo el agente de post-venta viejo, exactamente como hoy.
+    # Se prende y se apaga editando el .env y recreando el container, sin
+    # rebuild y sin tocar la base.
+    unified_student_agent_channels: str = ""
+
     # Redis (cache caliente)
     redis_url: str = "redis://localhost:6379/0"
 

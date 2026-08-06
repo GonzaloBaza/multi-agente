@@ -334,13 +334,16 @@ async def run_sales_node(state: SupervisorState) -> dict:
     return {"messages": result["messages"], "handoff_requested": handoff, "handoff_reason": reason}
 
 
-async def run_collections_node(state: SupervisorState) -> dict:
-    # Intentar cargar ficha del alumno desde Redis. Orden de búsqueda:
-    #   1. <prefijo>{phone}  (legacy WhatsApp)
-    #   2. <prefijo>{email}  (widget logueado — cacheado en widget.py)
-    # El prefijo está versionado en integrations.zoho.area_cobranzas.
-    # Si hay email pero no hay ficha, construimos una ficha mínima para
-    # que el prompt no caiga en la rama "pedir email al alumno".
+async def _cargar_ficha(state: SupervisorState) -> dict | None:
+    """
+    Carga la ficha del alumno desde la cache de Redis. Orden de búsqueda:
+      1. <prefijo>{phone}  (legacy WhatsApp)
+      2. <prefijo>{email}  (widget logueado — cacheado en widget.py)
+    El prefijo está versionado en integrations.zoho.area_cobranzas.
+
+    Si hay email pero no hay ficha, devuelve una ficha mínima para que el
+    prompt no caiga en la rama "pedir email al alumno".
+    """
     ficha = None
     phone = state.get("phone", "") or ""
     email = state.get("email", "") or ""
@@ -386,7 +389,12 @@ async def run_collections_node(state: SupervisorState) -> dict:
             "alumno": user_name or "Alumno",
         }
 
-    agent = build_collections_agent(ficha=ficha)
+    return ficha
+
+
+async def run_collections_node(state: SupervisorState) -> dict:
+    ficha = await _cargar_ficha(state)
+    agent = build_collections_agent(ficha=ficha, country=state.get("country", "AR"))
     result = await agent.ainvoke({"messages": state["messages"]})
 
     last_ai = result["messages"][-1] if result["messages"] else None
@@ -415,6 +423,58 @@ async def run_collections_node(state: SupervisorState) -> dict:
         "link_rebill_enviado": link_rebill_enviado,
         "verificar_pago": verificar_pago,
     }
+
+
+def _agente_unificado_habilitado(channel: str) -> bool:
+    """
+    ¿El canal está en el flag de unificación post-venta → Atención al Alumno?
+
+    Vacío (default) = apagado en todos lados: responde el agente de post-venta
+    viejo, igual que antes de la fusión. Se prende agregando
+    `UNIFIED_STUDENT_AGENT_CHANNELS=widget` al .env y recreando el container,
+    y se apaga borrando esa línea. Sin rebuild, sin migración, sin tocar la DB.
+    """
+    try:
+        from config.settings import get_settings
+
+        habilitados = get_settings().unified_student_agent_channels or ""
+    except Exception:
+        return False
+    canales = {c.strip().lower() for c in habilitados.split(",") if c.strip()}
+    return bool(canales) and (channel or "").strip().lower() in canales
+
+
+async def run_student_support_node(state: SupervisorState) -> dict:
+    """
+    Nodo del intent `post_venta`.
+
+    Con el flag apagado delega en el agente viejo (comportamiento idéntico al
+    de antes). Con el flag prendido para ese canal, lo atiende el agente
+    unificado de Atención al Alumno, que ve el estado de cuenta además de los
+    datos de cursada — que es lo que faltaba cuando el bot le dijo a un alumno
+    que su curso estaba pagado sin poder ver su saldo.
+
+    El dispatch va DENTRO del nodo, no en `build_supervisor`, porque el grafo
+    se cachea: si estuviera afuera, el flag quedaría congelado en el primer
+    arranque.
+    """
+    if not _agente_unificado_habilitado(state.get("channel", "")):
+        return await run_post_sales_node(state)
+
+    ficha = await _cargar_ficha(state)
+    agent = build_collections_agent(ficha=ficha, country=state.get("country", "AR"))
+    result = await agent.ainvoke({"messages": state["messages"]})
+
+    last_ai = result["messages"][-1] if result["messages"] else None
+    handoff = False
+    reason = ""
+    if last_ai:
+        cleaned, handoff, reason = _clean_handoff_tags(str(last_ai.content))
+        if handoff and not reason:
+            reason = "post_venta"
+        last_ai.content = cleaned
+
+    return {"messages": result["messages"], "handoff_requested": handoff, "handoff_reason": reason}
 
 
 async def run_post_sales_node(state: SupervisorState) -> dict:
@@ -504,7 +564,10 @@ def build_supervisor() -> StateGraph:
     graph.add_node("clasificador", classify_intent)
     graph.add_node("ventas", run_sales_node)
     graph.add_node("cobranzas", run_collections_node)
-    graph.add_node("post_venta", run_post_sales_node)
+    # El nodo sigue llamándose "post_venta": el clasificador, los edges y las
+    # colas persistidas no cambian. Adentro decide si lo atiende el agente
+    # viejo o el unificado, según el flag por canal.
+    graph.add_node("post_venta", run_student_support_node)
     graph.add_node("closer", run_closer_node)
 
     graph.add_edge(START, "clasificador")
