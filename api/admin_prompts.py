@@ -26,7 +26,6 @@ BASE_DIR = Path(__file__).parent.parent
 PROMPT_FILES = {
     "ventas": "agents/sales/prompts.py",
     "cobranzas": "agents/collections/prompts.py",
-    "post_venta": "agents/post_sales/prompts.py",
     "bienvenida": "agents/routing/greeting_prompt.py",
     "orquestador": "agents/routing/router_prompt.py",
 }

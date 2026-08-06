@@ -57,15 +57,6 @@ const AGENTS: AgentInfo[] = [
     promptKey: "cobranzas",
   },
   {
-    key: "post_sales",
-    label: "Post-venta (en reemplazo)",
-    icon: Headphones,
-    description:
-      "Agente anterior de soporte al alumno. Sus capacidades se absorbieron en Atención al Alumno, porque en la práctica es el mismo equipo y tenerlos separados hacía que respondiera sobre pagos sin ver el saldo. Sigue activo como respaldo: se usa en los canales donde la unificación todavía no está habilitada.",
-    tools: ["Zoho Contacts", "LMS", "Tickets"],
-    promptKey: "post_venta",
-  },
-  {
     key: "router",
     label: "Router (orquestador)",
     icon: Bot,

@@ -22,7 +22,6 @@ from typing_extensions import TypedDict
 
 from agents.closer.agent import build_closer_agent
 from agents.collections.agent import build_collections_agent
-from agents.post_sales.agent import build_post_sales_agent
 from agents.sales.agent import build_sales_agent
 from config.constants import HANDOFF_KEYWORDS, AgentType
 from config.settings import get_settings
@@ -198,9 +197,12 @@ async def classify_intent(state: SupervisorState) -> dict:
     current = state.get("current_agent", "")
     agent_hint = ""
     if current and current != AgentType.HUMAN.value:
-        agent_label = {"sales": "ventas", "collections": "cobranzas", "post_sales": "post_venta"}.get(
-            current, ""
-        )
+        # `current` ya trae el value del enum, que está en español ("ventas",
+        # "cobranzas", "post_venta"). Acá había un dict con claves en inglés
+        # que NUNCA matcheaba: el hint de continuidad no se activaba para
+        # ningún agente, así que el clasificador perdía el contexto de quién
+        # venía atendiendo y saltaba de agente a mitad de conversación.
+        agent_label = current if current in {a.value for a in AgentType} else ""
         if agent_label:
             agent_hint = f"\n\nContexto: la conversación viene siendo atendida por el agente de '{agent_label}'. Mantené ese agente salvo cambio claro de tema."
 
@@ -425,25 +427,6 @@ async def run_collections_node(state: SupervisorState) -> dict:
     }
 
 
-def _agente_unificado_habilitado(channel: str) -> bool:
-    """
-    ¿El canal está en el flag de unificación post-venta → Atención al Alumno?
-
-    Vacío (default) = apagado en todos lados: responde el agente de post-venta
-    viejo, igual que antes de la fusión. Se prende agregando
-    `UNIFIED_STUDENT_AGENT_CHANNELS=widget` al .env y recreando el container,
-    y se apaga borrando esa línea. Sin rebuild, sin migración, sin tocar la DB.
-    """
-    try:
-        from config.settings import get_settings
-
-        habilitados = get_settings().unified_student_agent_channels or ""
-    except Exception:
-        return False
-    canales = {c.strip().lower() for c in habilitados.split(",") if c.strip()}
-    return bool(canales) and (channel or "").strip().lower() in canales
-
-
 async def run_student_support_node(state: SupervisorState) -> dict:
     """
     Nodo del intent `post_venta`.
@@ -458,28 +441,8 @@ async def run_student_support_node(state: SupervisorState) -> dict:
     se cachea: si estuviera afuera, el flag quedaría congelado en el primer
     arranque.
     """
-    if not _agente_unificado_habilitado(state.get("channel", "")):
-        return await run_post_sales_node(state)
-
     ficha = await _cargar_ficha(state)
     agent = build_collections_agent(ficha=ficha, country=state.get("country", "AR"))
-    result = await agent.ainvoke({"messages": state["messages"]})
-
-    last_ai = result["messages"][-1] if result["messages"] else None
-    handoff = False
-    reason = ""
-    if last_ai:
-        cleaned, handoff, reason = _clean_handoff_tags(str(last_ai.content))
-        if handoff and not reason:
-            reason = "post_venta"
-        last_ai.content = cleaned
-
-    return {"messages": result["messages"], "handoff_requested": handoff, "handoff_reason": reason}
-
-
-async def run_post_sales_node(state: SupervisorState) -> dict:
-    country = state.get("country", "AR")
-    agent = build_post_sales_agent(country=country)
     result = await agent.ainvoke({"messages": state["messages"]})
 
     last_ai = result["messages"][-1] if result["messages"] else None

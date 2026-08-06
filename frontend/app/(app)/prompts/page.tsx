@@ -24,7 +24,7 @@ import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 type Agent = {
-  key: "ventas" | "cobranzas" | "post_venta" | "bienvenida" | "orquestador";
+  key: "ventas" | "cobranzas" | "bienvenida" | "orquestador";
   label: string;
   file: string;
   description: string;
@@ -33,7 +33,6 @@ type Agent = {
 const AGENTS: Agent[] = [
   { key: "ventas",       label: "Ventas",       file: "agents/sales/prompts.py",          description: "RAG de cursos + cierre con links MP/Rebill" },
   { key: "cobranzas",    label: "Atención al Alumno", file: "agents/collections/prompts.py",  description: "Estado de cuenta, cursada, certificados y soporte" },
-  { key: "post_venta",   label: "Post-venta (respaldo)", file: "agents/post_sales/prompts.py", description: "Reemplazado por Atención al Alumno — activo solo donde la unificación no está habilitada" },
   { key: "bienvenida",   label: "Bienvenida",   file: "agents/routing/greeting_prompt.py", description: "Saludo inicial del widget" },
   { key: "orquestador",  label: "Orquestador",  file: "agents/routing/router_prompt.py",  description: "Clasificador de intent (gpt-4o-mini)" },
 ];

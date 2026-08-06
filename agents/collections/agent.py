@@ -7,6 +7,7 @@ from agents.collections.tools import (
     buscar_ficha_alumno,
     buscar_suscripcion_rebill,
     generar_insta_link_rebill,
+    send_nps_survey,
 )
 from config.settings import get_settings
 
@@ -14,6 +15,7 @@ COLLECTIONS_TOOLS = [
     buscar_ficha_alumno,
     buscar_suscripcion_rebill,
     generar_insta_link_rebill,
+    send_nps_survey,
 ]
 
 

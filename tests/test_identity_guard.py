@@ -152,34 +152,3 @@ async def test_whatsapp_puede_consultar_su_cuenta():
     assert "FICHA_ALUMNO_ENCONTRADA" in out
 
 
-# ── La tool de post-venta ──────────────────────────────────────────────────
-
-
-@pytest.mark.asyncio
-async def test_post_venta_no_entrega_cursos_a_email_tipeado():
-    from agents.post_sales.tools import get_student_info
-
-    current_identity_source.set("typed")
-    contacts = AsyncMock()
-    with patch("agents.post_sales.tools.ZohoContacts", return_value=contacts):
-        out = await get_student_info.ainvoke({"email": "victima@ejemplo.com"})
-
-    assert out == MENSAJE_REQUIERE_LOGIN
-    contacts.search_by_email.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_las_dos_tools_usan_el_mismo_guard():
-    """No puede haber una puerta con llave y otra abierta."""
-    from agents.collections.tools import buscar_ficha_alumno
-    from agents.post_sales.tools import get_student_info
-
-    current_identity_source.set("none")
-    with (
-        patch("agents.collections.tools.ZohoAreaCobranzas", return_value=AsyncMock()),
-        patch("integrations.zoho.contacts.ZohoContacts", return_value=_contacts_mock()),
-        patch("agents.post_sales.tools.ZohoContacts", return_value=AsyncMock()),
-    ):
-        a = await buscar_ficha_alumno.ainvoke({"email": "x@y.com"})
-        b = await get_student_info.ainvoke({"email": "x@y.com"})
-    assert a == b == MENSAJE_REQUIERE_LOGIN

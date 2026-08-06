@@ -299,3 +299,55 @@ def _formatear_ficha(ficha: dict) -> str:
         f"- Fecha contrato efectivo: {ficha.get('fechaContratoEfectivo')}",
     ]
     return "\n".join(lines)
+
+
+@tool
+async def send_nps_survey(
+    contact_id: str,
+    course_name: str,
+    score: int,
+    comment: str = "",
+) -> str:
+    """
+    Registra la respuesta de una encuesta NPS del alumno en Zoho.
+
+    Usar solo cuando el alumno da espontáneamente una puntuación del 0 al 10
+    sobre su experiencia. No la pidas vos.
+
+    Args:
+        contact_id: ID del contacto
+        course_name: Nombre del curso evaluado
+        score: Puntuación NPS del 0 al 10
+        comment: Comentario adicional del alumno (opcional)
+    """
+    if not (0 <= score <= 10):
+        return "La puntuación debe ser entre 0 y 10."
+
+    nps_type = "Promotor" if score >= 9 else ("Neutral" if score >= 7 else "Detractor")
+
+    from integrations.zoho.collections import ZohoCollections
+
+    await ZohoCollections().log_interaction(
+        contact_id=contact_id,
+        notes=(
+            f"NPS recibido. Curso: {course_name}. Score: {score}/10 ({nps_type}). "
+            f"Comentario: {comment or 'Sin comentario'}"
+        ),
+        interaction_type="Encuesta NPS",
+    )
+
+    if score >= 9:
+        return (
+            f"¡Gracias por su puntuación de {score}/10! Nos alegra que haya tenido una "
+            "excelente experiencia. ¿Le gustaría compartir su reseña en redes sociales?"
+        )
+    if score >= 7:
+        return (
+            f"Gracias por su puntuación de {score}/10. ¿Hay algo específico que "
+            "podríamos mejorar para su próxima experiencia?"
+        )
+    return (
+        f"Gracias por ser honesto con su puntuación de {score}/10. Lamentamos que la "
+        "experiencia no haya sido la esperada. Un asesor se pondrá en contacto para "
+        "escuchar su feedback en detalle."
+    )

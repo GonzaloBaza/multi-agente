@@ -1781,11 +1781,17 @@ async def process_widget_message(
             queue_val = (_q.decode() if isinstance(_q, bytes) else _q) if _q else ""
             # Fallback: construir la cola desde el agente + país si no está cacheada
             if not queue_val:
+                # Claves = valores del enum (español), que es lo que trae
+                # `agent_used`. Antes estaban en inglés y NUNCA matcheaban, así
+                # que todo handoff caía al default y las conversaciones de
+                # cobranzas y post-venta se auto-asignaban a la cola ventas_XX.
+                from config.constants import AgentType as _AT
+
                 _agent_map = {
-                    "sales": "ventas",
-                    "collections": "cobranzas",
-                    "post_sales": "post_venta",
-                    "closer": "ventas",
+                    _AT.SALES.value: "ventas",
+                    _AT.COLLECTIONS.value: "cobranzas",
+                    _AT.POST_SALES.value: "post_venta",
+                    _AT.CLOSER.value: "ventas",
                 }
                 _prefix = _agent_map.get(agent_used, "ventas")
                 queue_val = f"{_prefix}_{(country or 'XX').upper()}"
