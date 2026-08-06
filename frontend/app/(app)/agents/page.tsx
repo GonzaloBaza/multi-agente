@@ -49,19 +49,19 @@ const AGENTS: AgentInfo[] = [
   },
   {
     key: "collections",
-    label: "Cobranzas",
+    label: "Atención al Alumno",
     icon: Wallet,
     description:
-      "Recupera deuda vencida. Consulta saldo en Zoho (módulo area_cobranzas), regenera links de pago expirados, ofrece planes de regularización, registra gestiones.",
-    tools: ["Zoho Cobranzas", "Rebill", "MercadoPago"],
+      "Atiende todo lo del alumno inscripto: estado de cuenta y recupero de deuda, acceso al campus, vigencia, certificados, soporte técnico y bajas. El estado de cuenta lo calcula el sistema (saldo pendiente y vencido), no lo interpreta el modelo.",
+    tools: ["Zoho Cobranzas", "Zoho Contacts", "Rebill", "MercadoPago"],
     promptKey: "cobranzas",
   },
   {
     key: "post_sales",
-    label: "Post-venta",
+    label: "Post-venta (en reemplazo)",
     icon: Headphones,
     description:
-      "Soporte para alumnos activos. Verifica inscripción en Zoho, gestiona acceso al LMS (Moodle/Blackboard/Tropos), procesa certificados, recibe tickets.",
+      "Agente anterior de soporte al alumno. Sus capacidades se absorbieron en Atención al Alumno, porque en la práctica es el mismo equipo y tenerlos separados hacía que respondiera sobre pagos sin ver el saldo. Sigue activo como respaldo: se usa en los canales donde la unificación todavía no está habilitada.",
     tools: ["Zoho Contacts", "LMS", "Tickets"],
     promptKey: "post_venta",
   },

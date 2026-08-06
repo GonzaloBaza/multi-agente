@@ -62,8 +62,8 @@ const CHANNELS = ["widget", "whatsapp"];
 const AGENTS = [
   { value: null,          label: "Auto (router)" },
   { value: "sales",       label: "Ventas" },
-  { value: "collections", label: "Cobranzas" },
-  { value: "post_sales",  label: "Post-venta" },
+  { value: "collections", label: "Atención al Alumno" },
+  { value: "post_sales",  label: "Post-venta (respaldo)" },
   { value: "closer",      label: "Closer" },
 ];
 

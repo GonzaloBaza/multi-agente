@@ -32,8 +32,8 @@ type Agent = {
 
 const AGENTS: Agent[] = [
   { key: "ventas",       label: "Ventas",       file: "agents/sales/prompts.py",          description: "RAG de cursos + cierre con links MP/Rebill" },
-  { key: "cobranzas",    label: "Cobranzas",    file: "agents/collections/prompts.py",    description: "Recupero de deuda vencida (Zoho)" },
-  { key: "post_venta",   label: "Post-venta",   file: "agents/post_sales/prompts.py",     description: "Soporte LMS + certificados" },
+  { key: "cobranzas",    label: "Atención al Alumno", file: "agents/collections/prompts.py",  description: "Estado de cuenta, cursada, certificados y soporte" },
+  { key: "post_venta",   label: "Post-venta (respaldo)", file: "agents/post_sales/prompts.py", description: "Reemplazado por Atención al Alumno — activo solo donde la unificación no está habilitada" },
   { key: "bienvenida",   label: "Bienvenida",   file: "agents/routing/greeting_prompt.py", description: "Saludo inicial del widget" },
   { key: "orquestador",  label: "Orquestador",  file: "agents/routing/router_prompt.py",  description: "Clasificador de intent (gpt-4o-mini)" },
 ];
