@@ -57,6 +57,13 @@ async def buscar_alumno_mail_adc(email: str) -> str:
     Args:
         email: Email del alumno con el que se registró en el campus.
     """
+    # 🔒 Devuelve PII financiera: solo para identidades verificadas por el canal.
+    # Sin esto, cualquiera tipeaba el mail de un tercero y recibía su ficha.
+    from utils.identity_guard import bloquear_si_no_verificado
+
+    if rechazo := await bloquear_si_no_verificado("buscar_alumno_mail_adc", email):
+        return rechazo
+
     zoho = ZohoAreaCobranzas()
     ficha = await zoho.search_by_email(email)
 

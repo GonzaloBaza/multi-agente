@@ -257,6 +257,17 @@ async def process_whatsapp_message(payload: dict) -> None:
     # Historial para el agente
     history = conversation.get_history_for_llm(MAX_HISTORY_MESSAGES)
 
+    # 🔒 El número de WhatsApp lo verifica el canal (Meta/Botmaker), no el
+    # usuario: es identidad verificada y habilita datos de cuenta. Antes acá
+    # no se seteaba nada y el ContextVar quedaba en su default, así que las
+    # tools de cuenta rechazaban SIEMPRE a los alumnos de WhatsApp.
+    try:
+        from utils.agent_context import current_identity_source
+
+        current_identity_source.set("phone")
+    except Exception as _e:
+        logger.warning("set_identity_phone_failed", error=str(_e))
+
     # Procesar con el router de agentes
     result = await route_message(
         user_message=text,

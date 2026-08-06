@@ -61,18 +61,29 @@ current_lead_id: ContextVar[str] = ContextVar("current_lead_id", default="")
 #              "lead_id_social": "..."}
 current_ctwa_params: ContextVar[dict] = ContextVar("current_ctwa_params", default={})
 
-# Flag: ¿el usuario está autenticado en el sitio MSK?
-# Lo setea el endpoint del canal (widget) en función de la fuente del email:
-#   - Email vino en `req.user_email` del payload inicial (lo pasa msk-front
-#     porque el visitante tiene sesión activa en msklatam.com) → True
-#   - Email lo tipeó el usuario en el chat (collected_email del widget_flow)
-#     → False (es anónimo "diciendo ser X" — no podemos confiar para PII)
+# ¿CÓMO se identificó la persona con la que estamos hablando?
+# Determina si se le puede mostrar información de su cuenta (PII: nombre,
+# importes, deuda, cuotas). Lo setea el endpoint de cada canal.
 #
-# Las tools de post_venta (get_student_info) deben rechazar el acceso a info
-# de cuenta cuando este flag es False. Ver agents/post_sales/tools.py.
-current_user_authenticated: ContextVar[bool] = ContextVar(
-    "current_user_authenticated", default=False
-)
+#   "session"  El sitio msk-front mandó el email porque el visitante tiene
+#              sesión activa en msklatam.com. Identidad verificada.
+#   "phone"    Llegó por WhatsApp: el número lo verifica el canal, no el
+#              usuario. Identidad verificada.
+#   "typed"    Tipeó un email en el chat. **NO está verificado**: cualquiera
+#              puede escribir el mail de otra persona.
+#   "none"     Anónimo, sin identificación.
+#
+# Solo "session" y "phone" habilitan datos de cuenta. Ver el guard compartido
+# en `utils.identity_guard`.
+current_identity_source: ContextVar[str] = ContextVar("current_identity_source", default="none")
+
+# Fuentes en las que confiamos para mostrar información de cuenta.
+IDENTIDADES_VERIFICADAS = ("session", "phone")
+
+
+def identidad_verificada() -> bool:
+    """True si la identidad fue verificada por un canal, no declarada por el usuario."""
+    return current_identity_source.get() in IDENTIDADES_VERIFICADAS
 
 
 async def log_to_conv(event_type: str, data: dict) -> None:

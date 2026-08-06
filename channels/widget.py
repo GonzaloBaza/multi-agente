@@ -960,16 +960,16 @@ async def process_widget_message(
     # Si llega vacío → visitante anónimo (puede después escribir un email en el
     # chat pero NO lo tratamos como autenticado).
     #
-    # Las tools sensibles (get_student_info, etc.) leen este flag via
-    # `utils.agent_context.current_user_authenticated` y bloquean el acceso a
-    # PII si está en False. Ver utils/agent_context.py + post_sales/tools.py.
+    # Las tools que exponen datos de cuenta leen `current_identity_source` y
+    # solo responden a identidades verificadas por el canal. Un email tipeado
+    # después en el chat NO cambia esto a "session". Ver utils/identity_guard.py.
     is_authenticated_user = bool(user_email)
     try:
-        from utils.agent_context import current_user_authenticated
+        from utils.agent_context import current_identity_source
 
-        current_user_authenticated.set(is_authenticated_user)
+        current_identity_source.set("session" if is_authenticated_user else "none")
     except Exception as _e:
-        logger.debug("set_auth_contextvar_failed", error=str(_e))
+        logger.warning("set_identity_contextvar_failed", error=str(_e))
 
     # Si acabamos de crear la conv y el front envió el saludo que mostró,
     # lo persistimos como primer bot msg para que quede en el historial
@@ -1365,6 +1365,16 @@ async def process_widget_message(
     if collected_email:
         user_email = collected_email
         conversation.user_profile.email = collected_email
+        # ⚠️ El email lo escribió el usuario en el chat: sirve para contactarlo
+        # o crear un lead, pero NO verifica quién es. Se marca "typed" para que
+        # las tools de cuenta lo rechacen (cualquiera puede tipear un mail ajeno).
+        try:
+            from utils.agent_context import current_identity_source
+
+            if current_identity_source.get() != "session":
+                current_identity_source.set("typed")
+        except Exception as _e:
+            logger.warning("set_identity_typed_failed", error=str(_e))
         await store.save(conversation)
         logger.info("widget_email_collected", session=session_id, email=collected_email)
         await log_event(
