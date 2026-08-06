@@ -8,6 +8,7 @@ from agents.post_sales.tools import (
     send_nps_survey,
 )
 from config.settings import get_settings
+from utils.business_hours import business_hours_block
 
 POST_SALES_TOOLS = [
     get_student_info,
@@ -22,7 +23,7 @@ def build_post_sales_agent(country: str = "AR"):
         api_key=settings.openai_api_key,
         temperature=0.2,
     )
-    system_prompt = POST_SALES_SYSTEM_PROMPT.format(country=country)
+    system_prompt = POST_SALES_SYSTEM_PROMPT.format(country=country) + "\n\n" + business_hours_block(country)
     agent = create_react_agent(
         model=llm,
         tools=POST_SALES_TOOLS,

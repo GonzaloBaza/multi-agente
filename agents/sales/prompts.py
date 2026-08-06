@@ -131,25 +131,14 @@ def build_sales_prompt(
         if _is_hot_sale and "factor" in campaign_config
         else ""
     )
-    # ── HORARIO LABORAL — inyectado en Sección 14 para que el bot decida
-    # el mensaje correcto (en horario vs. fuera de horario) al recolectar datos.
-    import datetime as _dt
-    _TZ_OFFSETS_SALES: dict[str, int] = {
-        "AR": -3, "UY": -3, "BR": -3,
-        "CL": -4, "BO": -4, "VE": -4, "PY": -4,
-        "CO": -5, "PE": -5, "EC": -5,
-        "MX": -6, "CR": -6, "GT": -6, "HN": -6, "NI": -6, "SV": -6,
-        "PA": -5, "ES": 2, "INT": -3,
-    }
-    _tz_offset = _TZ_OFFSETS_SALES.get((country or "AR").upper().strip(), -3)
-    _now_local = _dt.datetime.now(_dt.timezone.utc) + _dt.timedelta(hours=_tz_offset)
-    _is_biz_hours = (_now_local.weekday() < 5) and (9 <= _now_local.hour < 18)
-    _biz_hours_note = (
-        f"Hora local {(country or 'AR').upper()} ahora: "
-        f"{_now_local.strftime('%A %d/%m %H:%M')} → "
-        + ("✅ dentro del horario laboral (L-V 9-18 hs)." if _is_biz_hours
-           else "⚠️ FUERA del horario laboral (L-V 9-18 hs).")
-    )
+    # ── HORARIO LABORAL — computado desde utils.business_hours (fuente única
+    # para todos los agentes; timezones reales con DST). Se inyecta en Sección
+    # 14 para que el bot elija el mensaje correcto (en horario vs. fuera) al
+    # recolectar datos.
+    from utils.business_hours import business_hours_note, is_business_hours
+
+    _is_biz_hours = is_business_hours(country)
+    _biz_hours_note = business_hours_note(country)
     _msg_en_horario = (
         "¡Listo! Ya dejé tus datos con el equipo — "
         "un asesor académico te va a contactar a la brevedad. 🙏"

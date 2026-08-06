@@ -49,6 +49,9 @@ def build_closer_prompt(
     currency = currency_map.get(country, "ARS (pesos argentinos)")
     tone_block = _tone_block_for_country(country)
 
+    from utils.business_hours import business_hours_block
+    _biz_hours_block = business_hours_block(country)
+
     channel_format = _channel_format(channel)
 
     context_block = ""
@@ -191,6 +194,8 @@ Si después de BOT15 + BOT20 el lead sigue sin cerrar:
 - *"¿Cuándo empieza?"* / *"¿Cuándo puedo arrancar?"*
 - Pregunta por pagos específicos (*"¿cuántos pagos?"*)
 - *"¿Tienen promoción?"* (ya está pensando en comprar)
+
+{_biz_hours_block}
 
 ## CUÁNDO DERIVAR A HUMANO
 

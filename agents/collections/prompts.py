@@ -582,4 +582,8 @@ def build_collections_prompt(ficha: dict | None = None) -> str:
             if k in defaults:
                 defaults[k] = str(v)
 
-    return COLLECTIONS_SYSTEM_PROMPT_TEMPLATE.format(**defaults)
+    from utils.business_hours import business_hours_block
+
+    prompt = COLLECTIONS_SYSTEM_PROMPT_TEMPLATE.format(**defaults)
+    # `pais` viene como nombre completo ("Argentina") — el helper lo resuelve.
+    return prompt + "\n\n" + business_hours_block(defaults["pais"])
