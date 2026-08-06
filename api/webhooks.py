@@ -447,13 +447,16 @@ async def _verificar_pago_task(phone: str, pais: str):
 
         zoho = ZohoAreaCobranzas()
         ficha = await zoho.get_by_id(cobranza_id)
-        pagado = ficha.get("pagado", False)
+        # Acá alcanza con saber si se saldó la deuda VENCIDA (por eso se mandó
+        # el link). NO implica que el contrato esté cancelado — el alumno puede
+        # tener cuotas por delante. El mensaje de abajo no debe sugerir lo otro.
+        sin_deuda_vencida = ficha.get("sinDeudaVencida", False)
 
         botmaker = BotmakerClient()
         channel_id = _get_channel_id(pais)
 
-        if pagado:
-            msg = "¡Tu pago fue confirmado exitosamente! Ya tenés acceso completo a tu programa. 🎉"
+        if sin_deuda_vencida:
+            msg = "¡Tu pago fue confirmado exitosamente! 🎉 Ya tenés habilitado el acceso a tu programa."
             await botmaker.send_message_to_channel(channel_id, phone, msg)
             await r.delete(f"rebill_pendiente:{phone}")
             await r.delete(f"followup_pendiente:{phone}")
@@ -506,8 +509,8 @@ async def _monitorear_pago_task(phone: str, pais: str, cobranza_id: str):
         botmaker = BotmakerClient()
         channel_id = _get_channel_id(pais)
 
-        if ficha.get("pagado", False):
-            msg = "¡Tu pago fue confirmado exitosamente! Ya tenés acceso completo a tu programa. 🎉"
+        if ficha.get("sinDeudaVencida", False):
+            msg = "¡Tu pago fue confirmado exitosamente! 🎉 Ya tenés habilitado el acceso a tu programa."
             await botmaker.send_message_to_channel(channel_id, phone, msg)
             await r.delete(f"rebill_pendiente:{phone}")
             await r.delete(f"followup_pendiente:{phone}")

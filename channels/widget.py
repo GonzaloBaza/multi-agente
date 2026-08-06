@@ -349,15 +349,28 @@ async def _build_user_context(
             )
 
         if ficha and ficha.get("cobranzaId"):
-            saldo = float(ficha.get("saldoPendiente") or 0)
+            saldo_vencido = float(ficha.get("saldoPendiente") or 0)
             cuotas_venc = int(ficha.get("cuotasVencidas") or 0)
-            has_debt = saldo > 0 or cuotas_venc > 0
+            # `has_debt` es SOLO para el routing (deuda vencida → cobranzas).
+            # No se usa para decidir qué se le dice al alumno.
+            has_debt = saldo_vencido > 0 or cuotas_venc > 0
             signals["has_debt"] = has_debt
-            lines.append(
-                f"Estado financiero: cuotas vencidas={cuotas_venc}, "
-                f"saldo pendiente={ficha.get('moneda', '')} {saldo} "
-                f"({'CON deuda' if has_debt else 'AL DÍA'})"
-            )
+
+            # El veredicto lo calcula account_state, no el LLM. Antes acá se
+            # inyectaba una línea que decía "saldo pendiente = 0 (AL DÍA)"
+            # usando el saldo VENCIDO — y el bot concluía que el alumno había
+            # terminado de pagar cuando todavía le quedaban cuotas.
+            from utils.account_state import clasificar_estado_cuenta
+
+            estado = clasificar_estado_cuenta(ficha)
+            lines.append(f"Estado de cuenta: {estado['render']}")
+            if estado["inconsistencias"]:
+                logger.warning(
+                    "ficha_cobranzas_inconsistente",
+                    cobranza_id=ficha.get("cobranzaId"),
+                    inconsistencias=estado["inconsistencias"],
+                    estado=str(estado["estado"]),
+                )
             if not signals["profile_name"] and ficha.get("alumno"):
                 signals["profile_name"] = ficha["alumno"]
     except Exception as e:

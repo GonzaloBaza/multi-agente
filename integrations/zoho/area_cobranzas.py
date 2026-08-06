@@ -83,34 +83,72 @@ class ZohoAreaCobranzas:
                 logger.warning("zoho_tag_update_failed", status=resp.status_code, tag=tag_name)
 
     def _normalizar(self, raw: dict) -> dict:
-        """Normaliza el registro crudo de Zoho a la ficha estándar del agente."""
+        """
+        Normaliza el registro crudo de Zoho a la ficha estándar del agente.
+
+        ⚠️ Zoho devuelve las claves presentes con valor `null` cuando el campo
+        está vacío, así que `raw.get(k, "default")` NO alcanza — devuelve None y
+        ese None termina renderizado como el string "None" en el prompt. Por eso
+        todos los textos usan `or` en vez del default de `.get()`.
+        """
+
+        def _txt(key: str, default: str = "") -> str:
+            return str(raw.get(key) or default)
+
+        def _num(key: str) -> float:
+            try:
+                return float(raw.get(key) or 0)
+            except (TypeError, ValueError):
+                return 0.0
+
+        def _ent(key: str) -> int:
+            try:
+                return int(raw.get(key) or 0)
+            except (TypeError, ValueError):
+                return 0
+
         return {
-            "cobranzaId": raw.get("id", ""),
-            "ID_Cliente": raw.get("ID_Cliente", ""),
-            "alumno": raw.get("Nombre_del_alumno", "Alumno"),
-            "email": raw.get("Email", ""),
-            "telefono": raw.get("Tel_fono", ""),
-            "pais": raw.get("Pa_s", ""),
-            "importeContrato": float(raw.get("Importe_de_contrato") or 0),
-            "moneda": raw.get("Currency", "ARS"),
-            "modoPago": raw.get("Modo_de_pago", ""),
-            "metodoPago": raw.get("M_todo_de_pago", ""),
-            "valorCuota": float(raw.get("Monto_de_cada_pago_restantes") or 0),
-            "saldoPendiente": float(raw.get("Saldo_Vencido_2") or 0),
-            "saldoTotal": float(raw.get("Saldo_pendiente") or 0),
-            "diasAtraso": int(raw.get("Dias_de_atraso_cal") or 0),
-            "estadoGestion": raw.get("Estado_de_la_gesti_n", "Desconocido"),
-            "estadoMora": raw.get("Estado_de_mora", "Al día"),
-            "cuotasTotales": int(raw.get("Cuotas_totales_2") or 0),
-            "cuotasPagas": int(raw.get("Cuotas_pagas_2") or 0),
-            "cuotasVencidas": int(raw.get("Cuotas_vencidas_2") or 0),
-            "cuotasPendientes": int(raw.get("Cuotas_pendientes_2") or 0),
-            "importeUltimoPago": float(raw.get("Importe_ultimo_pago") or 0),
-            "fechaUltimoPago": raw.get("Fecha_de_ultimo_pago", "No registrado"),
-            "fechaContratoEfectivo": raw.get("Fecha_de_contrato_efectivo", "No registrada"),
-            "fechaProximoPago": raw.get("Fecha_de_proximo_pago", "No registra"),
-            "fechaPromesaPago": raw.get("Fecha_de_promesa_de_pago", "No registra"),
-            "linkFactura": raw.get("Comprobante_Factura", "No disponible"),
-            "pagado": int(raw.get("Dias_de_atraso_cal") or 0) == 0
-            and float(raw.get("Saldo_Vencido_2") or 0) == 0,
+            "cobranzaId": _txt("id"),
+            "ID_Cliente": _txt("ID_Cliente"),
+            "alumno": _txt("Nombre_del_alumno", "Alumno"),
+            "email": _txt("Email"),
+            "telefono": _txt("Tel_fono"),
+            "pais": _txt("Pa_s"),
+            "importeContrato": _num("Importe_de_contrato"),
+            # Cuánto pagó realmente. Permite la identidad contable
+            # `contrato - pagado = saldoTotal`, que es lo único que habilita a
+            # afirmar si un contrato está saldado. Ver utils/account_state.py.
+            "importePagado": _num("Importe_de_pagos_a_la_fecha_2"),
+            "moneda": _txt("Currency", "ARS"),
+            "modoPago": _txt("Modo_de_pago"),
+            "metodoPago": _txt("M_todo_de_pago"),
+            "valorCuota": _num("Monto_de_cada_pago_restantes"),
+            # OJO: `saldoPendiente` es la deuda VENCIDA exigible hoy
+            # (Zoho `Saldo_Vencido_2`), NO lo que falta del contrato. Lo que
+            # falta en total es `saldoTotal` (Zoho `Saldo_pendiente`).
+            "saldoPendiente": _num("Saldo_Vencido_2"),
+            "saldoTotal": _num("Saldo_pendiente"),
+            "diasAtraso": _ent("Dias_de_atraso_cal"),
+            "estadoGestion": _txt("Estado_de_la_gesti_n", "Desconocido"),
+            "estadoMora": _txt("Estado_de_mora", "Al día"),
+            "cuotasTotales": _ent("Cuotas_totales_2"),
+            "cuotasPagas": _ent("Cuotas_pagas_2"),
+            "cuotasVencidas": _ent("Cuotas_vencidas_2"),
+            "cuotasPendientes": _ent("Cuotas_pendientes_2"),
+            "importeUltimoPago": _num("Importe_ultimo_pago"),
+            "fechaUltimoPago": _txt("Fecha_de_ultimo_pago", "No registrado"),
+            "fechaContratoEfectivo": _txt("Fecha_de_contrato_efectivo", "No registrada"),
+            "fechaProximoPago": _txt("Fecha_de_proximo_pago", "No registra"),
+            # Fecha a la que corresponde la próxima cuota del plan. Zoho la
+            # mantiene aunque `Fecha_de_proximo_pago` venga vacía.
+            "fechaProximaCuota": _txt("Cuota_corresponde_a", "No registra"),
+            "fechaPromesaPago": _txt("Fecha_de_promesa_de_pago", "No registra"),
+            "linkFactura": _txt("Comprobante_Factura", "No disponible"),
+            "baja": bool(raw.get("Baja")),
+            "refinanciamiento": bool(raw.get("Refinanciamiento")),
+            # ⚠️ Esto es "no tiene deuda VENCIDA", NO "canceló el contrato".
+            # Antes se llamaba `pagado` y ese nombre causó que el bot le dijera
+            # a un alumno con 10 cuotas por delante que ya había pagado todo.
+            # Para saber si el contrato está saldado usá clasificar_estado_cuenta().
+            "sinDeudaVencida": _ent("Dias_de_atraso_cal") == 0 and _num("Saldo_Vencido_2") == 0,
         }

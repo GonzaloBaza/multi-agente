@@ -25,8 +25,20 @@ class TestMessageRequest(BaseModel):
     history: list[dict] = []  # [{role: "user"|"assistant", content: "..."}]
     country: str = "AR"
     channel: str = "widget"
-    forced_agent: str | None = None  # sales|collections|post_sales|closer|None
-    skip_flow: bool = True  # saltea flow runner en tests
+    # Acepta ambos vocabularios (ver `_agent_name_map` en agents/router.py):
+    # ventas|cobranzas|post_venta|closer o sales|collections|post_sales|closer.
+    forced_agent: str | None = None
+    skip_flow: bool = True  # no-op, se conserva por compat de callers
+
+    # Contexto del usuario simulado. Sin esto es imposible reproducir en el
+    # sandbox los bugs que dependen de la ficha del alumno (ej. estado de
+    # cuenta), porque los agentes resuelven la ficha a partir del email/phone.
+    email: str = ""
+    user_name: str = ""
+    phone: str = ""
+    page_slug: str = ""
+    has_debt: bool = False
+    is_student: bool = False
 
 
 @router.post("")
@@ -52,8 +64,16 @@ async def test_agent(
             country=req.country,
             channel=req.channel,
             conversation_id=conversation_id,
-            phone="test",
+            phone=req.phone or "test",
+            email=req.email,
+            user_name=req.user_name,
+            page_slug=req.page_slug,
+            has_debt=req.has_debt,
+            is_student=req.is_student,
             skip_flow=req.skip_flow,
+            # Sin esto el selector "Forzar agente" de la UI no hacía nada: el
+            # mensaje siempre pasaba por el clasificador.
+            forced_agent=req.forced_agent,
         )
     except Exception as e:
         logger.error("test_agent_failed", error=str(e))

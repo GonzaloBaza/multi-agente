@@ -42,6 +42,10 @@ type TestAgentBody = {
   country: string;
   channel: string;
   forced_agent: string | null;
+  // Simula al alumno identificado. Los agentes resuelven la ficha (cuotas,
+  // saldo, cursos) a partir del email — sin esto no se pueden reproducir los
+  // bugs de estado de cuenta en el sandbox.
+  email: string;
 };
 
 type TestAgentResponse = {
@@ -75,6 +79,7 @@ function TestAgentInner() {
   const [country, setCountry] = useState("AR");
   const [channel, setChannel] = useState("widget");
   const [forcedAgent, setForcedAgent] = useState<string | null>(null);
+  const [email, setEmail] = useState("");
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const endRef = useRef<HTMLDivElement | null>(null);
@@ -88,6 +93,7 @@ function TestAgentInner() {
         country,
         channel,
         forced_agent: forcedAgent,
+        email: email.trim(),
       };
       return api.post<TestAgentResponse>("/admin/test-agent", body);
     },
@@ -136,7 +142,11 @@ function TestAgentInner() {
         <div>
           <h1 className="text-sm font-semibold">Test Agent</h1>
           <p className="text-[11px] text-fg-dim mt-0.5">
-            Sandbox. No persiste nada en la DB real.
+            La conversación no se guarda en la DB.
+          </p>
+          <p className="text-[11px] text-warn mt-1">
+            ⚠️ Las tools SÍ se ejecutan de verdad: el agente puede crear leads
+            en Zoho o generar links de pago reales.
           </p>
         </div>
 
@@ -160,6 +170,23 @@ function TestAgentInner() {
           >
             {CHANNELS.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
+        </div>
+
+        <div>
+          <label className="text-[10px] text-fg-muted uppercase block mb-1">
+            Email del alumno
+          </label>
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="vacío = anónimo"
+            className="w-full h-8 px-2 bg-bg border border-border rounded text-sm"
+          />
+          <div className="text-[10px] text-fg-dim mt-1">
+            Simula al alumno identificado: el agente resuelve su ficha (cursos,
+            cuotas, saldo) a partir de este mail.
+          </div>
         </div>
 
         <div>
