@@ -1,7 +1,7 @@
 """
 Tests del guard de identidad.
 
-Contexto: la tool `buscar_alumno_mail_adc` de cobranzas devolvía la ficha
+Contexto: la tool `buscar_ficha_alumno` de cobranzas devolvía la ficha
 financiera completa a cualquiera que escribiera un email en el chat. Bastaba
 abrir el widget en incógnito, elegir "Soporte Cobros" y tipear el mail de otra
 persona para ver su nombre, importe de contrato, cuotas, deuda y último pago.
@@ -36,6 +36,19 @@ FICHA = {
     "cuotasVencidas": 1,
     "diasAtraso": 10,
 }
+
+
+def _contacts_mock(contacto: dict | None = None) -> AsyncMock:
+    m = AsyncMock()
+    m.search_by_email_with_cursadas.return_value = contacto or {}
+    m.search_by_email.return_value = contacto or None
+    return m
+
+
+def _so_mock(ordenes: list | None = None) -> AsyncMock:
+    m = AsyncMock()
+    m.list_by_contact.return_value = ordenes or []
+    return m
 
 
 @pytest.fixture(autouse=True)
@@ -83,12 +96,16 @@ def test_el_mensaje_no_revela_si_el_email_existe():
 @pytest.mark.asyncio
 async def test_cobranzas_no_entrega_ficha_a_email_tipeado():
     """El ataque real: anónimo tipea el mail de un tercero en el widget."""
-    from agents.collections.tools import buscar_alumno_mail_adc
+    from agents.collections.tools import buscar_ficha_alumno
 
     current_identity_source.set("typed")
     zoho = AsyncMock()
-    with patch("agents.collections.tools.ZohoAreaCobranzas", return_value=zoho):
-        out = await buscar_alumno_mail_adc.ainvoke({"email": "victima@ejemplo.com"})
+    with (
+        patch("agents.collections.tools.ZohoAreaCobranzas", return_value=zoho),
+        patch("integrations.zoho.contacts.ZohoContacts", return_value=_contacts_mock()),
+        patch("integrations.zoho.sales_orders.ZohoSalesOrders", return_value=_so_mock()),
+    ):
+        out = await buscar_ficha_alumno.ainvoke({"email": "victima@ejemplo.com"})
 
     assert out == MENSAJE_REQUIERE_LOGIN
     # Ni siquiera se consulta Zoho: no filtramos por timing ni por logs.
@@ -99,13 +116,17 @@ async def test_cobranzas_no_entrega_ficha_a_email_tipeado():
 
 @pytest.mark.asyncio
 async def test_cobranzas_entrega_ficha_con_sesion_verificada():
-    from agents.collections.tools import buscar_alumno_mail_adc
+    from agents.collections.tools import buscar_ficha_alumno
 
     current_identity_source.set("session")
     zoho = AsyncMock()
     zoho.search_by_email.return_value = FICHA
-    with patch("agents.collections.tools.ZohoAreaCobranzas", return_value=zoho):
-        out = await buscar_alumno_mail_adc.ainvoke({"email": "victima@ejemplo.com"})
+    with (
+        patch("agents.collections.tools.ZohoAreaCobranzas", return_value=zoho),
+        patch("integrations.zoho.contacts.ZohoContacts", return_value=_contacts_mock()),
+        patch("integrations.zoho.sales_orders.ZohoSalesOrders", return_value=_so_mock()),
+    ):
+        out = await buscar_ficha_alumno.ainvoke({"email": "victima@ejemplo.com"})
 
     assert "FICHA_ALUMNO_ENCONTRADA" in out
     zoho.search_by_email.assert_awaited_once()
@@ -115,13 +136,17 @@ async def test_cobranzas_entrega_ficha_con_sesion_verificada():
 async def test_whatsapp_puede_consultar_su_cuenta():
     """Regresión: por WhatsApp el ContextVar quedaba en su default y la tool
     rechazaba SIEMPRE, aunque el número lo verifique el canal."""
-    from agents.collections.tools import buscar_alumno_mail_adc
+    from agents.collections.tools import buscar_ficha_alumno
 
     current_identity_source.set("phone")
     zoho = AsyncMock()
     zoho.search_by_email.return_value = FICHA
-    with patch("agents.collections.tools.ZohoAreaCobranzas", return_value=zoho):
-        out = await buscar_alumno_mail_adc.ainvoke({"email": "alumno@ejemplo.com"})
+    with (
+        patch("agents.collections.tools.ZohoAreaCobranzas", return_value=zoho),
+        patch("integrations.zoho.contacts.ZohoContacts", return_value=_contacts_mock()),
+        patch("integrations.zoho.sales_orders.ZohoSalesOrders", return_value=_so_mock()),
+    ):
+        out = await buscar_ficha_alumno.ainvoke({"email": "alumno@ejemplo.com"})
 
     assert out != MENSAJE_REQUIERE_LOGIN
     assert "FICHA_ALUMNO_ENCONTRADA" in out
@@ -146,14 +171,15 @@ async def test_post_venta_no_entrega_cursos_a_email_tipeado():
 @pytest.mark.asyncio
 async def test_las_dos_tools_usan_el_mismo_guard():
     """No puede haber una puerta con llave y otra abierta."""
-    from agents.collections.tools import buscar_alumno_mail_adc
+    from agents.collections.tools import buscar_ficha_alumno
     from agents.post_sales.tools import get_student_info
 
     current_identity_source.set("none")
     with (
         patch("agents.collections.tools.ZohoAreaCobranzas", return_value=AsyncMock()),
+        patch("integrations.zoho.contacts.ZohoContacts", return_value=_contacts_mock()),
         patch("agents.post_sales.tools.ZohoContacts", return_value=AsyncMock()),
     ):
-        a = await buscar_alumno_mail_adc.ainvoke({"email": "x@y.com"})
+        a = await buscar_ficha_alumno.ainvoke({"email": "x@y.com"})
         b = await get_student_info.ainvoke({"email": "x@y.com"})
     assert a == b == MENSAJE_REQUIERE_LOGIN

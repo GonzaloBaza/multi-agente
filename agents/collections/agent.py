@@ -4,14 +4,14 @@ from langgraph.prebuilt import create_react_agent
 
 from agents.collections.prompts import build_collections_prompt
 from agents.collections.tools import (
-    buscar_alumno_mail_adc,
+    buscar_ficha_alumno,
     buscar_suscripcion_rebill,
     generar_insta_link_rebill,
 )
 from config.settings import get_settings
 
 COLLECTIONS_TOOLS = [
-    buscar_alumno_mail_adc,
+    buscar_ficha_alumno,
     buscar_suscripcion_rebill,
     generar_insta_link_rebill,
 ]

@@ -1,8 +1,9 @@
 """
 Herramientas del agente de cobranzas — replicando lógica del BOT n8n.
-Tools: buscar_alumno_mail_adc, buscar_suscripcion_rebill, generar_insta_link_rebill
+Tools: buscar_ficha_alumno, buscar_suscripcion_rebill, generar_insta_link_rebill
 """
 
+import asyncio
 import json
 
 import structlog
@@ -49,28 +50,95 @@ def _to_iso_country(pais: str) -> str:
 
 
 @tool
-async def buscar_alumno_mail_adc(email: str) -> str:
+async def buscar_ficha_alumno(email: str) -> str:
     """
-    Busca la ficha completa del alumno en el módulo Area_de_cobranzas de Zoho por email.
-    Usar cuando el alumno proporciona su email y no se tiene la ficha cargada.
+    Ficha COMPLETA del alumno: estado de cuenta, cursos y acceso al campus.
+
+    Usar SIEMPRE que se necesiten datos del alumno — sirve tanto para consultas
+    de pago como de cursada, certificados o acceso. Reemplaza a las búsquedas
+    parciales: trae todo de una y evita responder con media foto.
+
+    🔒 Requiere identidad verificada (sesión en el sitio o WhatsApp).
 
     Args:
         email: Email del alumno con el que se registró en el campus.
     """
-    # 🔒 Devuelve PII financiera: solo para identidades verificadas por el canal.
-    # Sin esto, cualquiera tipeaba el mail de un tercero y recibía su ficha.
     from utils.identity_guard import bloquear_si_no_verificado
 
-    if rechazo := await bloquear_si_no_verificado("buscar_alumno_mail_adc", email):
+    if rechazo := await bloquear_si_no_verificado("buscar_ficha_alumno", email):
         return rechazo
 
-    zoho = ZohoAreaCobranzas()
-    ficha = await zoho.search_by_email(email)
+    from integrations.zoho.contacts import ZohoContacts
+    from integrations.zoho.sales_orders import ZohoSalesOrders
 
-    if not ficha:
-        return f"No encontré ningún alumno registrado con el email {email}. ¿Podría verificar que sea el correo con el que accede al campus?"
+    async def _financiero() -> dict:
+        return await ZohoAreaCobranzas().search_by_email(email) or {}
 
-    return _formatear_ficha(ficha)
+    async def _academico() -> dict:
+        return await ZohoContacts().search_by_email_with_cursadas(email) or {}
+
+    # Las tres fuentes son independientes → en paralelo. `return_exceptions`
+    # para que la caída de una no deje al alumno sin las otras dos.
+    financiero, contacto = await asyncio.gather(
+        _financiero(), _academico(), return_exceptions=True
+    )
+    if isinstance(financiero, BaseException):
+        logger.warning("ficha_alumno_adc_fallo", error=str(financiero))
+        financiero = {}
+    if isinstance(contacto, BaseException):
+        logger.warning("ficha_alumno_contacts_fallo", error=str(contacto))
+        contacto = {}
+
+    ordenes: list[dict] = []
+    if contacto.get("id"):
+        try:
+            ordenes = await ZohoSalesOrders().list_by_contact(contacto["id"])
+        except Exception as e:
+            logger.warning("ficha_alumno_so_fallo", error=str(e))
+
+    if not financiero and not contacto:
+        return (
+            f"No encontré ningún alumno registrado con el email {email}. "
+            "¿Podría verificar que sea el correo con el que accede al campus?"
+        )
+
+    partes = [_formatear_ficha(financiero)] if financiero.get("cobranzaId") else []
+
+    if not financiero.get("cobranzaId"):
+        # Sin registro de cobranzas no hay estado de cuenta: que el bot lo sepa
+        # explícitamente en vez de deducir "no debe nada" del silencio.
+        from utils.account_state import bloque_estado_cuenta
+
+        partes.append(bloque_estado_cuenta(None))
+
+    nombre = f"{contacto.get('First_Name', '')} {contacto.get('Last_Name', '')}".strip()
+    if nombre or ordenes:
+        acad = ["", "DATOS DE CURSADA:"]
+        if nombre:
+            acad.append(f"- Alumno: {nombre}")
+        if contacto.get("id"):
+            acad.append(f"- ID de contacto: {contacto['id']}")
+        if contacto.get("LMS_User_ID"):
+            acad.append(f"- Usuario del campus: {contacto['LMS_User_ID']}")
+        if ordenes:
+            acad.append("- Cursos:")
+            for o in ordenes:
+                curso = o.get("Curso_Nombre") or "(sin nombre en el registro)"
+                acad.append(f"  · {curso}")
+                # OJO: `Status` es el último evento de pago de la orden, NO dice
+                # si el contrato está saldado. El estado de cuenta real está en
+                # el bloque de arriba.
+                acad.append(
+                    f"    Último evento de pago registrado: {o.get('Status', 'N/A')} "
+                    "(NO indica que el contrato esté saldado)"
+                )
+                if o.get("LMS_Platform"):
+                    acad.append(f"    Campus: {o['LMS_Platform']}")
+        else:
+            acad.append("- Sin cursos registrados en el sistema.")
+        partes.append("\n".join(acad))
+
+    return "\n".join(partes)
 
 
 @tool
