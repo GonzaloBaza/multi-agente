@@ -184,13 +184,39 @@ create trigger messages_touch_conv
 """
 
 
+# ID del advisory lock que serializa el armado del esquema entre workers.
+# Arbitrario pero estable: si cambia, dos versiones distintas del proceso
+# dejarían de excluirse mutuamente.
+_SCHEMA_LOCK_ID = 4577120936
+
+
 async def ensure_schema() -> None:
-    """Crea tablas/índices/trigger si no existen. Idempotente."""
+    """
+    Crea tablas/índices/trigger si no existen. Idempotente.
+
+    Serializado con un advisory lock porque el contenedor levanta con
+    `--workers 2` y ambos corren esto al arrancar. La mayoría de los statements
+    son `if not exists` y no molestan, pero `create or replace function` y el
+    `drop trigger` + `create trigger` escriben en el catálogo SIEMPRE: dos
+    workers a la vez chocaban con "tuple concurrently updated". El que perdía
+    la carrera abortaba a mitad, y como el error se traga arriba (main.py), en
+    el peor caso el trigger `messages_touch_conv` podía quedar dropeado sin
+    recrear — y ese trigger es el que mantiene `conversations.updated_at`, o
+    sea el orden del inbox. Fallaba en silencio.
+
+    Va con `pg_advisory_xact_lock` (transaccional) y NO con `pg_advisory_lock`
+    (de sesión): Supabase nos conecta por pgbouncer en transaction mode, donde
+    la conexión del servidor se recicla entre statements. Un lock de sesión se
+    tomaría en una conexión y el unlock podría ejecutarse en otra, dejándolo
+    colgado. El transaccional se libera solo al cerrar la transacción.
+    """
     pool = await get_pool()
     async with pool.acquire() as conn:
-        # Ejecutamos cada statement por separado (PgBouncer transaction mode)
-        for stmt in _split_sql(SCHEMA_SQL):
-            await conn.execute(stmt)
+        async with conn.transaction():
+            # El segundo worker espera acá en vez de competir por el catálogo.
+            await conn.execute("select pg_advisory_xact_lock($1)", _SCHEMA_LOCK_ID)
+            for stmt in _split_sql(SCHEMA_SQL):
+                await conn.execute(stmt)
     logger.info("postgres_schema_ready")
 
 
