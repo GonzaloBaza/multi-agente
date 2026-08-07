@@ -13,6 +13,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Flag } from "@/components/ui/flag";
 import { CallHistory } from "@/components/inbox/call-history";
+import { ConversationNotes } from "@/components/inbox/conversation-notes";
 import { api } from "@/lib/api";
 import type { ContactDetail, DebtStatus } from "@/lib/mock-data";
 
@@ -109,6 +110,10 @@ export function ContactPanel({ contact, conversationId = null, onMobileBack }: P
       </div>
 
       <div className="p-4 space-y-4 text-xs">
+        {/* ============= NOTA INTERNA DEL EQUIPO ============= */}
+        {/* Va primero: es lo que el agente necesita leer antes de responder. */}
+        <ConversationNotes conversationId={conversationId} />
+
         {/* ============= INSIGHTS IA — Collapsible ============= */}
         <button
           onClick={() => setInsightsOpen((s) => !s)}

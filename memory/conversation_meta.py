@@ -306,3 +306,40 @@ async def bulk_set_status(conversation_ids: list[str], status: ConvStatus) -> in
 # requería un cron de wake-up. Si volvés a necesitar postergar conversaciones,
 # usá `set_status(conv_id, "pending")` y filtrá por status en el inbox.
 # Migración 006 dropea las columnas snoozed_until/snoozed_at.
+
+
+async def set_notes(
+    conversation_id: str,
+    notes: str,
+    author_id: str = "",
+    author_name: str = "",
+) -> dict:
+    """
+    Guarda (o borra) la nota interna del equipo sobre la conversación.
+
+    Es UNA nota por conversación: se pisa, no se acumula. Guardamos autor y
+    fecha del último cambio para que se vea quién dejó el contexto.
+
+    Un string vacío borra la nota — así el front no necesita un endpoint aparte
+    para eliminarla.
+    """
+    limpia = (notes or "").strip()
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute("select public.ensure_conversation_meta($1::uuid)", conversation_id)
+        row = await conn.fetchrow(
+            """
+            update public.conversation_meta
+               set notes                 = nullif($2, ''),
+                   notes_updated_at      = case when nullif($2, '') is null then null else now() end,
+                   notes_updated_by      = case when nullif($2, '') is null then null else $3 end,
+                   notes_updated_by_name = case when nullif($2, '') is null then null else $4 end
+             where conversation_id = $1
+         returning notes, notes_updated_at, notes_updated_by, notes_updated_by_name
+            """,
+            conversation_id,
+            limpia,
+            author_id or None,
+            author_name or None,
+        )
+    return dict(row) if row else {}

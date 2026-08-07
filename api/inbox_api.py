@@ -1948,6 +1948,79 @@ async def label_set(conv_id: str, body: LabelBody):
     return {"ok": True}
 
 
+class NotesBody(BaseModel):
+    # Vacío = borrar la nota. Evita tener un DELETE aparte.
+    notes: str = ""
+
+
+@router.get("/conversations/{conv_id}/notes")
+async def notes_get(conv_id: str):
+    """Nota interna del equipo sobre la conversación (vacía si no hay)."""
+    meta = await cm.get_meta(conv_id) or {}
+    return {
+        "notes": meta.get("notes") or "",
+        "notes_updated_at": meta.get("notes_updated_at"),
+        "notes_updated_by_name": meta.get("notes_updated_by_name") or "",
+    }
+
+
+@router.put("/conversations/{conv_id}/notes")
+async def notes_set(
+    conv_id: str,
+    body: NotesBody,
+    auth: dict = Depends(verify_admin_or_session),
+):
+    """
+    Guarda la nota interna del equipo sobre la conversación.
+
+    Es UNA nota por conversación (se pisa, no se acumula) y la puede editar
+    cualquiera del equipo. Queda registrado quién la tocó y cuándo.
+
+    ⚠️ La nota es interna: NUNCA se le envía al alumno ni entra al contexto
+    del bot. Vive solo en la consola.
+    """
+    user = (auth or {}).get("user") or {}
+    autor_id = str(user.get("id") or "")
+    autor_nombre = str(user.get("name") or user.get("email") or "")
+
+    guardada = await cm.set_notes(
+        conv_id, body.notes, author_id=autor_id, author_name=autor_nombre
+    )
+
+    from utils.inbox_jobs import log_action
+
+    await log_action(
+        autor_id or "system",
+        "notes",
+        conv_id,
+        # El texto NO va al audit log: puede tener datos del alumno y el log se
+        # lee desde otra pantalla. Guardamos solo si quedó nota o se borró.
+        {"accion": "borrada" if not (body.notes or "").strip() else "guardada"},
+    )
+
+    # El inbox destaca las conversaciones con nota, así que el resto del equipo
+    # tiene que verlo sin refrescar.
+    try:
+        from utils.realtime import broadcast_event
+
+        broadcast_event(
+            {
+                "type": "notes_updated",
+                "conversation_id": conv_id,
+                "has_notes": bool(guardada.get("notes")),
+            }
+        )
+    except Exception:
+        pass
+
+    return {
+        "ok": True,
+        "notes": guardada.get("notes") or "",
+        "notes_updated_at": guardada.get("notes_updated_at"),
+        "notes_updated_by_name": guardada.get("notes_updated_by_name") or "",
+    }
+
+
 @router.get("/pipeline")
 async def pipeline_list(
     limit: int = 300,
