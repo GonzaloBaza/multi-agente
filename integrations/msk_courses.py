@@ -1,10 +1,12 @@
 """
-Sincronización del catálogo de cursos desde el WP headless de MSK Latam.
+Sincronización del catálogo de cursos desde el CMS propio de MSK Latam.
 
-Endpoint público:
-    https://cms1.msklatam.com/wp-json/msk/v1/products-full?lang={lang}&resource=course
+Fuente: vista `catalog_course_detail` del proyecto Supabase del CMS, ya
+desnormalizada por país (slug + country_code = nuestra PK).
 
-El JSON incluye todos los cursos de un país. Extraemos:
+Antes se leía del WP headless `cms1.msklatam.com`, que dejó de existir en
+agosto de 2026. El contenido es el mismo pero reubicado: `_cms_a_item()` lo
+traduce al formato viejo para no reescribir el armado del brief. Extraemos:
   - Hot columns (precio, título, cedente, etc.) para filtrar rápido
   - raw (JSONB) para drill-down on-demand
   - brief_md (Markdown ~800-1200 tokens) para inyectar en el prompt del
@@ -27,6 +29,7 @@ from typing import Any
 import httpx
 import structlog
 
+from config.settings import get_settings
 from memory import postgres_store
 
 logger = structlog.get_logger(__name__)
@@ -73,7 +76,7 @@ COUNTRY_LABEL: dict[str, str] = {
     "ve": "Venezuela",
 }
 
-BASE_URL = "https://cms1.msklatam.com/wp-json/msk/v1/products-full"
+# (el WP quedó fuera de servicio; la fuente ahora es el CMS propio)
 
 
 # ── Helpers de limpieza ─────────────────────────────────────────────────────
@@ -127,29 +130,141 @@ def _primary_category(item: dict) -> str | None:
 # ── Fetch ───────────────────────────────────────────────────────────────────
 
 
+def _cms_a_item(row: dict) -> dict:
+    """
+    Traduce una fila de `catalog_course_detail` (CMS propio) al formato que
+    venía devolviendo el WP.
+
+    El WP murió y el catálogo pasó a un CMS propio sobre Supabase. En vez de
+    reescribir `build_brief_md` y `to_row` (que son ~600 líneas afinadas a mano
+    para vender), adaptamos la entrada: el contenido es el mismo, cambió de
+    lugar. `kb_ai` —que es de donde salen los perfiles con dolor/beneficio y
+    los pitches— viene con la MISMA estructura, así que los briefs no cambian.
+
+    Lo que se movió:
+      sections.habilities        → habilidades
+      sections.teaching_team     → authors
+      sections.institutions      → avales
+      sections.formacion_dirigida→ content_data.a_quien
+      sections.learning          → content_data.que_aprenderas
+      sections.study_plan        → content_data.plan_de_estudio
+      sections.content.content   → content_data.contenido
+      certificacion_relacionada  → certificaciones
+    """
+    cd = row.get("content_data") or {}
+    plan = cd.get("plan_de_estudio") or {}
+
+    # El CMS nombra los módulos en español; `build_brief_md` espera `title`.
+    modulos = [
+        {"title": (m or {}).get("titulo") or (m or {}).get("title") or ""}
+        for m in (plan.get("modulos") or [])
+        if isinstance(m, dict)
+    ]
+
+    # Los avales traen `name`; el armado de certificaciones espera `title`.
+    instituciones = [
+        {"title": a.get("name") or "", "description": a.get("description") or ""}
+        for a in (row.get("avales") or [])
+        if isinstance(a, dict)
+    ]
+
+    # El CMS marca la categoría principal con `is_primary`, igual que el WP.
+    # Se respeta tal cual; si ninguna viene marcada, `_primary_category` cae
+    # sola a la primera de la lista.
+    categorias = [
+        {"name": c.get("name"), "is_primary": bool(c.get("is_primary"))}
+        for c in (row.get("categories") or [])
+        if isinstance(c, dict)
+    ]
+
+    total = _to_float(row.get("total_price"))
+    cuotas = _to_int(row.get("max_installments"))
+    # El CMS no guarda el valor de cada cuota; el WP sí. Se deriva.
+    por_cuota = round(total / cuotas, 2) if total and cuotas else None
+
+    return {
+        "slug": row.get("slug"),
+        "title": row.get("title") or row.get("base_title"),
+        "id": row.get("code"),
+        "codes": [{"unique_code": row.get("code")}] if row.get("code") else [],
+        "date": row.get("published_at"),
+        "duration": row.get("duration"),
+        "modules": row.get("modules"),
+        "cedente": row.get("cedente") or {},
+        "prices": {
+            "currency": row.get("currency"),
+            "total_price": total,
+            "max_installments": cuotas,
+            "price_installments": por_cuota,
+        },
+        # Idéntico al del WP: es lo que hace buenos a los briefs y los pitches.
+        "kb_ai": row.get("kb_ai") or cd.get("kb_ai") or {},
+        "profession": row.get("professions") or [],
+        "certificacion_relacionada": row.get("certificaciones") or [],
+        "study_plan_file": plan.get("pdf") or "",
+        "sections": {
+            "header": {"categories": categorias},
+            "content": {"content": cd.get("contenido") or ""},
+            "habilities": row.get("habilidades") or [],
+            "teaching_team": row.get("authors") or [],
+            "institutions": instituciones,
+            "formacion_dirigida": cd.get("a_quien") or [],
+            "learning": cd.get("que_aprenderas") or [],
+            "study_plan": {"modules": modulos},
+        },
+    }
+
+
 async def fetch_country(country: str, timeout: float = 60.0) -> list[dict]:
-    """Descarga todos los productos `resource=course` de un país."""
+    """
+    Descarga los cursos publicados de un país desde el CMS propio.
+
+    Reemplaza al WP headless (`cms1.msklatam.com`), que dejó de existir.
+    Consulta la vista `catalog_course_detail`, que ya viene desnormalizada por
+    país — misma granularidad que nuestra tabla `courses` (country, slug).
+    """
     lang = LANG_BY_COUNTRY.get(country.lower())
     if not lang:
         raise ValueError(f"Unknown country: {country}")
 
+    settings = get_settings()
+    base = (settings.cms_supabase_url or "").rstrip("/")
+    key = settings.cms_supabase_service_role_key
+    if not base or not key:
+        raise RuntimeError(
+            "Faltan CMS_SUPABASE_URL / CMS_SUPABASE_SERVICE_ROLE_KEY: sin eso no "
+            "se puede sincronizar el catálogo."
+        )
+
+    # ⚠️ El header `Authorization` es OBLIGATORIO: con `apikey` solo, PostgREST
+    # atiende como `anon` y RLS devuelve 0 filas sin ningún error.
+    headers = {"apikey": key, "Authorization": f"Bearer {key}"}
+
+    data: list[dict] = []
+    paso = 1000  # PostgREST corta ahí por request; paginamos con Range.
     async with httpx.AsyncClient(timeout=timeout) as client:
-        r = await client.get(BASE_URL, params={"lang": lang, "resource": "course"})
-        r.raise_for_status()
-        data = r.json()
+        desde = 0
+        while True:
+            r = await client.get(
+                f"{base}/rest/v1/catalog_course_detail",
+                params={"country_code": f"eq.{lang}", "select": "*"},
+                headers={**headers, "Range-Unit": "items", "Range": f"{desde}-{desde + paso - 1}"},
+            )
+            r.raise_for_status()
+            lote = r.json()
+            if not isinstance(lote, list) or not lote:
+                break
+            data.extend(lote)
+            if len(lote) < paso:
+                break
+            desde += paso
 
-    # Algunos WP devuelven {"data": [...]} o directamente [...]
-    if isinstance(data, dict):
-        data = data.get("data") or data.get("products") or data.get("items") or []
-    if not isinstance(data, list):
-        logger.warning("msk_courses_unexpected_format", country=country, type=type(data).__name__)
-        return []
+    data = [_cms_a_item(d) for d in data]
 
-    # El query param `resource=course` ya filtra del lado del WP. Acá solo
-    # validamos que venga con slug+title (el campo `resource` en el payload
-    # es inconsistente entre versiones del plugin MSK-API).
+    # Sin slug o sin título no hay nada que sincronizar (el slug es parte de
+    # la PK de `courses`).
     courses = [d for d in data if d.get("slug") and d.get("title")]
-    resources_seen = set(d.get("resource") for d in data if d.get("resource") is not None)
+    resources_seen: set = set()
     logger.info(
         "msk_courses_fetched",
         country=country,

@@ -99,6 +99,13 @@ class Settings(BaseSettings):
     # al bucket público porque la URL queda expuesta y contiene state sensible.
     r2_backups_bucket: str = ""  # msk-multiagente-backups (sin public access)
 
+    # CMS propio del catálogo de cursos (proyecto Supabase separado).
+    # Reemplaza al WP headless cms1.msklatam.com, que dejó de existir.
+    # ⚠️ La service_role key es obligatoria: las tablas tienen RLS y con la
+    # anon key PostgREST devuelve 0 filas SIN error.
+    cms_supabase_url: str = ""
+    cms_supabase_service_role_key: str = ""
+
     # Supabase Auth (login de la consola)
     supabase_url: str = ""
     supabase_secret_key: str = ""  # service_role key
