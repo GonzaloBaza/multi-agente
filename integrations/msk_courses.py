@@ -247,7 +247,13 @@ async def fetch_country(country: str, timeout: float = 60.0) -> list[dict]:
         while True:
             r = await client.get(
                 f"{base}/rest/v1/catalog_course_detail",
-                params={"country_code": f"eq.{lang}", "select": "*"},
+                # ⚠️ El `order` es OBLIGATORIO para paginar: sin un orden
+                # estable Postgres puede devolver las filas en distinto orden
+                # entre requests, y al paginar por Range se pierden o repiten
+                # filas en silencio. Hoy ningún país llega a 1000 cursos (van
+                # ~150) así que entra en una sola página, pero el día que pase
+                # el bug sería invisible.
+                params={"country_code": f"eq.{lang}", "select": "*", "order": "slug.asc"},
                 headers={**headers, "Range-Unit": "items", "Range": f"{desde}-{desde + paso - 1}"},
             )
             r.raise_for_status()
