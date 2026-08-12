@@ -180,17 +180,23 @@ async def generate_pitches(
     try:
         # 1) Encontrar slugs UNICOS con kb_ai (DISTINCT ON por slug — toma una fila
         #    de cualquier pais, el kb_ai y el brief_md son iguales entre paises).
-        where_pitch = "" if force else " and pitch_hook is null"
+        where_pitch = "" if force else " and coalesce(pitch_hook, '') = ''"
         where_slug_filter = ""
         params: list = []
         if only_slugs:
             where_slug_filter = " and slug = any($1::text[])"
             params.append(only_slugs)
 
+        # ⚠️ No alcanza con que exista `kb_ai`: desde la migración al CMS propio
+        # los cursos a medio cargar traen `kb_ai` como objeto vacío (antes el WP
+        # directamente omitía la clave). Sin `perfiles_dirigidos` no hay dolor ni
+        # beneficio por perfil, así que el LLM inventaría el pitch a partir de un
+        # brief genérico — justo lo que no queremos.
         sql = f"""
             select distinct on (slug) slug, title, brief_md
             from public.courses
-            where (raw->'kb_ai') is not null{where_pitch}{where_slug_filter}
+            where coalesce(jsonb_array_length(raw->'kb_ai'->'perfiles_dirigidos'), 0) > 0
+              {where_pitch}{where_slug_filter}
             order by slug, country
         """
         rows = await conn.fetch(sql, *params)
