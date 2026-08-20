@@ -358,6 +358,17 @@ def _parse_tags(ai_text: str) -> tuple[str, dict]:
     # pide no nombrarlo pero los LLMs fallan).
     clean = re.sub(r"\b[Vv]ane[ss]+a(\s+Hern[áa]ndez)?\b", "un asesor académico", clean)
     clean = _format_for_whatsapp(clean)
+    # Atribución: todo link al sitio sale con el idlead del lead actual, para
+    # que la compra en el checkout escriba Contacts.IDLEAD y cierre el loop
+    # (freno del lifecycle + conversión). Los links de los campos del lead ya
+    # vienen atribuidos desde Zoho; esto cubre los que el LLM compone solo.
+    try:
+        from utils.agent_context import current_lead_id as _clid
+        from utils.idlead_links import con_idlead as _con_idlead
+
+        clean = _con_idlead(clean, _clid.get())
+    except Exception:
+        pass
 
     # `derivarConAsesor` se activa con cualquiera de los dos handoffs (tag
     # textual del LLM) o con el flag mecánico del ContextVar (setea la tool

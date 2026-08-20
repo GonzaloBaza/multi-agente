@@ -1718,6 +1718,16 @@ async def process_widget_message(
         conversation.current_agent = new_agent_type
         await store.save(conversation)
 
+    # Atribución: links del sitio con idlead (si ya hay lead en esta conv —
+    # la tool create_or_update_lead setea el ContextVar al crearlo).
+    try:
+        from utils.agent_context import current_lead_id as _clid
+        from utils.idlead_links import con_idlead as _con_idlead
+
+        response_text = _con_idlead(response_text, _clid.get())
+    except Exception:
+        pass
+
     # ── Guardar respuesta del bot ─────────────────────────────────────────────
     bot_msg = await _save_bot_msg(store, conversation, response_text, agent_used)
 
