@@ -174,3 +174,29 @@ def is_master_product_id(product_id: int | None) -> bool:
     if product_id is None:
         return False
     return MASTER_PRODUCT_ID_MIN <= int(product_id) <= MASTER_PRODUCT_ID_MAX
+
+
+def is_master_course(course: dict | None) -> bool:
+    """True si el curso pertenece a la línea Máster (NO vendible por checkout).
+
+    Fuente primaria: columnas `line`/`lines` del catálogo (vienen del CMS).
+    Fallback a las señales legadas (rango de product_id, slugs conocidos) para
+    filas todavía no re-sincronizadas con la columna poblada.
+    """
+    if not course:
+        return False
+    if (course.get("line") or "").strip().lower() == "master":
+        return True
+    lines = course.get("lines")
+    if isinstance(lines, str):
+        import json
+
+        try:
+            lines = json.loads(lines)
+        except Exception:
+            lines = []
+    if any(str(l).strip().lower() == "master" for l in (lines or [])):
+        return True
+    if is_master_product_id(course.get("product_id")):
+        return True
+    return is_master_slug(course.get("slug") or "")

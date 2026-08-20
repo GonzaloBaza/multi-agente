@@ -270,6 +270,9 @@ def _build_user_profile(lead: dict, fallback_payload: BotmakerPayload) -> dict:
         "lugar_trabajo": pick("Lugar_de_trabajo", "Lugar_de_trabajo"),
         "lead_source": pick("Lead_Source"),
         "lead_status": pick("Lead_Status"),
+        # Línea de producto del lead (campo `Brand` en Zoho: Enfermería /
+        # Master / OM / Medicina...). Se usa para priorizar el catálogo.
+        "brand": pick("Brand"),
         "scoring_venta": lead.get("Scoring_venta"),
         "colegios": colegios_names,
         "owner_email": owner_email,

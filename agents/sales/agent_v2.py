@@ -28,6 +28,7 @@ from agents.sales.agent import (
     _format_user_profile,
 )
 from agents.sales.prompts_v2 import build_sales_prompt_v2
+from config.constants import is_master_course as _is_master_course
 from config.constants import is_master_slug as _is_master_slug
 from config.settings import get_settings
 
@@ -77,7 +78,11 @@ async def build_sales_agent_v2(
             from integrations import courses_cache
 
             course = await courses_cache.get_course(country.lower(), page_slug)
-            if not (course and course.get("brief_md")):
+            if course and _is_master_course(course):
+                logger.info("sales_v2_master_by_line", country=country, slug=page_slug)
+                _master_page = True
+                course = None
+            elif not (course and course.get("brief_md")):
                 logger.info("sales_v2_no_brief_for_slug", country=country, slug=page_slug)
                 course = None
         except Exception as e:
@@ -121,6 +126,14 @@ async def build_sales_agent_v2(
                 "Ya lo tenés — NO busques. Para vender otro curso usá `get_course_brief(slug)`. "
                 "No mezcles datos entre filas: cada fila es un curso independiente.\n"
             )
+            _lead_brand = (up.get("brand") or "").strip().lower()
+            if "enferm" in _lead_brand:
+                system_prompt += (
+                    "\n**LÍNEA DEL LEAD: ENFERMERÍA** — este lead pertenece a la línea "
+                    "MSK Enfermería. Al listar o recomendar cursos del catálogo, priorizá "
+                    "SIEMPRE los que incluyan `enfermeria` en la columna Líneas. Ofrecé un "
+                    "curso de otra línea solo si el lead lo pide explícitamente.\n"
+                )
     except Exception as e:
         logger.warning("sales_v2_catalog_inject_failed", error=str(e))
 

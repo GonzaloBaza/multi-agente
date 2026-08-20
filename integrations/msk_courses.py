@@ -185,6 +185,10 @@ def _cms_a_item(row: dict) -> dict:
     return {
         "slug": row.get("slug"),
         "title": row.get("title") or row.get("base_title"),
+        # Linea(s) de producto del CMS: line = principal, lines = todas
+        # (los duales vienen p.ej. line="medicina", lines=["medicina","enfermeria"]).
+        "line": (row.get("line") or "").strip().lower(),
+        "lines": [str(l).strip().lower() for l in (row.get("lines") or []) if str(l).strip()],
         "id": row.get("code"),
         "codes": [{"unique_code": row.get("code")}] if row.get("code") else [],
         "date": row.get("published_at"),
@@ -448,9 +452,22 @@ def build_brief_md(item: dict, country: str) -> str:
             "nutricion",
             "fonoaud",
         ]
-        _has_enfermeria = "enferm" in _fd_full or "enferm" in slug.lower()
+        _has_enfermeria = "enferm" in _fd_full
         _has_otro = any(kw in _fd_full for kw in _NON_MEDICO_KW)
         _access_source = "formacion_dirigida"
+
+    # Capa 0 (prioritaria): línea(s) de producto del CMS — dato estructurado
+    # y curado, manda sobre las heurísticas de texto cuando declara enfermería:
+    #   ["enfermeria"]             → acceso exclusivo enfermería
+    #   ["medicina","enfermeria"]  → acceso amplio (curso dual)
+    #   sin "enfermeria"           → se mantiene el veredicto de capas 1/2
+    _course_lines = [str(_l).strip().lower() for _l in (item.get("lines") or []) if str(_l).strip()]
+    if not _course_lines and (item.get("line") or "").strip():
+        _course_lines = [(item.get("line") or "").strip().lower()]
+    if "enfermeria" in _course_lines:
+        _has_enfermeria = True
+        _has_otro = any(_l != "enfermeria" for _l in _course_lines)
+        _access_source = "lines"
 
     if _access_source:
         _medico_only = not _has_enfermeria and not _has_otro
@@ -467,6 +484,8 @@ def build_brief_md(item: dict, country: str) -> str:
                 for _d in _dirigida_access
             ]
             _targets_label = " / ".join(t.strip() for t in _raw_labels if t.strip())[:300]
+        if not _targets_label and _course_lines:
+            _targets_label = " / ".join(_course_lines)
 
         lines.append("## Restricción de acceso — perfiles habilitados")
         if _targets_label:
@@ -866,12 +885,19 @@ def to_row(item: dict, country: str) -> dict:
 
     brief = build_brief_md(item, country)
 
+    line = (item.get("line") or "").strip().lower() or None
+    lines = [str(l).strip().lower() for l in (item.get("lines") or []) if str(l).strip()]
+    if not lines and line:
+        lines = [line]
+
     return {
         "country": country.lower(),
         "slug": item.get("slug"),
         "product_id": product_id,
         "title": item.get("title") or "(sin título)",
         "categoria": _primary_category(item),
+        "line": line,
+        "lines": lines,
         "cedente": cedente,
         "duration_hours": _to_int(item.get("duration")),
         "modules_count": _to_int(item.get("modules")),

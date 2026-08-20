@@ -157,6 +157,8 @@ create table if not exists public.courses (
     total_price numeric(14,2),
     max_installments integer,
     price_installments numeric(14,2),
+    line text,
+    lines jsonb not null default '[]'::jsonb,
     brief_md text,
     raw jsonb not null default '{}'::jsonb,
     source_updated_at timestamptz,
@@ -167,6 +169,12 @@ create table if not exists public.courses (
 
 create index if not exists courses_title_idx on public.courses (lower(title));
 create index if not exists courses_categoria_idx on public.courses (country, categoria);
+-- Linea(s) de producto (medicina/enfermeria/mindcare/master), desde el CMS.
+-- `create table if not exists` no agrega columnas a tablas existentes; estos
+-- alter idempotentes las incorporan en entornos ya desplegados.
+alter table public.courses add column if not exists line text;
+alter table public.courses add column if not exists lines jsonb not null default '[]'::jsonb;
+create index if not exists courses_line_idx on public.courses (country, line);
 create index if not exists courses_synced_idx on public.courses (synced_at desc);
 
 create or replace function public.touch_conversation_updated_at()
@@ -480,11 +488,11 @@ async def upsert_course(row: dict) -> None:
                 country, slug, product_id, title, categoria, cedente,
                 duration_hours, modules_count, currency,
                 total_price, max_installments, price_installments,
-                brief_md, raw, source_updated_at, synced_at
+                brief_md, raw, source_updated_at, line, lines, synced_at
             ) values (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9,
                 $10, $11, $12,
-                $13, $14::jsonb, $15, now()
+                $13, $14::jsonb, $15, $16, $17::jsonb, now()
             )
             on conflict (country, slug) do update set
                 product_id = excluded.product_id,
@@ -500,6 +508,8 @@ async def upsert_course(row: dict) -> None:
                 brief_md = excluded.brief_md,
                 raw = excluded.raw,
                 source_updated_at = excluded.source_updated_at,
+                line = excluded.line,
+                lines = excluded.lines,
                 synced_at = now()
             """,
             row["country"],
@@ -517,6 +527,8 @@ async def upsert_course(row: dict) -> None:
             row.get("brief_md"),
             json.dumps(row.get("raw", {}), default=str),
             row.get("source_updated_at"),
+            row.get("line"),
+            json.dumps(row.get("lines") or []),
         )
 
 
@@ -560,7 +572,8 @@ async def get_catalog_compact(country: str) -> str:
     Devuelve el catálogo compacto de un país para inyectar en el system prompt.
     ~40 tokens por curso × 100 cursos ≈ 4,000 tokens.
 
-    Excluye los Másters (product_id 8000000-8999999) — esos no se venden por
+    Excluye los Másters (línea 'master' del CMS; fallback por product_id
+    8000000-8999999 para filas sin re-sincronizar) — esos no se venden por
     checkout y el bot NO debe ofrecerlos. Si aparecen en el catálogo del
     prompt, el LLM los va a recomendar igual aunque haya una regla en texto
     que diga lo contrario. Más seguro filtrarlos en la fuente.
@@ -571,11 +584,12 @@ async def get_catalog_compact(country: str) -> str:
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             """
-            select slug, title, categoria, currency, max_installments,
+            select slug, title, categoria, lines, currency, max_installments,
                    price_installments, pitch_hook
             from public.courses
             where country = $1
               and (product_id is null or product_id < $2 or product_id > $3)
+              and line is distinct from 'master'
             order by categoria asc, title asc
             """,
             country.lower(),
@@ -594,13 +608,23 @@ async def get_catalog_compact(country: str) -> str:
     lines.append(
         "Columna **qué te deja** = gancho de valor clínico (usalo como pitch de 1 línea cuando listés este curso; si está vacío, referite al título y la categoría solamente — NO inventes)."
     )
+    lines.append(
+        "Columna **Líneas** = línea(s) de producto (medicina / enfermeria / mindcare). Un curso puede pertenecer a más de una."
+    )
     lines.append("")
-    lines.append("| Slug | Título | Categoría | Qué te deja | Precio |")
-    lines.append("|---|---|---|---|---|")
+    lines.append("| Slug | Título | Líneas | Categoría | Qué te deja | Precio |")
+    lines.append("|---|---|---|---|---|---|")
     for r in rows:
         slug = r["slug"]
         title = (r["title"] or "").replace("|", "/")
         cat = (r["categoria"] or "").replace("|", "/")
+        raw_lineas = r["lines"]
+        if isinstance(raw_lineas, str):
+            try:
+                raw_lineas = json.loads(raw_lineas)
+            except Exception:
+                raw_lineas = []
+        lineas = "+".join(raw_lineas or [])
         hook = (r["pitch_hook"] or "").replace("|", "/").replace("\n", " ").strip()
         inst = r["max_installments"]
         val = r["price_installments"]
@@ -609,7 +633,7 @@ async def get_catalog_compact(country: str) -> str:
             precio = f"{inst}x {cur} {val:,.0f}"
         else:
             precio = "Consultar"
-        lines.append(f"| {slug} | {title} | {cat} | {hook} | {precio} |")
+        lines.append(f"| {slug} | {title} | {lineas} | {cat} | {hook} | {precio} |")
     lines.append(f"</catalogo_{cc}>")
     return "\n".join(lines)
 

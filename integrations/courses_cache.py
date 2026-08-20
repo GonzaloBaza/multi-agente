@@ -59,6 +59,13 @@ def _compact(row: dict) -> dict:
             d["pitch_by_profile"] = json.loads(pbp)
         except Exception:
             d["pitch_by_profile"] = {}
+    # lines (linea de producto) tambien es JSONB -> mismo tratamiento
+    ln = d.get("lines")
+    if isinstance(ln, str):
+        try:
+            d["lines"] = json.loads(ln)
+        except Exception:
+            d["lines"] = []
     return d
 
 

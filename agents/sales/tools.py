@@ -49,7 +49,7 @@ async def get_course_brief(slug: str, country: str = "AR") -> str:
         slug: Slug del curso (lo ves en el catálogo del system prompt)
         country: Código de país del usuario (AR, MX, CO, PE, CL, UY, etc.)
     """
-    from config.constants import is_master_slug
+    from config.constants import is_master_course, is_master_slug
     from integrations import courses_cache
 
     await log_to_conv(
@@ -71,6 +71,13 @@ async def get_course_brief(slug: str, country: str = "AR") -> str:
             {"action": "curso_no_encontrado", "detail": f"slug={slug} country={country}"},
         )
         return f"No encontré el curso '{slug}' para {country}. Verificá el slug en el catálogo."
+
+    if is_master_course(course):
+        await log_to_conv(
+            "action",
+            {"action": "master_detectado", "detail": f"slug={slug} (línea master) — derivación recomendada"},
+        )
+        return _MASTER_DERIVATION_RESPONSE.format(slug=slug)
 
     await log_to_conv(
         "action",
@@ -124,7 +131,7 @@ async def get_course_deep(slug: str, country: str = "AR", section: str = "summar
             - 'prices' → precio y cuotas
             - 'summary' → resumen corto (default)
     """
-    from config.constants import is_master_slug
+    from config.constants import is_master_course, is_master_slug
     from integrations import courses_cache
 
     await log_to_conv(
@@ -149,6 +156,13 @@ async def get_course_deep(slug: str, country: str = "AR", section: str = "summar
             {"action": "curso_no_encontrado", "detail": f"slug={slug} country={country}"},
         )
         return f"No encontré el curso '{slug}' para el país {country}. Verificá el slug y el país."
+
+    if is_master_course(course):
+        await log_to_conv(
+            "action",
+            {"action": "master_detectado", "detail": f"slug={slug} (línea master) — derivación recomendada"},
+        )
+        return _MASTER_DERIVATION_RESPONSE.format(slug=slug)
 
     raw = course.get("raw") or {}
     sections = raw.get("sections") or {}

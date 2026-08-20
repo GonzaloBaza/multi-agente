@@ -121,6 +121,7 @@ async def build_sales_agent(
 
     # --- STEP 1: resolver curso (si aplica) ---
     course = None
+    from config.constants import is_master_course as _is_master_course
     from config.constants import is_master_slug as _is_master_slug
     _master_page = bool(page_slug and _is_master_slug(page_slug))
     if page_slug and not _master_page:
@@ -128,7 +129,12 @@ async def build_sales_agent(
             from integrations import courses_cache
 
             course = await courses_cache.get_course(country.lower(), page_slug)
-            if not (course and course.get("brief_md")):
+            if course and _is_master_course(course):
+                # Máster identificado por la línea del catálogo (columna del CMS)
+                logger.info("sales_agent_master_by_line", country=country, slug=page_slug)
+                _master_page = True
+                course = None
+            elif not (course and course.get("brief_md")):
                 logger.info("sales_agent_no_brief_for_slug", country=country, slug=page_slug)
                 course = None
         except Exception as e:
@@ -187,6 +193,14 @@ async def build_sales_agent(
                 "para obtener el brief con perfiles, datos técnicos y argumentos de venta.\n"
                 "**No mezcles datos entre filas**: cada fila es un curso independiente — el precio de la fila 3 corresponde SOLO al curso de la fila 3.\n"
             )
+            _lead_brand = (up.get("brand") or "").strip().lower()
+            if "enferm" in _lead_brand:
+                system_prompt += (
+                    "\n**LÍNEA DEL LEAD: ENFERMERÍA** — este lead pertenece a la línea "
+                    "MSK Enfermería. Al listar o recomendar cursos del catálogo, priorizá "
+                    "SIEMPRE los que incluyan `enfermeria` en la columna Líneas. Ofrecé un "
+                    "curso de otra línea solo si el lead lo pide explícitamente.\n"
+                )
     except Exception as e:
         logger.warning("catalog_inject_failed", error=str(e))
 
