@@ -641,7 +641,7 @@ async def list_courses(
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             """
-            select slug, title, categoria, currency, max_installments,
+            select slug, title, categoria, line, lines, currency, max_installments,
                    price_installments, pitch_hook, pitch_by_profile,
                    (raw->'kb_ai') is not null as has_kb_ai
             from public.courses
@@ -662,11 +662,19 @@ async def list_courses(
                 pbp = _json.loads(pbp)
             except Exception:
                 pbp = {}
+        lns = r["lines"]
+        if isinstance(lns, str):
+            try:
+                lns = _json.loads(lns)
+            except Exception:
+                lns = []
         out.append(
             {
                 "slug": r["slug"],
                 "title": r["title"],
                 "categoria": r["categoria"],
+                "line": r["line"],
+                "lines": lns or [],
                 "currency": r["currency"],
                 "max_installments": r["max_installments"],
                 "price_installments": float(r["price_installments"]) if r["price_installments"] else None,

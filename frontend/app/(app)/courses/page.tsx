@@ -14,6 +14,8 @@ type Course = {
   slug: string;
   title: string;
   categoria: string | null;
+  line: string | null;
+  lines: string[] | null;
   currency: string | null;
   max_installments: number | null;
   price_installments: number | null;
@@ -49,6 +51,14 @@ type JobsState = {
 
 const COUNTRIES = ["AR", "MX", "CL", "CO", "PE", "UY", "EC", "ES"];
 
+const LINES = ["medicina", "enfermeria", "mindcare", "master"] as const;
+const LINE_BADGE: Record<string, "info" | "success" | "accent" | "warn"> = {
+  medicina: "info",
+  enfermeria: "success",
+  mindcare: "accent",
+  master: "warn",
+};
+
 export default function CoursesPage() {
   return (
     <RoleGate min="admin" denyFallback={<NoAccess requiredRole="admin" />}>
@@ -60,6 +70,7 @@ export default function CoursesPage() {
 function CoursesPageInner() {
   const [country, setCountry] = useState("AR");
   const [search, setSearch] = useState("");
+  const [lineFilter, setLineFilter] = useState<string>("all");
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const qc = useQueryClient();
@@ -128,12 +139,14 @@ function CoursesPageInner() {
   });
 
   const items = (coursesQ.data ?? []).filter((c) => {
+    if (lineFilter !== "all" && !(c.lines || []).includes(lineFilter)) return false;
     if (!search.trim()) return true;
     const q = search.toLowerCase();
     return (
       c.title.toLowerCase().includes(q) ||
       c.slug.toLowerCase().includes(q) ||
-      (c.categoria || "").toLowerCase().includes(q)
+      (c.categoria || "").toLowerCase().includes(q) ||
+      (c.lines || []).some((l) => l.includes(q))
     );
   });
 
@@ -141,6 +154,7 @@ function CoursesPageInner() {
     total: coursesQ.data?.length ?? 0,
     withPitch: (coursesQ.data ?? []).filter((c) => !!c.pitch_hook).length,
     withKb: (coursesQ.data ?? []).filter((c) => c.has_kb_ai).length,
+    withEnf: (coursesQ.data ?? []).filter((c) => (c.lines || []).includes("enfermeria")).length,
   };
 
   return (
@@ -150,7 +164,7 @@ function CoursesPageInner() {
         <div>
           <h1 className="text-lg font-semibold">Catálogo de cursos</h1>
           <p className="text-xs text-fg-dim mt-0.5">
-            {stats.total} cursos · {stats.withPitch} con pitch · {stats.withKb} con kb_ai
+            {stats.total} cursos · {stats.withEnf} enfermería · {stats.withPitch} con pitch · {stats.withKb} con kb_ai
           </p>
         </div>
         <div className="flex gap-2 items-center flex-wrap">
@@ -184,6 +198,16 @@ function CoursesPageInner() {
 
           <div className="w-px h-5 bg-border mx-1" />
 
+          <select
+            value={lineFilter}
+            onChange={(e) => setLineFilter(e.target.value)}
+            className="bg-bg border border-border rounded-md px-3 py-1.5 text-sm focus:outline-none focus:border-accent"
+          >
+            <option value="all">Todas las líneas</option>
+            {LINES.map((l) => (
+              <option key={l} value={l}>{l}</option>
+            ))}
+          </select>
           <select
             value={country}
             onChange={(e) => setCountry(e.target.value)}
@@ -272,6 +296,13 @@ function CoursesPageInner() {
                     </div>
                     <div className="text-sm font-semibold mt-0.5 truncate">{c.title}</div>
                     <div className="text-[10px] text-fg-dim mt-0.5 font-mono truncate">{c.slug}</div>
+                    {(c.lines || []).length > 0 && (
+                      <div className="flex gap-1 mt-1.5 flex-wrap">
+                        {(c.lines || []).map((l) => (
+                          <Badge key={l} variant={LINE_BADGE[l] ?? "muted"}>{l}</Badge>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   <div className="flex flex-col items-end gap-1 shrink-0">
                     {c.pitch_hook ? (
