@@ -116,6 +116,21 @@ async def start_scheduler() -> None:
         coalesce=True,
     )
 
+    # Conversión real: cruza labels caliente/esperando_pago contra
+    # Contacts.IDLEAD en Zoho (la señal de compra del checkout) y marca
+    # "convertido" — el LLM ya no puede emitir esa etiqueta.
+    from utils.conversion_check import run_conversion_check
+
+    s.add_job(
+        run_conversion_check,
+        trigger=IntervalTrigger(hours=1),
+        id="conversion_check",
+        name="Marcar convertido real (Contacts.IDLEAD en Zoho)",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+
     # Detectar convs sin respuesta humana >2h y notificar al agente asignado.
     # Cada 15 min; dedup por conv en Redis 4h (ver utils/stale_conversations.py).
     from utils.stale_conversations import run_stale_conversations_check

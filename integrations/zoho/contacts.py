@@ -58,6 +58,40 @@ class ZohoContacts:
             resp.raise_for_status()
         return resp.json()
 
+    async def idleads_convertidos(self, lead_ids: list[str]) -> set[str]:
+        """Subconjunto de `lead_ids` que ya tienen un Contacto con
+        IDLEAD = lead_id — es decir, cuya compra por checkout ya ocurrió.
+
+        Una consulta COQL cada 20 ids (límite conservador del IN).
+        """
+        out: set[str] = set()
+        ids = [str(x).strip() for x in lead_ids if str(x).strip().isdigit()]
+        if not ids:
+            return out
+        # Search API con criterios OR (el token del bot no tiene scope COQL).
+        # Limite de Zoho: 10 condiciones por criterio -> chunks de 10.
+        headers = await self._auth.auth_headers()
+        async with httpx.AsyncClient() as client:
+            for i in range(0, len(ids), 10):
+                chunk = ids[i : i + 10]
+                criteria = "or".join(f"(IDLEAD:equals:{x})" for x in chunk)
+                if len(chunk) > 1:
+                    criteria = f"({criteria})"
+                resp = await client.get(
+                    f"{self._base}/Contacts/search",
+                    params={"criteria": criteria, "fields": "id,IDLEAD"},
+                    headers=headers,
+                    timeout=20,
+                )
+                if resp.status_code == 204:
+                    continue
+                resp.raise_for_status()
+                for row in resp.json().get("data", []):
+                    v = str(row.get("IDLEAD") or "").strip()
+                    if v:
+                        out.add(v)
+        return out
+
     async def search_by_phone(self, phone: str) -> dict | None:
         headers = await self._auth.auth_headers()
         async with httpx.AsyncClient() as client:

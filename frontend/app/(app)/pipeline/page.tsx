@@ -252,6 +252,7 @@ function Inner() {
   // Filtros del kanban
   const [daysFilter, setDaysFilter] = useState<number>(30);
   const [channelFilter, setChannelFilter] = useState<string>("all");
+  const [queueFilter, setQueueFilter] = useState<string>("sales");
   const [agentFilter, setAgentFilter] = useState<string>("all"); // "all" | "me" | "unassigned" | <uuid>
   const [activeConv, setActiveConv] = useState<PipelineConv | null>(null);
 
@@ -263,11 +264,12 @@ function Inner() {
   }, [agents]);
 
   const pipeQ = useQuery<PipelineResponse>({
-    queryKey: ["pipeline", "leads", daysFilter, channelFilter, agentFilter, user?.id],
+    queryKey: ["pipeline", "leads", daysFilter, channelFilter, agentFilter, queueFilter, user?.id],
     queryFn: () => {
       const params = new URLSearchParams({
         limit: "300",
         days: String(daysFilter),
+        queue: queueFilter,
       });
       if (channelFilter !== "all") params.set("channel", channelFilter);
       if (agentFilter === "me" && user?.id) {
@@ -386,6 +388,19 @@ function Inner() {
             <option value={30}>Últimos 30 días</option>
             <option value={90}>Últimos 90 días</option>
             <option value={365}>Último año</option>
+          </select>
+
+          {/* Cola */}
+          <select
+            value={queueFilter}
+            onChange={(e) => setQueueFilter(e.target.value)}
+            className="bg-bg border border-border rounded-md px-3 py-1.5 text-xs focus:outline-none focus:border-accent"
+            title="El kanban clasifica leads de venta; las otras colas se pueden inspeccionar pero sus etiquetas no son confiables"
+          >
+            <option value="sales">Ventas</option>
+            <option value="billing">Cobranzas</option>
+            <option value="post-sales">Post-venta</option>
+            <option value="all">Todas las colas</option>
           </select>
 
           {/* Canal */}

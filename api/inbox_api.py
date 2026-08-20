@@ -1928,8 +1928,10 @@ async def label_set(conv_id: str, body: LabelBody):
         raise HTTPException(404, "conversación no encontrada")
     session_id = row["external_id"]
 
+    from agents.classifier import LABEL_TTL_SECONDS
+
     store = await get_conversation_store()
-    await store._redis.set(f"conv_label:{session_id}", body.label)
+    await store._redis.set(f"conv_label:{session_id}", body.label, ex=LABEL_TTL_SECONDS)
 
     # Broadcast al inbox para actualización en tiempo real
     try:
@@ -2037,6 +2039,7 @@ async def pipeline_list(
     agent_id: str | None = None,
     unassigned: bool = False,
     include_resolved: bool = False,
+    queue: str = "sales",
 ):
     """Devuelve convs agrupadas por label del clasificador IA (Redis).
 
@@ -2070,6 +2073,14 @@ async def pipeline_list(
     ]
     params: list = []
     idx = 1
+    # El kanban es de VENTAS: por defecto excluye billing/post-sales, cuyas
+    # conversaciones se clasificaban con vocabulario de lead y ensuciaban
+    # las columnas (p.ej. soporte post-venta apareciendo en "convertido").
+    # queue="all" lo desactiva.
+    if queue and queue != "all":
+        where_parts.append(f"coalesce(cm.queue, 'sales') = ${idx}")
+        params.append(queue)
+        idx += 1
     if channel:
         where_parts.append(f"c.channel = ${idx}")
         params.append(channel)

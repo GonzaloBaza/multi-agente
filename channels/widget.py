@@ -1718,6 +1718,20 @@ async def process_widget_message(
         conversation.current_agent = new_agent_type
         await store.save(conversation)
 
+    # Persistir el lead de Zoho en el perfil (lo setea la tool
+    # create_or_update_lead vía ContextVar). Es el vínculo que usa el job
+    # de conversión real (utils/conversion_check.py) para cruzar la conv
+    # contra Contacts.IDLEAD.
+    try:
+        from utils.agent_context import current_lead_id as _clid_persist
+
+        _lid = _clid_persist.get()
+        if _lid and getattr(conversation.user_profile, "zoho_lead_id", None) != _lid:
+            conversation.user_profile.zoho_lead_id = _lid
+            await store.save(conversation)
+    except Exception:
+        pass
+
     # Atribución: links del sitio con idlead (si ya hay lead en esta conv —
     # la tool create_or_update_lead setea el ContextVar al crearlo).
     try:
