@@ -819,6 +819,17 @@ async def sales_whatsapp_webhook(payload: BotmakerPayload) -> BotmakerResponse:
                 combined_chars=len(user_msg),
             )
 
+        # ── Opt-out explícito (determinista, ANTES del LLM) ────────────
+        # "no me escriban más" y similares: pasa el lead a "No habilitado"
+        # (las reglas del lifecycle excluyen ese estado → los envíos
+        # programados pendientes se descartan solos) y responde un cierre
+        # fijo sin pasar por el agente — cero riesgo de que siga vendiendo.
+        from utils.optout import procesar_optout_whatsapp
+
+        optout_reply = await procesar_optout_whatsapp(payload.leadId, payload.phone, user_msg)
+        if optout_reply is not None:
+            return BotmakerResponse(text=optout_reply, context={})
+
         resp = await _process_message_and_respond(payload, user_msg)
         logger.info(
             "sales_whatsapp_handler_done",

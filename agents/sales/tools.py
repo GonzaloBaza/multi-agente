@@ -834,3 +834,56 @@ async def create_sales_order(
             },
         )
         return f"Error al crear la orden de venta en Zoho: {str(e)[:200]}"
+
+
+@tool
+async def marcar_no_contactar(motivo: str = "") -> str:
+    """
+    Marca el lead como "No habilitado" en Zoho CRM para que NO reciba más
+    mensajes automáticos (ni WhatsApp ni emails del flujo comercial).
+
+    Llamala cuando la persona pida de forma clara que no la contacten más:
+    que dejen de escribirle, que no quiere recibir más información, que la
+    borren de la lista, o exprese un rechazo definitivo a seguir la
+    conversación comercial.
+
+    NO la uses ante una objeción manejable ("es caro", "lo pienso", "ahora
+    no puedo", "no me interesa" dicho una sola vez) — solo ante un pedido
+    explícito de no contacto o un rechazo cerrado y repetido.
+
+    Después de llamarla: despedite cordialmente en una línea, sin intentar
+    vender de nuevo ni ofrecer alternativas.
+
+    Args:
+        motivo: Frase textual de la persona que motivó la baja (auditoría).
+    """
+    from utils.optout import marcar_no_habilitado
+
+    lead_id = current_lead_id.get()
+    logger.info("marcar_no_contactar_called", lead_id=lead_id, motivo=(motivo or "")[:120])
+    await log_to_conv(
+        "tool",
+        {
+            "action": "tool_marcar_no_contactar",
+            "detail": f"lead_id={lead_id or 'sin contexto'} motivo={(motivo or '')[:150]}",
+        },
+    )
+
+    marcado = await marcar_no_habilitado(lead_id)
+    if marcado:
+        await log_to_conv(
+            "action",
+            {
+                "action": "lead_no_habilitado",
+                "detail": f"ID: {marcado} — opt-out pedido por el usuario",
+                "lead_id": marcado,
+            },
+        )
+        return (
+            "Lead marcado como 'No habilitado' en Zoho — no va a recibir más "
+            "mensajes automáticos. Despedite cordialmente en una línea, sin vender."
+        )
+    return (
+        "No se pudo marcar el lead (sin ID en contexto o error de Zoho). "
+        "Igualmente despedite cordialmente y no insistas con la venta."
+    )

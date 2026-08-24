@@ -11,6 +11,7 @@ from agents.sales.tools import (
     create_sales_order,
     get_course_brief,
     get_course_deep,
+    marcar_no_contactar,
 )
 
 logger = structlog.get_logger(__name__)
@@ -110,4 +111,5 @@ CLOSER_TOOLS = [
     create_or_update_lead,
     create_sales_order,
     check_lead_history,
+    marcar_no_contactar,
 ]

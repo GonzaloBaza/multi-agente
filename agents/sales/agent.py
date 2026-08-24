@@ -14,6 +14,7 @@ from agents.sales.tools import (
     create_sales_order,
     get_course_brief,
     get_course_deep,
+    marcar_no_contactar,
 )
 from config.settings import get_settings
 
@@ -28,6 +29,7 @@ SALES_TOOLS = [
     get_course_deep,
     create_or_update_lead,
     create_sales_order,
+    marcar_no_contactar,
 ]
 
 
