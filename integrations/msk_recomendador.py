@@ -209,12 +209,15 @@ async def recomendar_cursos(
     fallback = len(elegidos) < n
     # Completar con el ranking por defecto (la query ya viene ordenada por horas).
     if fallback:
-        ya = {c["slug"] for c in elegidos}
+        ya_slug = {c["slug"] for c in elegidos}
+        ya_titulo = {_normalizar(c["title"]) for c in elegidos}
         for c in candidatos:
             if len(elegidos) >= n:
                 break
-            if c["slug"] in ya:
+            if c["slug"] in ya_slug or _normalizar(c["title"]) in ya_titulo:
                 continue
+            ya_slug.add(c["slug"])
+            ya_titulo.add(_normalizar(c["title"]))
             elegidos.append({**c, "motivo": ""})
 
     return {
@@ -266,6 +269,11 @@ async def _elegir_con_llm(
 
     elegidos: list[dict] = []
     descartados: list[str] = []
+    vistos_slug: set[str] = set()
+    # El catálogo tiene títulos repetidos bajo slugs distintos (dos filas del
+    # CMS para el mismo curso). Deduplicar solo por slug deja pasar la misma
+    # recomendación dos veces, que es lo que ve el televendedor.
+    vistos_titulo: set[str] = set()
     for item in data.get("cursos_recomendados") or []:
         slug = (item or {}).get("slug", "")
         curso = por_slug.get(slug)
@@ -274,8 +282,11 @@ async def _elegir_con_llm(
             # fallback rellena el hueco.
             descartados.append(slug)
             continue
-        if any(e["slug"] == slug for e in elegidos):
+        titulo_norm = _normalizar(curso["title"])
+        if slug in vistos_slug or titulo_norm in vistos_titulo:
             continue
+        vistos_slug.add(slug)
+        vistos_titulo.add(titulo_norm)
         elegidos.append({**curso, "motivo": (item.get("motivo") or "").strip()})
         if len(elegidos) >= n:
             break
