@@ -567,6 +567,44 @@ async def list_courses(country: str, limit: int = 200) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+async def list_courses_for_recommender(country: str, limit: int = 400) -> list[dict]:
+    """
+    Candidatos vendibles de un país, para el recomendador de Televenta.
+
+    Aplica en SQL los filtros duros que el prompt del assistant viejo pedía por
+    texto (y que el LLM podía ignorar):
+      - precio > 0 → descarta gratuitos y descargables
+      - sin Másters → no se venden por checkout (mismo criterio que
+        `get_catalog_compact`: rango de product_id + línea 'master')
+
+    Ordenado por duración descendente: es el desempate que pide el negocio y
+    además deja armado el fallback para cuando el LLM falla.
+    """
+    from config.constants import MASTER_PRODUCT_ID_MAX, MASTER_PRODUCT_ID_MIN
+
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            select country, slug, product_id, title, categoria, cedente,
+                   duration_hours, modules_count, currency, total_price,
+                   max_installments, price_installments, lines, pitch_hook
+            from public.courses
+            where country = $1
+              and coalesce(total_price, 0) > 0
+              and (product_id is null or product_id < $2 or product_id > $3)
+              and line is distinct from 'master'
+            order by duration_hours desc nulls last, title asc
+            limit $4
+            """,
+            country.lower(),
+            MASTER_PRODUCT_ID_MIN,
+            MASTER_PRODUCT_ID_MAX,
+            limit,
+        )
+    return [dict(r) for r in rows]
+
+
 async def get_catalog_compact(country: str) -> str:
     """
     Devuelve el catálogo compacto de un país para inyectar en el system prompt.

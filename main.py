@@ -47,6 +47,7 @@ from api.autonomous import router as autonomous_router
 from api.customer_auth import router as customer_auth_router
 from api.inbox_api import router as inbox_api_router
 from api.notifications import router as notifications_router
+from api.recomendador import router as recomendador_router
 from api.redis_admin import router as redis_admin_router
 from api.reports import router as reports_router
 from api.sales_whatsapp import router as sales_whatsapp_router
@@ -346,6 +347,7 @@ def create_app() -> FastAPI:
     app.include_router(templates_router)  # /api/templates/*
     app.include_router(voice_router)  # /api/v1/voice/* (call logs Zoho Voice)
     app.include_router(notifications_router)  # /api/v1/notifications/*
+    app.include_router(recomendador_router)  # /api/v1/recomendador/* (n8n Televenta)
     app.include_router(sales_whatsapp_router)  # /api/v1/sales/whatsapp/* (Botmaker)
     app.include_router(sales_whatsapp_v2_router)  # /api/v1/sales/whatsapp/webhook-v2 (experimental: prompt podado + modelo env)
 
