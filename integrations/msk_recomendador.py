@@ -42,6 +42,16 @@ PAIS_FALLBACK = "co"
 # hoy es Chile con 166, así que 400 deja margen de sobra sin reventar contexto.
 MAX_CANDIDATOS = 400
 
+# La ficha pública del curso. Verificado que es la misma URL en los 17 países
+# (sin prefijo de país), así que un solo link sirve para cualquier lead.
+# El slug NO se deduce del título: "Curso superior de emergentología" vive en
+# /curso/medicina-de-urgencias.
+COURSE_URL_BASE = "https://msklatam.com/curso/"
+
+
+def url_curso(slug: str | None) -> str:
+    return COURSE_URL_BASE + slug if slug else ""
+
 
 SYSTEM_PROMPT = """Eres un experto recomendador de cursos médicos para MSK Latam.
 

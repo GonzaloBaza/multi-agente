@@ -43,6 +43,7 @@ class RecomendarRequest(BaseModel):
 class CursoRecomendado(BaseModel):
     slug: str
     title: str
+    url: str = ""
     product_id: int | None = None
     categoria: str | None = None
     cedente: str | None = None
@@ -52,6 +53,36 @@ class CursoRecomendado(BaseModel):
     motivo: str = ""
 
 
+def _precio(curso: CursoRecomendado) -> str:
+    if curso.total_price is None:
+        return "consultar"
+    monto = f"{int(curso.total_price):,}".replace(",", ".")
+    return f"{curso.currency} {monto}" if curso.currency else monto
+
+
+def _detalle(cursos: list[CursoRecomendado]) -> str:
+    """
+    Bloque legible para pegar en la Description del lead.
+
+    El televendedor necesita saber QUE ofrecer, POR QUE y DONDE mandarlo. Una
+    lista de product_id no le sirve: tiene que aparearla a mano contra otro
+    campo. Esto le deja titulo, precio, link y el gancho ya escrito.
+    """
+    bloques = []
+    for i, c in enumerate(cursos, 1):
+        partes = [c.title]
+        if c.duration_hours:
+            partes.append(f"{c.duration_hours}h")
+        partes.append(_precio(c))
+        lineas = [f"{i}. " + " — ".join(partes)]
+        if c.motivo:
+            lineas.append(f"   {c.motivo}")
+        if c.url:
+            lineas.append(f"   {c.url}")
+        bloques.append("\n".join(lineas))
+    return "\n\n".join(bloques)
+
+
 class RecomendarResponse(BaseModel):
     country: str
     cursos: list[CursoRecomendado]
@@ -59,6 +90,9 @@ class RecomendarResponse(BaseModel):
     # tenga que hacer joins ni expresiones.
     titulos: str
     product_codes: str
+    # Bloque ya formateado (titulo, precio, motivo y link por curso) para la
+    # Description del lead.
+    detalle: str
     # True si el LLM falló o devolvió menos de `n` válidos y hubo que completar
     # con el ranking por defecto. Sirve para alertar sin cortar el flujo.
     fallback: bool
@@ -83,6 +117,7 @@ async def recomendar(
         CursoRecomendado(
             slug=c["slug"],
             title=c["title"],
+            url=msk_recomendador.url_curso(c["slug"]),
             product_id=c.get("product_id"),
             categoria=c.get("categoria"),
             cedente=c.get("cedente"),
@@ -107,6 +142,7 @@ async def recomendar(
         cursos=cursos,
         titulos="; ".join(c.title for c in cursos),
         product_codes="; ".join(str(c.product_id) for c in cursos if c.product_id),
+        detalle=_detalle(cursos),
         fallback=bool(resultado.get("fallback")),
         candidatos_evaluados=resultado.get("candidatos_evaluados", 0),
     )
